@@ -1,31 +1,88 @@
-# 🏥 Shefaa API Documentation (English)
-**Base URL:** `http://localhost:8080/api`
+🏥 Shefaa API Documentation (English)
+Base URL: https://shefaa-backend.vercel.app/api
 
----
+🔐 1. Authentication Endpoints
+Path: /auth
 
-## 🔐 1. Authentication Endpoints
-**Path:** `/auth`
+**Register**
 
-| Action | Method | Full URL | Body (JSON) |
-| :--- | :--- | :--- | :--- |
-| **Register** | POST | http://localhost:8080/api/auth/register | name, username, email, password, role, phoneNumber, address, age, gender |
-| **Login** | POST | http://localhost:8080/api/auth/login | email, password |
-| **Refresh Token** | POST | http://localhost:8080/api/auth/refresh-token | refreshToken |
-| **Forgot Password** | POST | http://localhost:8080/api/auth/forgot-password | email |
-| **Reset Password** | POST | http://localhost:8080/api/auth/reset-password | token, newPassword |
-| **Logout** | POST | http://localhost:8080/api/auth/logout | refreshToken |
+Method: POST
 
----
+Full URL: https://shefaa-backend.vercel.app/api/auth/register
 
-## 👤 2. Patient Endpoints
-**Path:** `/patient`  
-**Required Header:** `Authorization: Bearer <accessToken>`
+Body (JSON): name, username, email, password, role, phoneNumber, address, age, gender
 
-| Action | Method | Full URL | Requirements |
-| :--- | :--- | :--- | :--- |
-| **Get Profile** | GET | http://localhost:8080/api/patient/profile | No Body (Fetched via Token) |
-| **Update Profile** | PUT | http://localhost:8080/api/patient/profile | address, phoneNumber, age, gender, bloodType, allergies |
-| **Upload Scan/Lab** | POST | http://localhost:8080/api/patient/upload-scan | form-data: scan (File), doctorId, diagnosis |
-| **Medical History** | GET | http://localhost:8080/api/patient/medical-history | No Body |
+**Login**
 
----
+Method: POST
+
+Full URL: https://shefaa-backend.vercel.app/api/auth/login
+
+Body (JSON): email, password
+
+**Refresh Token**
+
+Method: POST
+
+Full URL: https://shefaa-backend.vercel.app/api/auth/refresh-token
+
+Body (JSON): refreshToken
+
+**Forgot Password**
+
+Method: POST
+
+Full URL: https://shefaa-backend.vercel.app/api/auth/forgot-password
+
+Body (JSON): email
+
+**Reset Password**
+
+Method: POST
+
+Full URL: https://shefaa-backend.vercel.app/api/auth/reset-password
+
+Body (JSON): token, newPassword
+
+**Logout**
+
+Method: POST
+
+Full URL: https://shefaa-backend.vercel.app/api/auth/logout
+
+Body (JSON): refreshToken
+
+👤 2. Patient Endpoints
+Path: /patient Required Header: Authorization: Bearer <accessToken>
+
+**Get Profile**
+
+Method: GET
+
+Full URL: https://shefaa-backend.vercel.app/api/patient/profile
+
+Requirements: No Body (Fetched via Token)
+
+**Update Profile**
+
+Method: PUT
+
+Full URL: https://shefaa-backend.vercel.app/api/patient/profile
+
+Requirements: address, phoneNumber, age, gender, bloodType, allergies
+
+**Upload Scan/Lab**
+
+Method: POST
+
+Full URL: https://shefaa-backend.vercel.app/api/patient/upload-scan
+
+Requirements: form-data: scan (File), doctorId, diagnosis
+
+**Medical History**
+
+Method: GET
+
+Full URL: https://shefaa-backend.vercel.app/api/patient/medical-history
+
+Requirements: No Body
