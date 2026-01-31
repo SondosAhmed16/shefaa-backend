@@ -75,18 +75,25 @@ exports.register = async (req, res) => {
   }
 };
 
-//Login
+// Login - يقبل الإيميل أو رقم التليفون
 exports.login = async (req, res) => {
   try {
-    const { email, password } = req.body;
+    const { identity, password } = req.body; // identity ممكن تكون إيميل أو تليفون
 
-    const user = await User.findOne({ email });
-    if (!user)
-      return res.status(401).json({ message: "Invalid credentials" });
+    // البحث في اليوزرز بالإيميل "أو" في بروفايل المريض برقم التليفون
+    let user = await User.findOne({ email: identity });
+    
+    if (!user) {
+      const patient = await Patient.findOne({ phoneNumber: identity });
+      if (patient) {
+        user = await User.findById(patient.userId);
+      }
+    }
+
+    if (!user) return res.status(401).json({ message: "Invalid credentials" });
 
     const isMatch = await bcrypt.compare(password, user.password);
-    if (!isMatch)
-      return res.status(401).json({ message: "Invalid credentials" });
+    if (!isMatch) return res.status(401).json({ message: "Invalid credentials" });
 
     const accessToken = generateAccessToken(user);
     const refreshToken = generateRefreshToken(user);
@@ -124,20 +131,24 @@ exports.refreshToken = async (req, res) => {
 };
 
 
-// Forget Password
+// Forgot Password - البحث بالهوية
 exports.forgotPassword = async (req, res) => {
   try {
-    const { email } = req.body;
+    const { identity } = req.body;
 
-    const user = await User.findOne({ email });
-    if (!user)
-      return res.status(404).json({ message: "User not found" });
+    let user = await User.findOne({ email: identity });
+    
+    if (!user) {
+      const patient = await Patient.findOne({ phoneNumber: identity });
+      if (patient) {
+        user = await User.findById(patient.userId);
+      }
+    }
+
+    if (!user) return res.status(404).json({ message: "User not found" });
 
     const resetToken = crypto.randomBytes(32).toString("hex");
-    const tokenHash = crypto
-      .createHash("sha256")
-      .update(resetToken)
-      .digest("hex");
+    const tokenHash = crypto.createHash("sha256").update(resetToken).digest("hex");
 
     await PasswordReset.create({
       user: user._id,
@@ -146,9 +157,14 @@ exports.forgotPassword = async (req, res) => {
     });
 
     const resetLink = `${process.env.FRONTEND_URL}/reset-password/${resetToken}`;
-    await sendResetPasswordEmail(email, resetLink);
-
-    res.json({ message: "Password reset link sent" });
+    
+    // لو معاه إيميل نبعت له، لو تليفون بس ممكن نرجع اللينك في الرد حالياً
+    if (user.email) {
+      await sendResetPasswordEmail(user.email, resetLink);
+      res.json({ message: "Password reset link sent to your email" });
+    } else {
+      res.json({ message: "Reset link generated", resetLink }); // للتسهيل لو مفيش SMTP
+    }
   } catch (err) {
     res.status(500).json({ message: err.message });
   }
