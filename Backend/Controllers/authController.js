@@ -43,8 +43,10 @@ exports.register = async (req, res) => {
         address: address || "N/A",
         age: age || 0,
         gender: gender || "male",
-        height: req.body.height || 0, // إضافة الطول
-        weight: req.body.weight || 0  // إضافة الوزن
+        height: req.body.height || 0,
+        weight: req.body.weight || 0,
+        bloodType: req.body.bloodType || "",
+        allergies: req.body.allergies || []
       });
     }
 
