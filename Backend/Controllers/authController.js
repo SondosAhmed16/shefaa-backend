@@ -4,6 +4,7 @@ const crypto = require("crypto");
 
 const User = require('../Models/Users');
 const Patient = require('../Models/Patients');
+const Doctor = require('../Models/Doctors');
 const RefreshToken = require("../Models/RefreshToken");
 const PasswordReset = require("../Models/PasswordReset");
 
@@ -36,6 +37,7 @@ exports.register = async (req, res) => {
     });
 
     // 3. create patient profile
+    // 3. Create Profile based on role
     if (user.role === 'patient') {
       await Patient.create({
         userId: user._id,
@@ -47,6 +49,16 @@ exports.register = async (req, res) => {
         weight: req.body.weight || 0,
         bloodType: req.body.bloodType || "",
         allergies: req.body.allergies || []
+      });
+    } else if (user.role === 'doctor') {
+      await Doctor.create({
+        userId: user._id,
+        specialization: req.body.specialization || "General", // مطلوب في الموديل
+        age: req.body.age || 30, // مطلوب (مينيمم 24)
+        yearsOfExperience: req.body.yearsOfExperience || 0, // مطلوب
+        paymentOption: req.body.paymentOption || "in_clinic", // مطلوب
+        about: req.body.about || "",
+        preOnlineConsultation: req.body.preOnlineConsultation || false
       });
     }
 
