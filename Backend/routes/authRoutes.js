@@ -24,22 +24,23 @@ router.post(
   authController.register
 );
 
-// Login
+// Login - تعديل الـ Validation ليقبل إيميل أو تليفون
 router.post(
   "/login",
   [
-    body("email").isEmail().withMessage("Valid email is required"),
+    // غيرنا email لـ identity وشلنا شرط الـ isEmail
+    body("identity").notEmpty().withMessage("Email or Phone number is required"),
     body("password").notEmpty().withMessage("Password is required"),
   ],
   runValidation,
   authController.login
 );
 
-// Forgot password
+// Forgot password - تعديل الـ Validation
 router.post(
   "/forgot-password",
   [
-    body("email").isEmail().withMessage("Valid email is required"),
+    body("identity").notEmpty().withMessage("Email or Phone number is required"),
   ],
   runValidation,
   authController.forgotPassword
