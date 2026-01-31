@@ -3,7 +3,7 @@ const jwt = require("jsonwebtoken");
 const crypto = require("crypto");
 
 const User = require('../Models/Users');
-const Patient = require('../Models/Patients'); 
+const Patient = require('../Models/Patients');
 const RefreshToken = require("../Models/RefreshToken");
 const PasswordReset = require("../Models/PasswordReset");
 
@@ -26,27 +26,29 @@ exports.register = async (req, res) => {
     const hashedPassword = await bcrypt.hash(password, salt);
 
     // 2. create user
-    const user = await User.create({ 
-      name, 
-      username, 
-      email, 
-      password: hashedPassword, 
+    const user = await User.create({
+      name,
+      username,
+      email,
+      password: hashedPassword,
       role: role || 'patient',
-      isVerified: true 
+      isVerified: true
     });
 
     // 3. create patient profile
     if (user.role === 'patient') {
       await Patient.create({
-        userId: user._id, 
+        userId: user._id,
         phoneNumber: phoneNumber || "N/A",
         address: address || "N/A",
         age: age || 0,
-        gender: gender || "male"
+        gender: gender || "male",
+        height: req.body.height || 0, // إضافة الطول
+        weight: req.body.weight || 0  // إضافة الوزن
       });
     }
 
-    
+
     // auto login
     const accessToken = generateAccessToken(user);
     const refreshToken = generateRefreshToken(user);
@@ -59,7 +61,7 @@ exports.register = async (req, res) => {
     });
 
     // 6. response
-    res.status(201).json({ 
+    res.status(201).json({
       message: 'User and Patient profile created successfully',
       user: {
         id: user._id,
@@ -82,7 +84,7 @@ exports.login = async (req, res) => {
 
     // البحث في اليوزرز بالإيميل "أو" في بروفايل المريض برقم التليفون
     let user = await User.findOne({ email: identity });
-    
+
     if (!user) {
       const patient = await Patient.findOne({ phoneNumber: identity });
       if (patient) {
@@ -137,7 +139,7 @@ exports.forgotPassword = async (req, res) => {
     const { identity } = req.body;
 
     let user = await User.findOne({ email: identity });
-    
+
     if (!user) {
       const patient = await Patient.findOne({ phoneNumber: identity });
       if (patient) {
@@ -157,7 +159,7 @@ exports.forgotPassword = async (req, res) => {
     });
 
     const resetLink = `${process.env.FRONTEND_URL}/reset-password/${resetToken}`;
-    
+
     // لو معاه إيميل نبعت له، لو تليفون بس ممكن نرجع اللينك في الرد حالياً
     if (user.email) {
       await sendResetPasswordEmail(user.email, resetLink);

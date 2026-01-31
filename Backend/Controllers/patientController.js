@@ -1,22 +1,15 @@
 const Patient = require('../Models/Patients');
 const Appointment = require('../Models/Appointment');
 const MedicalRecord = require('../Models/MedicalRecord');
-const User = require('../Models/Users');
 
-// Helper function عشان نجيب الـ Patient ID بسهولة من الـ User ID
 const getPatientByUserId = async (userId) => {
-    const patient = await Patient.findOne({ userId: userId });
-    return patient;
+    return await Patient.findOne({ userId: userId });
 };
 
 exports.getProfile = async (req, res) => {
   try {
-    // استخدم userId لأن ده الاسم في Patients.js
     const patient = await Patient.findOne({ userId: req.user._id }).populate('userId', 'name email');
-    
-    if (!patient) {
-      return res.status(404).json({ message: 'Patient profile not found' });
-    }
+    if (!patient) return res.status(404).json({ message: 'Patient profile not found' });
     res.json(patient);
   } catch (err) {
     res.status(500).json({ message: err.message });
@@ -25,12 +18,12 @@ exports.getProfile = async (req, res) => {
 
 exports.updateProfile = async (req, res) => {
   try {
-    const { address, phoneNumber, age, gender, bloodType, allergies } = req.body;
+    // إضافة height و weight للبيانات المستلمة
+    const { address, phoneNumber, age, gender, bloodType, allergies, height, weight } = req.body;
     
-    // البحث بـ userId والتحديث
     const patient = await Patient.findOneAndUpdate(
       { userId: req.user._id },
-      { address, phoneNumber, age, gender, bloodType, allergies },
+      { address, phoneNumber, age, gender, bloodType, allergies, height, weight },
       { new: true, runValidators: true }
     );
 
@@ -41,6 +34,7 @@ exports.updateProfile = async (req, res) => {
   }
 };
 
+// بقية الدوال (getAppointments, uploadAttachment, getMedicalHistory) تبقى كما هي
 exports.getAppointments = async (req, res) => {
   try {
     const patient = await getPatientByUserId(req.user._id);
