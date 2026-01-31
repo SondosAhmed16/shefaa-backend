@@ -16,26 +16,26 @@ const { sendResetPasswordEmail } = require("../utils/sendEmail");
 
 // في ملف authController.js
 
-//Register
+// Register 
 exports.register = async (req, res) => {
   try {
     const { name, username, email, password, role, phoneNumber, address, age, gender } = req.body;
 
-    // 1. تشفير الباسورد يدوياً قبل الحفظ (لضمان عمل الـ Login لاحقاً)
+    // 1. Auto hash password
     const salt = await bcrypt.genSalt(10);
     const hashedPassword = await bcrypt.hash(password, salt);
 
-    // 2. إنشاء اليوزر وجعله Verified تلقائياً للتسهيل عليك
+    // 2. create user
     const user = await User.create({ 
       name, 
       username, 
       email, 
-      password: hashedPassword, // حفظ الباسورد مشفر
+      password: hashedPassword, 
       role: role || 'patient',
-      isVerified: true // تفعيل تلقائي عشان متعدلوش من Compass
+      isVerified: true 
     });
 
-    // 3. إذا كان مريض، ننشئ بروفايل فوراً
+    // 3. create patient profile
     if (user.role === 'patient') {
       await Patient.create({
         userId: user._id, 
@@ -46,9 +46,29 @@ exports.register = async (req, res) => {
       });
     }
 
+    
+    // auto login
+    const accessToken = generateAccessToken(user);
+    const refreshToken = generateRefreshToken(user);
+
+    // 5.Refresh Token 
+    await RefreshToken.create({
+      token: refreshToken,
+      user: user._id,
+      expiresAt: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000), // صالح لمدة 7 أيام
+    });
+
+    // 6. response
     res.status(201).json({ 
       message: 'User and Patient profile created successfully',
-      userId: user._id 
+      user: {
+        id: user._id,
+        name: user.name,
+        email: user.email,
+        role: user.role
+      },
+      accessToken,
+      refreshToken
     });
   } catch (err) {
     res.status(400).json({ message: err.message });
