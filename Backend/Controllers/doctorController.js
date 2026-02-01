@@ -38,17 +38,19 @@ exports.updateDoctorProfile = async (req, res) => {
   }
 };
 
-// 3. Add a new Clinic and link it to the Doctor
+// 3. Add a new Clinic
 exports.addClinic = async (req, res) => {
   try {
-    const { name, city, address, location, availableDays, daysOfWeek, dailyCapacity, slotDuration, price } = req.body;
+    // التعديل هنا: لازم تضيفي capacityPerSlot جوه القوسين دول
+    const { 
+      name, city, address, location, availableDays, 
+      dailyCapacity, slotDuration, capacityPerSlot, price 
+    } = req.body;
 
-    // Retrieve doctor profile to get the doctor's document ID
     const doctor = await Doctor.findOne({ userId: req.user._id });
     if (!doctor) return res.status(404).json({ message: 'Doctor profile not found' });
 
-    // Create the clinic record
-const newClinic = await Clinic.create({
+    const newClinic = await Clinic.create({
       doctorId: doctor._id,
       name,
       city,
@@ -57,18 +59,14 @@ const newClinic = await Clinic.create({
       availableDays,
       dailyCapacity,
       slotDuration,
-      capacityPerSlot, // وتأكدي إنها مبعوتة هنا 👇
+      capacityPerSlot, // ودلوقتي السطر ده هيشتغل صح وموش هيقول Not defined
       price
     });
 
-    // Push the new Clinic ID into the doctor's clinics array
     doctor.clinics.push(newClinic._id);
     await doctor.save();
 
-    res.status(201).json({ 
-      message: 'Clinic added and linked to doctor successfully', 
-      clinic: newClinic 
-    });
+    res.status(201).json({ message: 'Clinic added successfully', clinic: newClinic });
   } catch (err) {
     res.status(500).json({ message: err.message });
   }
