@@ -1,88 +1,103 @@
-🏥 Shefaa API Documentation (English)
+🏥 Shefaa API Documentation (Updated 2026)
 Base URL: https://shefaa-backend.vercel.app/api
 
 🔐 1. Authentication Endpoints
 Path: /auth
 
-**Register**
+Register (All Roles)
 
 Method: POST
 
-Full URL: https://shefaa-backend.vercel.app/api/auth/register
+URL: /auth/register
 
-Body (JSON): name, username, email, password, role, phoneNumber, address, age, gender
+Body (JSON): name, username, email, password, role (patient/doctor/pharmacy), phoneNumber, address, age, gender, specialization (for doctor), licence (for pharmacy).
 
-**Login**
-
-Method: POST
-
-Full URL: https://shefaa-backend.vercel.app/api/auth/login
-
-Body (JSON): email, password
-
-**Refresh Token**
+Login
 
 Method: POST
 
-Full URL: https://shefaa-backend.vercel.app/api/auth/refresh-token
+URL: /auth/login
 
-Body (JSON): refreshToken
+Body: identity (email/phone), password
 
-**Forgot Password**
+🩺 2. Doctor Endpoints
+Path: /doctor | Header: Authorization: Bearer <accessToken>
 
-Method: POST
+Get Doctor Profile
 
-Full URL: https://shefaa-backend.vercel.app/api/auth/forgot-password
+Method: GET | URL: /doctor/profile
 
-Body (JSON): email
+Update Doctor Profile
 
-**Reset Password**
+Method: PUT | URL: /doctor/profile
 
-Method: POST
+Body: specialization, yearsOfExperience, about, paymentOption (in_clinic/online/both).
 
-Full URL: https://shefaa-backend.vercel.app/api/auth/reset-password
+Add New Clinic
 
-Body (JSON): token, newPassword
+Method: POST | URL: /doctor/add-clinic
 
-**Logout**
+Body: name, city, address, location (Point), availableDays, dailyCapacity, slotDuration, capacityPerSlot, price.
 
-Method: POST
+Add Medical Record (Prescription)
 
-Full URL: https://shefaa-backend.vercel.app/api/auth/logout
+Method: POST | URL: /doctor/add-medical-record
 
-Body (JSON): refreshToken
+Body: patientId, diagnosis, prescription (Array), notes, nextVisitDate.
 
-👤 2. Patient Endpoints
-Path: /patient Required Header: Authorization: Bearer <accessToken>
+Get Doctor Appointments
 
-**Get Profile**
+Method: GET | URL: /doctor/appointments
 
-Method: GET
+💊 3. Pharmacy Endpoints
+Path: /pharmacy | Header: Authorization: Bearer <accessToken>
 
-Full URL: https://shefaa-backend.vercel.app/api/patient/profile
+Get All Stock
 
-Requirements: No Body (Fetched via Token)
+Method: GET | URL: /pharmacy/stock
 
-**Update Profile**
+Add Medicine to Stock
 
-Method: PUT
+Method: POST | URL: /pharmacy/add-medicine
 
-Full URL: https://shefaa-backend.vercel.app/api/patient/profile
+Body: medicineName, quantity, price, expirationDate, category, description.
 
-Requirements: address, phoneNumber, age, gender, bloodType, allergies
+Update Medicine
 
-**Upload Scan/Lab**
+Method: PUT | URL: /pharmacy/update-medicine/:id
 
-Method: POST
+Body: quantity, price.
 
-Full URL: https://shefaa-backend.vercel.app/api/patient/upload-scan
+Delete Medicine
 
-Requirements: form-data: scan (File), doctorId, diagnosis
+Method: DELETE | URL: /pharmacy/delete-medicine/:id
 
-**Medical History**
+Dispense Medicine (Sell)
 
-Method: GET
+Method: POST | URL: /pharmacy/dispense
 
-Full URL: https://shefaa-backend.vercel.app/api/patient/medical-history
+Body: stockId, quantityToDispense.
 
-Requirements: No Body
+Search Medicines (Public)
+
+Method: GET | URL: /pharmacy/search?name=Panadol
+
+👤 4. Patient Endpoints
+Path: /patient | Header: Authorization: Bearer <accessToken>
+
+Get Profile
+
+Method: GET | URL: /patient/profile
+
+Update Profile
+
+Method: PUT | URL: /patient/profile
+
+Body: phoneNumber, address, age, weight, height, allergies.
+
+💡 Notes for Frontend:
+Enums: paymentOption must be one of (in_clinic, online, both).
+
+Location: Send location as GeoJSON: {"type": "Point", "coordinates": [longitude, latitude]}.
+
+IDs: Always use the _id returned from the database for patientId or stockId.
