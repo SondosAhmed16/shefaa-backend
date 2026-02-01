@@ -48,16 +48,16 @@ exports.addClinic = async (req, res) => {
     if (!doctor) return res.status(404).json({ message: 'Doctor profile not found' });
 
     // Create the clinic record
-    const newClinic = await Clinic.create({
+const newClinic = await Clinic.create({
       doctorId: doctor._id,
       name,
       city,
       address,
       location,
       availableDays,
-      daysOfWeek,
       dailyCapacity,
       slotDuration,
+      capacityPerSlot, // وتأكدي إنها مبعوتة هنا 👇
       price
     });
 
