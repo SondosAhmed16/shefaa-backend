@@ -5,6 +5,8 @@ const crypto = require("crypto");
 const User = require('../Models/Users');
 const Patient = require('../Models/Patients');
 const Doctor = require('../Models/Doctors');
+const Pharmacy = require('../Models/Pharmaces');
+
 const RefreshToken = require("../Models/RefreshToken");
 const PasswordReset = require("../Models/PasswordReset");
 
@@ -36,7 +38,6 @@ exports.register = async (req, res) => {
       isVerified: true
     });
 
-    // 3. create patient profile
     // 3. Create Profile based on role
     if (user.role === 'patient') {
       await Patient.create({
@@ -53,14 +54,24 @@ exports.register = async (req, res) => {
     } else if (user.role === 'doctor') {
       await Doctor.create({
         userId: user._id,
-        specialization: req.body.specialization || "General", // مطلوب في الموديل
-        age: req.body.age || 30, // مطلوب (مينيمم 24)
-        yearsOfExperience: req.body.yearsOfExperience || 0, // مطلوب
-        paymentOption: req.body.paymentOption || "in_clinic", // مطلوب
+        specialization: req.body.specialization || "General",
+        age: req.body.age || 30,
+        yearsOfExperience: req.body.yearsOfExperience || 0,
+        paymentOption: req.body.paymentOption || "in_clinic",
         about: req.body.about || "",
         preOnlineConsultation: req.body.preOnlineConsultation || false
       });
+    } else if (user.role === 'pharmacy') {
+      // New: Create Pharmacy Profile
+      await Pharmacy.create({
+        userId: user._id,
+        licence: req.body.licence || "PENDING",
+        registrationNumber: req.body.registrationNumber || `REG-${Date.now()}`,
+        commercialRegisterNumber: req.body.commercialRegisterNumber || `COM-${Date.now()}`,
+        addresses: req.body.addresses || [] // Expecting an array of {addressText, location}
+      });
     }
+
 
 
     // auto login
