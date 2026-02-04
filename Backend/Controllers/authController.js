@@ -60,7 +60,7 @@ exports.register = async (req, res) => {
         age: req.body.age || 30,
         yearsOfExperience: req.body.yearsOfExperience || 0,
         paymentOption: req.body.paymentOption || "in_clinic",
-        membershipPdf: pdfPath, // حفظ المسار
+        membershipPdf: pdfUrl, // حفظ المسار
         about: req.body.about || "",
         preOnlineConsultation: req.body.preOnlineConsultation || false
       });
