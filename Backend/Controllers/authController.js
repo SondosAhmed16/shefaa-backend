@@ -1,7 +1,7 @@
 const bcrypt = require("bcryptjs");
 const jwt = require("jsonwebtoken");
 const crypto = require("crypto");
-
+const fs = require('fs'); // ضيفي دي فوق خالص مع الـ imports لو مش موجودة
 const User = require('../Models/Users');
 const Patient = require('../Models/Patients');
 const Doctor = require('../Models/Doctors');
@@ -17,7 +17,7 @@ const {
 
 const { sendResetPasswordEmail } = require("../utils/sendEmail");
 
-// في ملف authController.js
+
 
 // Register 
 exports.register = async (req, res) => {
@@ -52,8 +52,16 @@ exports.register = async (req, res) => {
         allergies: req.body.allergies || []
       });
     } else if (user.role === 'doctor') {
-      // --- التعديل هنا لرفع الشهادة ---
-      const pdfPath = req.file ? req.file.path : ""; // سحب مسار الملف المرفوع
+      // --- تعديل ذكي لرفع الشهادة ---
+      let pdfPath = "";
+      if (req.file) {
+        // التأكد من وجود الفولدر قبل الحفظ (عشان نتجنب خطأ ENOENT)
+        const dir = 'uploads/memberships/';
+        if (!fs.existsSync(dir)){
+            fs.mkdirSync(dir, { recursive: true });
+        }
+        pdfPath = req.file.path;
+      }
 
       await Doctor.create({
         userId: user._id,
@@ -61,7 +69,7 @@ exports.register = async (req, res) => {
         age: req.body.age || 30,
         yearsOfExperience: req.body.yearsOfExperience || 0,
         paymentOption: req.body.paymentOption || "in_clinic",
-        membershipPdf: pdfPath, // حفظ المسار في الداتابيز
+        membershipPdf: pdfPath, // حفظ المسار
         about: req.body.about || "",
         preOnlineConsultation: req.body.preOnlineConsultation || false
       });
@@ -72,20 +80,20 @@ exports.register = async (req, res) => {
         licence: req.body.licence || "N/A",
         registrationNumber: req.body.registrationNumber || "N/A",
         commercialRegisterNumber: req.body.commercialRegisterNumber || `COM-${Date.now()}`,
-        addresses: req.body.addresses || [] // Expecting an array of {addressText, location}
+        addresses: req.body.addresses || [] 
       });
     }
 
-    // 4. توليد التوكن والرد
+    // 4. توليد التوكن والرد مع تاريخ الانتهاء الإلزامي
     const accessToken = generateAccessToken(user);
     const refreshToken = generateRefreshToken(user);
 
-    // التعديل هنا: إضافة expiresAt عشان الموديل يقبل البيانات
     await RefreshToken.create({
       token: refreshToken,
       user: user._id,
-      expiresAt: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000) // تحديد مدة الصلاحية (7 أيام مثلاً)
+      expiresAt: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000) // 7 أيام
     });
+
     res.status(201).json({
       message: "User registered successfully",
       accessToken,
@@ -94,10 +102,11 @@ exports.register = async (req, res) => {
     });
 
   } catch (err) {
+    // لو حصل غلط في إنشاء البروفايل نمسح اليوزر عشان ميبقاش فيه داتا ناقصة
+    // (اختياري) await User.findByIdAndDelete(user._id); 
     res.status(500).json({ message: err.message });
   }
 };
-
 // Login - يقبل الإيميل أو رقم التليفون
 exports.login = async (req, res) => {
   try {
