@@ -5,7 +5,7 @@ const doctorSchema = new mongoose.Schema(
       type: mongoose.Schema.Types.ObjectId,
       ref: "User",
       required: true,
-      unique: true, 
+      unique: true,
     },
 
     specialization: {
@@ -36,6 +36,10 @@ const doctorSchema = new mongoose.Schema(
       type: String,
       default: "",
     },
+    membershipPdf: {
+      type: String,
+      default: "",
+    },
 
     degrees: {
       type: [String], // Optional list
@@ -62,7 +66,7 @@ const doctorSchema = new mongoose.Schema(
     },
 
     prePaymentNumbers: {
-      type: [String], 
+      type: [String],
       default: [],
     },
 
@@ -86,5 +90,5 @@ const doctorSchema = new mongoose.Schema(
   }
 );
 
-module.exports= mongoose.model("Doctor", doctorSchema);
+module.exports = mongoose.model("Doctor", doctorSchema);
 
