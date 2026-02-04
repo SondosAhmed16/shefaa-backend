@@ -93,9 +93,11 @@ exports.register = async (req, res) => {
     });
 
   } catch (err) {
-    // لو حصل غلط في إنشاء البروفايل نمسح اليوزر عشان ميبقاش فيه داتا ناقصة
-    // (اختياري) await User.findByIdAndDelete(user._id); 
-    res.status(500).json({ message: err.message });
+    console.log(err); // هيطبع الغلط بالتفصيل في الـ Terminal عندك
+    res.status(500).json({
+      message: err.message, // هيظهر لك سبب المشكلة الحقيقي في Postman
+      error: err
+    });
   }
 };
 // Login - يقبل الإيميل أو رقم التليفون

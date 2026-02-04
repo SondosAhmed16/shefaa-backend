@@ -16,11 +16,13 @@ cloudinary.config({
   api_secret: process.env.CLOUDINARY_API_SECRET
 });
 
+// في ملف authRoutes.js
 const storage = new CloudinaryStorage({
   cloudinary: cloudinary,
   params: {
     folder: 'doctor_memberships',
-    resource_type: 'raw', 
+    resource_type: 'raw', // ده اللي بيخلي Cloudinary يقبل الـ PDF
+    format: async (req, file) => 'pdf', // إجبار التنسيق يكون pdf
     public_id: (req, file) => 'membership-' + Date.now(),
   },
 });
