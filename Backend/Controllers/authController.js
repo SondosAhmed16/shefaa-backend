@@ -59,7 +59,7 @@ exports.register = async (req, res) => {
         userId: user._id,
         specialization: req.body.specialization || "General",
         age: req.body.age || 30,
-        yearsOfExperience: req.body.yearsOfExperience || 0, 
+        yearsOfExperience: req.body.yearsOfExperience || 0,
         paymentOption: req.body.paymentOption || "in_clinic",
         membershipPdf: pdfPath, // حفظ المسار في الداتابيز
         about: req.body.about || "",
@@ -79,8 +79,13 @@ exports.register = async (req, res) => {
     // 4. توليد التوكن والرد
     const accessToken = generateAccessToken(user);
     const refreshToken = generateRefreshToken(user);
-    await RefreshToken.create({ token: refreshToken, user: user._id });
 
+    // التعديل هنا: إضافة expiresAt عشان الموديل يقبل البيانات
+    await RefreshToken.create({
+      token: refreshToken,
+      user: user._id,
+      expiresAt: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000) // تحديد مدة الصلاحية (7 أيام مثلاً)
+    });
     res.status(201).json({
       message: "User registered successfully",
       accessToken,
