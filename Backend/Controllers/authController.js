@@ -52,16 +52,7 @@ exports.register = async (req, res) => {
         allergies: req.body.allergies || []
       });
     } else if (user.role === 'doctor') {
-      // --- تعديل ذكي لرفع الشهادة ---
-      let pdfPath = "";
-      if (req.file) {
-        // التأكد من وجود الفولدر قبل الحفظ (عشان نتجنب خطأ ENOENT)
-        const dir = 'uploads/memberships/';
-        if (!fs.existsSync(dir)){
-            fs.mkdirSync(dir, { recursive: true });
-        }
-        pdfPath = req.file.path;
-      }
+      const pdfUrl = req.file ? req.file.path : "";
 
       await Doctor.create({
         userId: user._id,
@@ -80,7 +71,7 @@ exports.register = async (req, res) => {
         licence: req.body.licence || "N/A",
         registrationNumber: req.body.registrationNumber || "N/A",
         commercialRegisterNumber: req.body.commercialRegisterNumber || `COM-${Date.now()}`,
-        addresses: req.body.addresses || [] 
+        addresses: req.body.addresses || []
       });
     }
 
