@@ -52,53 +52,44 @@ exports.register = async (req, res) => {
         allergies: req.body.allergies || []
       });
     } else if (user.role === 'doctor') {
+      // --- التعديل هنا لرفع الشهادة ---
+      const pdfPath = req.file ? req.file.path : ""; // سحب مسار الملف المرفوع
+
       await Doctor.create({
         userId: user._id,
         specialization: req.body.specialization || "General",
         age: req.body.age || 30,
-        yearsOfExperience: req.body.yearsOfExperience || 0,
+        yearsOfExperience: req.body.yearsOfExperience || 0, 
         paymentOption: req.body.paymentOption || "in_clinic",
+        membershipPdf: pdfPath, // حفظ المسار في الداتابيز
         about: req.body.about || "",
         preOnlineConsultation: req.body.preOnlineConsultation || false
       });
-    } else if (user.role === 'pharmacy') {
-      // New: Create Pharmacy Profile
+    }
+    else if (user.role === 'pharmacy') {
       await Pharmacy.create({
         userId: user._id,
-        licence: req.body.licence || "PENDING",
-        registrationNumber: req.body.registrationNumber || `REG-${Date.now()}`,
+        licence: req.body.licence || "N/A",
+        registrationNumber: req.body.registrationNumber || "N/A",
         commercialRegisterNumber: req.body.commercialRegisterNumber || `COM-${Date.now()}`,
         addresses: req.body.addresses || [] // Expecting an array of {addressText, location}
       });
     }
 
-
-
-    // auto login
+    // 4. توليد التوكن والرد
     const accessToken = generateAccessToken(user);
     const refreshToken = generateRefreshToken(user);
+    await RefreshToken.create({ token: refreshToken, user: user._id });
 
-    // 5.Refresh Token 
-    await RefreshToken.create({
-      token: refreshToken,
-      user: user._id,
-      expiresAt: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000), // صالح لمدة 7 أيام
-    });
-
-    // 6. response
     res.status(201).json({
-      message: 'User and Patient profile created successfully',
-      user: {
-        id: user._id,
-        name: user.name,
-        email: user.email,
-        role: user.role
-      },
+      message: "User registered successfully",
       accessToken,
-      refreshToken
+      refreshToken,
+      user: { id: user._id, name: user.name, role: user.role }
     });
+
   } catch (err) {
-    res.status(400).json({ message: err.message });
+    res.status(500).json({ message: err.message });
   }
 };
 

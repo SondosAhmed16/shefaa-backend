@@ -113,30 +113,3 @@ exports.addMedicalRecord = async (req, res) => {
   }
 };
 
-// في ملف doctorController.js
-
-exports.uploadMembership = async (req, res) => {
-  try {
-    // 1. التأكد إن فيه ملف ارفع فعلاً
-    if (!req.file) {
-      return res.status(400).json({ message: "يرجى اختيار ملف PDF للرفع" });
-    }
-
-    // 2. تحديث بيانات الدكتور بمسار الملف الجديد
-    const doctor = await Doctor.findOneAndUpdate(
-      { userId: req.user._id },
-      { membershipPdf: req.file.path }, // المسار اللي multer هيوفره
-      { new: true }
-    );
-
-    if (!doctor) return res.status(404).json({ message: 'بروفايل الدكتور غير موجود' });
-
-    res.status(200).json({ 
-      message: 'تم رفع ملف العضوية بنجاح', 
-      pdfPath: req.file.path,
-      doctor 
-    });
-  } catch (err) {
-    res.status(500).json({ message: err.message });
-  }
-};

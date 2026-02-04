@@ -1,13 +1,38 @@
 const express = require("express");
 const router = express.Router();
 const { body } = require("express-validator");
+const multer = require("multer"); // 1. استيراد multer
+const path = require("path");
 
 const authController = require("../Controllers/authController");
 const { runValidation } = require("../middleware/validate");
 
-// Register
+// --- 2. إعدادات تخزين الملف (PDF) ---
+const storage = multer.diskStorage({
+  destination: function (req, file, cb) {
+    cb(null, 'uploads/memberships/'); // تأكدي إن الفولدر ده موجود في المشروع
+  },
+  filename: function (req, file, cb) {
+    const uniqueSuffix = Date.now() + '-' + Math.round(Math.random() * 1E9);
+    cb(null, file.fieldname + '-' + uniqueSuffix + path.extname(file.originalname));
+  }
+});
+
+const upload = multer({ 
+  storage: storage,
+  fileFilter: (req, file, cb) => {
+    if (file.mimetype === 'application/pdf') {
+      cb(null, true);
+    } else {
+      cb(new Error('Only PDF files are allowed!'), false);
+    }
+  }
+});
+
+// --- 3. تعديل راوت الـ Register ---
 router.post(
   "/register",
+  upload.single('membership'), // إضافة الميدل وير هنا لاستقبال ملف واحد باسم membership
   [
     body("name").notEmpty().withMessage("Name is required"),
     body("username").notEmpty().withMessage("Username is required"),
@@ -15,14 +40,11 @@ router.post(
     body("password")
       .isLength({ min: 6 })
       .withMessage("Password must be at least 6 characters"),
-    body("role")
-      .optional()
-      .isIn(["doctor", "patient", "pharmacy", "lab", "admin"])
-      .withMessage("Invalid role"),
   ],
   runValidation,
   authController.register
 );
+
 
 // Login - تعديل الـ Validation ليقبل إيميل أو تليفون
 router.post(
