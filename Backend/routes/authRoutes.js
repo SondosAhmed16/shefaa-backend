@@ -1,7 +1,7 @@
 const express = require("express");
 const router = express.Router();
 const { body } = require("express-validator");
-const multer = require("multer"); 
+const multer = require("multer");
 const path = require("path");
 const fs = require("fs"); // 1. لازم نستدعي مكتبة الـ fs
 
@@ -11,13 +11,13 @@ const { runValidation } = require("../middleware/validate");
 // --- 2. إعدادات تخزين الملف مع التأكد من وجود المسار ---
 const storage = multer.diskStorage({
   destination: function (req, file, cb) {
-    const dir = 'uploads/memberships/';
-    
-    // الحل الجذري: لو الفولدر مش موجود، الكود هيكريته فوراً
+    const dir = './uploads/memberships/'; // أضفنا ./ للتأكيد على المسار الحالي
+
+    // التأكد من إنشاء الفولدرات حتى لو uploads نفسه مش موجود
     if (!fs.existsSync(dir)) {
       fs.mkdirSync(dir, { recursive: true });
     }
-    
+
     cb(null, dir);
   },
   filename: function (req, file, cb) {
@@ -26,7 +26,7 @@ const storage = multer.diskStorage({
   }
 });
 
-const upload = multer({ 
+const upload = multer({
   storage: storage,
   fileFilter: (req, file, cb) => {
     if (file.mimetype === 'application/pdf') {
