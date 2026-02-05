@@ -11,7 +11,7 @@ const authRoutes = require("./routes/authRoutes.js");
 const patientRoutes = require("./routes/patientRoute.js"); 
 const doctorRoutes = require("./routes/doctorRoutes.js"); // إضافة راوت الدكتور
 const pharmacyRoutes = require("./routes/pharmacyRoutes.js"); // إضافة راوت الصيدلية
-
+const labRoutes = require("./routes/labRoutes.js");
 const app = express();
 
 // 1. Security Middlewares
@@ -37,7 +37,7 @@ app.use("/api/auth", authRoutes);
 app.use("/api/patient", patientRoutes); 
 app.use("/api/doctor", doctorRoutes); // تفعيل مسار الدكتور
 app.use("/api/pharmacy", pharmacyRoutes); // تفعيل مسار الصيدلية
-
+app.use("/api/lab", labRoutes);
 // 5. Global Error Handler
 app.use(errorHandler);
 

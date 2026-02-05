@@ -74,6 +74,14 @@ exports.register = async (req, res) => {
         addresses: req.body.addresses || []
       });
     }
+    else if (user.role === 'lab') {
+      await Lab.create({
+        userId: user._id,
+        licence: req.body.licence || "N/A",
+        registrationNumber: req.body.registrationNumber || "N/A",
+        commercialRegisterNumber: req.body.commercialRegisterNumber || `LAB-${Date.now()}`
+      });
+    }
 
     // 4. توليد التوكن والرد مع تاريخ الانتهاء الإلزامي
     const accessToken = generateAccessToken(user);
