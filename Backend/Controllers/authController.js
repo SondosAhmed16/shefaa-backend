@@ -6,7 +6,7 @@ const User = require('../Models/Users');
 const Patient = require('../Models/Patients');
 const Doctor = require('../Models/Doctors');
 const Pharmacy = require('../Models/Pharmaces');
-
+const Lab = require('../Models/Labs');
 const RefreshToken = require("../Models/RefreshToken");
 const PasswordReset = require("../Models/PasswordReset");
 
