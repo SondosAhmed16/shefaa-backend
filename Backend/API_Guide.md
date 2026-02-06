@@ -95,6 +95,15 @@ Method: PUT | URL: /patient/profile
 
 Body: phoneNumber, address, age, weight, height, allergies.
 
+🧪 5. Lab Endpoints (New)
+  Path: `/lab` | Header:   Authorization: Bearer <accessToken>
+- Add Test POST /lab/add-test
+  - Body: testName, price, estimatedTime.
+- Upload Result: POST /lab/upload-result
+  - Body (form-data):   patientId, testName, resultFile (PDF).
+- Get My Tests:   `GET /lab/my-tests` (عرض قائمة تحاليل المعمل).
+- Get Patient Results:   `GET /lab/patient-results/:patientId`.
+
 💡 Notes for Frontend:
 Enums: paymentOption must be one of (in_clinic, online, both).
 
