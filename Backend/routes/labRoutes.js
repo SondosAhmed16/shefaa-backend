@@ -20,9 +20,7 @@ const storage = new CloudinaryStorage({
 });
 const upload = multer({ storage: storage });
 
-// --- الراوتس مع الـ Validation ---
 
-// إضافة تحليل جديد (مع التأكد من البيانات)
 router.post(
   '/add-test', 
   auth, 
@@ -34,7 +32,6 @@ router.post(
   labController.addTest
 );
 
-// رفع نتيجة تحليل (هنا بنستخدم الـ Multer الأول)
 router.post(
   '/upload-result', 
   auth, 
@@ -47,7 +44,7 @@ router.post(
   labController.uploadResult
 );
 
-// باقي الراوتس مش محتاجة Body Validation لأنها بتعتمد على الـ ID في الـ URL
+
 router.get('/my-tests', auth, labController.getTests);
 router.get('/patient-results/:patientId', auth, labController.getPatientResults);
 

@@ -108,12 +108,12 @@ exports.register = async (req, res) => {
     });
   }
 };
-// Login - يقبل الإيميل أو رقم التليفون
+// Login 
 exports.login = async (req, res) => {
   try {
-    const { identity, password } = req.body; // identity ممكن تكون إيميل أو تليفون
+    const { identity, password } = req.body; 
 
-    // البحث في اليوزرز بالإيميل "أو" في بروفايل المريض برقم التليفون
+    
     let user = await User.findOne({ email: identity });
 
     if (!user) {
@@ -164,7 +164,7 @@ exports.refreshToken = async (req, res) => {
 };
 
 
-// Forgot Password - البحث بالهوية
+// Forgot Password 
 exports.forgotPassword = async (req, res) => {
   try {
     const { identity } = req.body;
@@ -191,7 +191,6 @@ exports.forgotPassword = async (req, res) => {
 
     const resetLink = `${process.env.FRONTEND_URL}/reset-password/${resetToken}`;
 
-    // لو معاه إيميل نبعت له، لو تليفون بس ممكن نرجع اللينك في الرد حالياً
     if (user.email) {
       await sendResetPasswordEmail(user.email, resetLink);
       res.json({ message: "Password reset link sent to your email" });

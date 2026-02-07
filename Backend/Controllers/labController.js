@@ -3,7 +3,6 @@ const LabTest = require('../Models/LabTest');
 const MedicalRecord = require('../Models/MedicalRecord');
 const Patient = require('../Models/Patients');
 
-// 📋 عرض كل التحاليل المتاحة في المعمل
 exports.getTests = async (req, res) => {
   try {
     const labId = req.user._id;
@@ -14,7 +13,6 @@ exports.getTests = async (req, res) => {
   }
 };
 
-// ➕ إضافة تحليل جديد
 exports.addTest = async (req, res) => {
   try {
     const { testName, price, estimatedTime } = req.body;
@@ -43,8 +41,7 @@ exports.uploadResult = async (req, res) => {
     const fileUrl = req.file.path; 
     const fileName = req.file.originalname || "Lab Result";
 
-    // تحديث سجل المريض الطبي (Medical Record)
-    // لاحظ: doctorId ممكن يكون null لو المعمل هو اللي رافع
+   
     const record = new MedicalRecord({
       patientId,
       doctorId: null, 
@@ -52,7 +49,7 @@ exports.uploadResult = async (req, res) => {
       notes: 'Lab result uploaded via Cloudinary',
       attachments: [{
         fileName: fileName,
-        fileUrl: fileUrl, // الرابط اللي هيفتح معاك أونلاين
+        fileUrl: fileUrl, 
         uploadedAt: new Date()
       }],
       visitDate: new Date(),
@@ -71,7 +68,6 @@ exports.uploadResult = async (req, res) => {
   }
 };
 
-// 👀 عرض نتائج التحاليل الخاصة بمريض معين
 exports.getPatientResults = async (req, res) => {
   try {
     const { patientId } = req.params;

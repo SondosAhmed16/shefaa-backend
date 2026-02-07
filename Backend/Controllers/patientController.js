@@ -18,7 +18,6 @@ exports.getProfile = async (req, res) => {
 
 exports.updateProfile = async (req, res) => {
   try {
-    // إضافة height و weight للبيانات المستلمة
     const { address, phoneNumber, age, gender, bloodType, allergies, height, weight } = req.body;
     
     const patient = await Patient.findOneAndUpdate(
@@ -80,7 +79,7 @@ exports.getMedicalHistory = async (req, res) => {
     if (!patient) return res.status(404).json({ message: 'Patient not found' });
 
     const records = await MedicalRecord.find({ patientId: patient._id })
-      .populate('doctorId', 'name'); // بنجيب اسم الدكتور
+      .populate('doctorId', 'name'); 
     
     res.json(records);
   } catch (err) {

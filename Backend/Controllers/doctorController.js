@@ -59,7 +59,7 @@ exports.addClinic = async (req, res) => {
       availableDays,
       dailyCapacity,
       slotDuration,
-      capacityPerSlot, // ودلوقتي السطر ده هيشتغل صح وموش هيقول Not defined
+      capacityPerSlot, 
       price
     });
 

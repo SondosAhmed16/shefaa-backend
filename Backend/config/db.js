@@ -6,7 +6,7 @@ const connectDB = async () => {
   try {
     mongoose.set("strictQuery", false);
 
-    const conn = await mongoose.connect(process.env.MONGO_URI); // خلاص، من غير options
+    const conn = await mongoose.connect(process.env.MONGO_URI); 
 
     logger.info(`📌 MongoDB Connected: ${conn.connection.host}`);
   } catch (error) {
