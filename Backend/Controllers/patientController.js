@@ -34,7 +34,6 @@ exports.updateProfile = async (req, res) => {
   }
 };
 
-// بقية الدوال (getAppointments, uploadAttachment, getMedicalHistory) تبقى كما هي
 exports.getAppointments = async (req, res) => {
   try {
     const patient = await getPatientByUserId(req.user._id);
@@ -57,20 +56,19 @@ exports.uploadAttachment = async (req, res) => {
     
     const patient = await getPatientByUserId(req.user._id);
     
-    // تعديل الـ record ليناسب الـ Schema بتاعك (attachments عبارة عن array of objects)
     const record = await MedicalRecord.create({
       patientId: patient._id,
-      doctorId: req.body.doctorId, // الموديل بيطلبه كـ required
-      diagnosis: 'Self-uploaded attachment', // مطلوب في الموديل
+      doctorId: req.body.doctorId || null, 
+      diagnosis: req.body.diagnosis || 'Self-uploaded attachment',
       attachments: [{
         fileName: req.file.originalname,
-        fileUrl: `/uploads/${req.file.filename}`
+        fileUrl: req.file.path // رابط كلوديناري
       }],
       visitDate: new Date(),
       notes: req.body.notes || 'Uploaded by patient'
     });
 
-    res.json({ message: 'File uploaded successfully', record });
+    res.json({ message: 'File uploaded successfully to Cloudinary', fileUrl: req.file.path, record });
   } catch (err) {
     res.status(500).json({ message: err.message });
   }

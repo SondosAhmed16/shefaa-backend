@@ -1,34 +1,28 @@
 const multer = require("multer");
-const path = require("path");
-const fs = require("fs");
+const { CloudinaryStorage } = require("multer-storage-cloudinary");
+const cloudinary = require("cloudinary").v2;
 
-const storage = multer.diskStorage({
-  destination: (req, file, cb) => {
-    let folder = "uploads/";
-    if (file.fieldname === "prescription") folder += "prescriptions/";
-    else if (file.fieldname === "scan") folder += "scans/";
-    else folder += "labResults/";
-    cb(null, folder);
-  },
-  filename: (req, file, cb) => {
-    cb(null, Date.now() + "-" + file.originalname);
+// 1. إعدادات Cloudinary مباشرة جوه الملف
+cloudinary.config({
+  cloud_name: process.env.CLOUDINARY_CLOUD_NAME,
+  api_key: process.env.CLOUDINARY_API_KEY,
+  api_secret: process.env.CLOUDINARY_API_SECRET,
+});
+
+// 2. إعداد المخزن (Storage)
+const storage = new CloudinaryStorage({
+  cloudinary: cloudinary,
+  params: {
+    folder: "shefaa_uploads", // اسم الفولدر اللي هيشيل كل حاجة
+    resource_type: "auto",    // عشان يقبل PDF وصور
+    allowed_formats: ["jpg", "jpeg", "png", "pdf"],
   },
 });
 
-const upload = multer({
-  storage,
-  limits: { fileSize: 10 * 1024 * 1024 }, // 10MB
-  fileFilter: (req, file, cb) => {
-    const allowed = [".jpg", ".jpeg", ".png", ".pdf"];
-    if (!allowed.includes(path.extname(file.originalname).toLowerCase())) {
-      return cb(new Error("Only images and PDFs are allowed"));
-    }
-    cb(null, true);
-  },
+// 3. إنشاء الـ Middleware
+const upload = multer({ 
+  storage: storage,
+  limits: { fileSize: 10 * 1024 * 1024 } // حد أقصى 10 ميجا للملف
 });
 
-const deleteFile = (filePath) => {
-  if (fs.existsSync(filePath)) fs.unlinkSync(filePath);
-};
-
-module.exports = { upload, deleteFile };
+module.exports = { upload, cloudinary };

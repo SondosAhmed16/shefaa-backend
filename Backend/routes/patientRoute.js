@@ -8,8 +8,7 @@ const patientController = require('../Controllers/patientController');
 const { auth } = require('../middleware/auth');
 const { authorizeRoles } = require('../middleware/role');
 const { runValidation } = require('../middleware/validate');
-const { upload } = require('../middleware/upload');
-
+const { upload } = require('../middleware/upload'); // بينادي على النسخة الجديدة
 // عرض البروفايل
 router.get('/profile', auth, authorizeRoles('patient'), patientController.getProfile);
 
@@ -21,7 +20,6 @@ router.get('/appointments', auth, authorizeRoles('patient'), patientController.g
 
 // رفع ملفات (أشعة/تحاليل) - نستخدم upload.single
 router.post('/upload-scan', auth, authorizeRoles('patient'), upload.single("scan"), patientController.uploadAttachment);
-
 // التاريخ المرضي
 router.get('/medical-history', auth, authorizeRoles('patient'), patientController.getMedicalHistory);
 
