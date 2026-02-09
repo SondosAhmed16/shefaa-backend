@@ -55,7 +55,7 @@ router.post(
   runValidation,
   authController.login
 );
-// Forgot password 
+// Forgot password (إرسال الكود)
 router.post(
   "/forgot-password",
   [
@@ -65,11 +65,23 @@ router.post(
   authController.forgotPassword
 );
 
-// Reset password
+// Verify Reset Code 
+router.post(
+  "/verify-reset-code",
+  [
+    body("identity").notEmpty().withMessage("Identity is required"),
+    body("code").isLength({ min: 4, max: 4 }).withMessage("Verification code must be 4 digits"),
+  ],
+  runValidation,
+  authController.verifyResetCode
+);
+
+// Reset password 
 router.post(
   "/reset-password",
   [
-    body("token").notEmpty().withMessage("Token is required"),
+    body("identity").notEmpty().withMessage("Identity is required"),
+    body("code").notEmpty().withMessage("Verification code is required"),
     body("newPassword")
       .isLength({ min: 6 })
       .withMessage("Password must be at least 6 characters"),

@@ -15,8 +15,7 @@ const {
   generateRefreshToken,
 } = require("../utils/tokens");
 
-const { sendResetPasswordEmail } = require("../utils/sendEmail");
-
+const { sendVerificationEmail } = require("../utils/sendEmail");
 
 
 // Register 
@@ -160,62 +159,80 @@ exports.refreshToken = async (req, res) => {
 // Forgot Password 
 exports.forgotPassword = async (req, res) => {
   try {
-    const { identity } = req.body;
-
-    let user = await User.findOne({ email: identity });
-
-    if (!user) {
-      const patient = await Patient.findOne({ phoneNumber: identity });
-      if (patient) {
-        user = await User.findById(patient.userId);
-      }
-    }
-
+    const { email } = req.body;
+    const user = await User.findOne({ email });
     if (!user) return res.status(404).json({ message: "User not found" });
 
-    const resetToken = crypto.randomBytes(32).toString("hex");
-    const tokenHash = crypto.createHash("sha256").update(resetToken).digest("hex");
+    // توليد كود 4 أرقام
+    const verificationCode = Math.floor(1000 + Math.random() * 9000).toString();
+    const hashedCode = crypto.createHash("sha256").update(verificationCode).digest("hex");
 
+    // حذف أي أكواد قديمة للمستخدم ده عشان ميبقاش فيه زحمة
+    await PasswordReset.deleteMany({ user: user._id });
+
+    // إنشاء سجل جديد في موديل PasswordReset
     await PasswordReset.create({
       user: user._id,
-      tokenHash,
-      expiresAt: new Date(Date.now() + 15 * 60 * 1000),
+      tokenHash: hashedCode,
+      expiresAt: Date.now() + 10 * 60 * 1000 // 10 دقائق
     });
 
-    const resetLink = `${process.env.FRONTEND_URL}/reset-password/${resetToken}`;
-
-    if (user.email) {
-      await sendResetPasswordEmail(user.email, resetLink);
-      res.json({ message: "Password reset link sent to your email" });
-    } else {
-      res.json({ message: "Reset link generated", resetLink }); // للتسهيل لو مفيش SMTP
-    }
+    await sendVerificationEmail(user.email, verificationCode); //
+    res.status(200).json({ message: "Verification code sent to your email" });
   } catch (err) {
     res.status(500).json({ message: err.message });
   }
 };
 
-//Reset password
+// verify reset code
+exports.verifyResetCode = async (req, res) => {
+  try {
+    const { email, code } = req.body;
+    const user = await User.findOne({ email });
+    if (!user) return res.status(400).json({ message: "Invalid request" });
+
+    const hashedCode = crypto.createHash("sha256").update(code).digest("hex");
+
+    // البحث في موديل PasswordReset
+    const resetEntry = await PasswordReset.findOne({
+      user: user._id,
+      tokenHash: hashedCode,
+      expiresAt: { $gt: Date.now() }
+    });
+
+    if (!resetEntry) return res.status(400).json({ message: "Invalid or expired code" });
+
+    res.status(200).json({ message: "Code verified successfully" });
+  } catch (err) {
+    res.status(500).json({ message: err.message });
+  }
+};
+
+// Reset password
 exports.resetPassword = async (req, res) => {
   try {
-    const { token, newPassword } = req.body;
+    const { email, code, newPassword } = req.body;
+    const user = await User.findOne({ email });
+    if (!user) return res.status(400).json({ message: "Invalid request" });
 
-    const tokenHash = crypto
-      .createHash("sha256")
-      .update(token)
-      .digest("hex");
+    const hashedCode = crypto.createHash("sha256").update(code).digest("hex");
 
-    const resetDoc = await PasswordReset.findOne({ tokenHash });
-    if (!resetDoc || resetDoc.expiresAt < new Date())
-      return res.status(400).json({ message: "Invalid or expired token" });
+    const resetEntry = await PasswordReset.findOne({
+      user: user._id,
+      tokenHash: hashedCode,
+      expiresAt: { $gt: Date.now() }
+    });
 
-    const user = await User.findById(resetDoc.user);
-    user.password = await bcrypt.hash(newPassword, 10);
+    if (!resetEntry) return res.status(400).json({ message: "Invalid or expired code" });
+
+    // تحديث باسورد المستخدم
+    user.password = newPassword;
     await user.save();
 
-    await PasswordReset.deleteOne({ _id: resetDoc._id });
+    // حذف الكود بعد النجاح عشان ميتستخدمش تاني
+    await PasswordReset.deleteOne({ _id: resetEntry._id });
 
-    res.json({ message: "Password reset successfully" });
+    res.status(200).json({ message: "Password reset successful" });
   } catch (err) {
     res.status(500).json({ message: err.message });
   }
