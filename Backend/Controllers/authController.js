@@ -205,9 +205,10 @@ exports.verifyResetCode = async (req, res) => {
 };
 
 // Reset password
+
 exports.resetPassword = async (req, res) => {
   try {
-const { identity, code, newPassword } = req.body; 
+    const { identity, code, newPassword } = req.body; 
     const user = await User.findOne({ email: identity });
     if (!user) return res.status(400).json({ message: "Invalid request" });
 
@@ -221,9 +222,13 @@ const { identity, code, newPassword } = req.body;
 
     if (!resetEntry) return res.status(400).json({ message: "Invalid or expired code" });
 
-    user.password = newPassword;
+    // --- التعديل هنا: تشفير الباسورد الجديد قبل الحفظ ---
+    const salt = await bcrypt.genSalt(10);
+    user.password = await bcrypt.hash(newPassword, salt);
+    
     await user.save();
 
+    // حذف الكود بعد النجاح
     await PasswordReset.deleteOne({ _id: resetEntry._id });
 
     res.status(200).json({ message: "Password reset successful" });
