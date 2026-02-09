@@ -16,41 +16,31 @@ const patientSchema = new mongoose.Schema(
     },
     address: {
       type: String,
-      required: true,
-    },
-    // الحقول الجديدة (الطول والوزن)
-    height: {
-      type: Number,
-      min: 30, // سم
-      max: 250,
-      default: 0
-    },
-    weight: {
-      type: Number,
-      min: 2, // كجم
-      max: 500,
-      default: 0
+      default: "", 
     },
     age: {
       type: Number,
-      required: true,
-      min: 0,
+      default: 1, 
+      min: 1,
       max: 120,
     },
     gender: {
       type: String,
-      enum: ["male", "female", "other"],
-      required: true,
+      enum: ["male", "female", ""],
+      default: "", 
     },
+    height: { type: Number, default: 0 },
+    weight: { type: Number, default: 0 },
     bloodType: {
       type: String,
       enum: ["A+", "A-", "B+", "B-", "AB+", "AB-", "O+", "O-", ""],
       default: "",
     },
-    allergies: {
-      type: [String],
-      default: [],
-    },
+    allergies: { type: String, default: "None" },
+    chronicConditions: {
+      type: String, 
+      default: "None", 
+    }
   },
   { timestamps: true }
 );

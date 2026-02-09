@@ -42,14 +42,7 @@ exports.register = async (req, res) => {
     if (user.role === 'patient') {
       await Patient.create({
         userId: user._id,
-        phoneNumber: phoneNumber || "N/A",
-        address: address || "N/A",
-        age: age || 0,
-        gender: gender || "male",
-        height: req.body.height || 0,
-        weight: req.body.weight || 0,
-        bloodType: req.body.bloodType || "",
-        allergies: req.body.allergies || []
+        phoneNumber: phoneNumber,
       });
     } else if (user.role === 'doctor') {
       const pdfUrl = req.file ? req.file.path : "";
@@ -111,9 +104,9 @@ exports.register = async (req, res) => {
 // Login 
 exports.login = async (req, res) => {
   try {
-    const { identity, password } = req.body; 
+    const { identity, password } = req.body;
 
-    
+
     let user = await User.findOne({ email: identity });
 
     if (!user) {

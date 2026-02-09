@@ -18,15 +18,23 @@ exports.getProfile = async (req, res) => {
 
 exports.updateProfile = async (req, res) => {
   try {
-    const { address, phoneNumber, age, gender, bloodType, allergies, height, weight } = req.body;
+    const { 
+      address, phoneNumber, age, gender, 
+      bloodType, allergies, height, weight,
+      chronicConditions 
+    } = req.body;
     
     const patient = await Patient.findOneAndUpdate(
       { userId: req.user._id },
-      { address, phoneNumber, age, gender, bloodType, allergies, height, weight },
+      { 
+        address, phoneNumber, age, gender, 
+        bloodType, allergies, height, weight,
+        chronicConditions 
+      },
       { new: true, runValidators: true }
     );
 
-    if (!patient) return res.status(404).json({ message: 'Patient not found' });
+    if (!patient) return res.status(404).json({ message: 'Patient profile not found' });
     res.json({ message: 'Profile updated successfully', patient });
   } catch (err) {
     res.status(500).json({ message: err.message });
