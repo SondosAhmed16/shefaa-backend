@@ -159,25 +159,22 @@ exports.refreshToken = async (req, res) => {
 // Forgot Password 
 exports.forgotPassword = async (req, res) => {
   try {
-    const { email } = req.body;
-    const user = await User.findOne({ email });
+    const { identity } = req.body;
+    const user = await User.findOne({ email: identity });
     if (!user) return res.status(404).json({ message: "User not found" });
 
-    // توليد كود 4 أرقام
     const verificationCode = Math.floor(1000 + Math.random() * 9000).toString();
     const hashedCode = crypto.createHash("sha256").update(verificationCode).digest("hex");
 
-    // حذف أي أكواد قديمة للمستخدم ده عشان ميبقاش فيه زحمة
     await PasswordReset.deleteMany({ user: user._id });
 
-    // إنشاء سجل جديد في موديل PasswordReset
     await PasswordReset.create({
       user: user._id,
       tokenHash: hashedCode,
-      expiresAt: Date.now() + 10 * 60 * 1000 // 10 دقائق
+      expiresAt: Date.now() + 10 * 60 * 1000
     });
 
-    await sendVerificationEmail(user.email, verificationCode); //
+    await sendVerificationEmail(user.email, verificationCode);
     res.status(200).json({ message: "Verification code sent to your email" });
   } catch (err) {
     res.status(500).json({ message: err.message });
@@ -187,13 +184,12 @@ exports.forgotPassword = async (req, res) => {
 // verify reset code
 exports.verifyResetCode = async (req, res) => {
   try {
-    const { email, code } = req.body;
-    const user = await User.findOne({ email });
+    const { identity, code } = req.body;
+    const user = await User.findOne({ email: identity });
     if (!user) return res.status(400).json({ message: "Invalid request" });
 
     const hashedCode = crypto.createHash("sha256").update(code).digest("hex");
 
-    // البحث في موديل PasswordReset
     const resetEntry = await PasswordReset.findOne({
       user: user._id,
       tokenHash: hashedCode,
@@ -211,8 +207,8 @@ exports.verifyResetCode = async (req, res) => {
 // Reset password
 exports.resetPassword = async (req, res) => {
   try {
-    const { email, code, newPassword } = req.body;
-    const user = await User.findOne({ email });
+const { identity, code, newPassword } = req.body; 
+    const user = await User.findOne({ email: identity });
     if (!user) return res.status(400).json({ message: "Invalid request" });
 
     const hashedCode = crypto.createHash("sha256").update(code).digest("hex");
@@ -225,11 +221,9 @@ exports.resetPassword = async (req, res) => {
 
     if (!resetEntry) return res.status(400).json({ message: "Invalid or expired code" });
 
-    // تحديث باسورد المستخدم
     user.password = newPassword;
     await user.save();
 
-    // حذف الكود بعد النجاح عشان ميتستخدمش تاني
     await PasswordReset.deleteOne({ _id: resetEntry._id });
 
     res.status(200).json({ message: "Password reset successful" });
