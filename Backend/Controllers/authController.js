@@ -22,7 +22,7 @@ const { sendVerificationEmail } = require("../utils/sendEmail");
 exports.register = async (req, res) => {
 try {
     const { 
-      name, username, email, password, role, 
+      name, username, email, password, role, phoneNumber,
       commercialRegisterNumber, 
       facilityType, medicalDirectorName, directorProfessionalId, 
       addresses 
