@@ -3,7 +3,7 @@ const Appointment = require('../Models/Appointment');
 const MedicalRecord = require('../Models/MedicalRecord');
 
 const getPatientByUserId = async (userId) => {
-    return await Patient.findOne({ userId: userId });
+  return await Patient.findOne({ userId: userId });
 };
 
 exports.getProfile = async (req, res) => {
@@ -18,24 +18,40 @@ exports.getProfile = async (req, res) => {
 
 exports.updateProfile = async (req, res) => {
   try {
-    const { 
-      address, phoneNumber, age, gender, 
+    const {
+      address, phoneNumber, age, gender,
       bloodType, allergies, height, weight,
-      chronicConditions 
+      chronicConditions
     } = req.body;
-    
+
+    if (allergies && !Array.isArray(allergies)) {
+      return res.status(400).json({
+        message: "Allergies must be a list of selected items."
+      });
+    }
+
+    if (chronicConditions && !Array.isArray(chronicConditions)) {
+      return res.status(400).json({
+        message: "Chronic conditions must be a list of selected items."
+      });
+    }
+
     const patient = await Patient.findOneAndUpdate(
       { userId: req.user._id },
-      { 
-        address, phoneNumber, age, gender, 
+      {
+        address, phoneNumber, age, gender,
         bloodType, allergies, height, weight,
-        chronicConditions 
+        chronicConditions
       },
       { new: true, runValidators: true }
     );
 
     if (!patient) return res.status(404).json({ message: 'Patient profile not found' });
-    res.json({ message: 'Profile updated successfully', patient });
+
+    res.json({
+      message: 'Profile updated successfully',
+      patient
+    });
   } catch (err) {
     res.status(500).json({ message: err.message });
   }
@@ -46,11 +62,10 @@ exports.getAppointments = async (req, res) => {
     const patient = await getPatientByUserId(req.user._id);
     if (!patient) return res.status(404).json({ message: 'Patient not found' });
 
-    // البحث بـ patient._id مش req.user._id
     const appointments = await Appointment.find({ patient: patient._id })
       .populate('doctor clinic')
       .sort({ date: -1 });
-    
+
     res.json(appointments);
   } catch (err) {
     res.status(500).json({ message: err.message });
@@ -60,16 +75,16 @@ exports.getAppointments = async (req, res) => {
 exports.uploadAttachment = async (req, res) => {
   try {
     if (!req.file) return res.status(400).json({ message: 'No file uploaded' });
-    
+
     const patient = await getPatientByUserId(req.user._id);
-    
+
     const record = await MedicalRecord.create({
       patientId: patient._id,
-      doctorId: req.body.doctorId || null, 
+      doctorId: req.body.doctorId || null,
       diagnosis: req.body.diagnosis || 'Self-uploaded attachment',
       attachments: [{
         fileName: req.file.originalname,
-        fileUrl: req.file.path // رابط كلوديناري
+        fileUrl: req.file.path 
       }],
       visitDate: new Date(),
       notes: req.body.notes || 'Uploaded by patient'
@@ -87,8 +102,8 @@ exports.getMedicalHistory = async (req, res) => {
     if (!patient) return res.status(404).json({ message: 'Patient not found' });
 
     const records = await MedicalRecord.find({ patientId: patient._id })
-      .populate('doctorId', 'name'); 
-    
+      .populate('doctorId', 'name');
+
     res.json(records);
   } catch (err) {
     res.status(500).json({ message: err.message });

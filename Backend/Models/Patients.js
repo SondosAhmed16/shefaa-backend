@@ -6,7 +6,7 @@ const patientSchema = new mongoose.Schema(
       type: mongoose.Schema.Types.ObjectId,
       ref: "User",
       required: true,
-      unique: true, 
+      unique: true,
     },
     phoneNumber: {
       type: String,
@@ -16,18 +16,18 @@ const patientSchema = new mongoose.Schema(
     },
     address: {
       type: String,
-      default: "", 
+      default: "",
     },
     age: {
       type: Number,
-      default: 1, 
+      default: 1,
       min: 1,
       max: 120,
     },
     gender: {
       type: String,
       enum: ["male", "female", ""],
-      default: "", 
+      default: "",
     },
     height: { type: Number, default: 0 },
     weight: { type: Number, default: 0 },
@@ -36,10 +36,9 @@ const patientSchema = new mongoose.Schema(
       enum: ["A+", "A-", "B+", "B-", "AB+", "AB-", "O+", "O-", ""],
       default: "",
     },
-    allergies: { type: String, default: "None" },
+    allergies: { type: [String], default: "None" },
     chronicConditions: {
-      type: String, 
-      default: "None", 
+      type: [String], default: "None",
     }
   },
   { timestamps: true }
