@@ -75,7 +75,6 @@ exports.register = async (req, res) => {
       });
     }
 
-    // 4. توليد التوكن والرد مع تاريخ الانتهاء الإلزامي
     const accessToken = generateAccessToken(user);
     const refreshToken = generateRefreshToken(user);
 
@@ -93,9 +92,9 @@ exports.register = async (req, res) => {
     });
 
   } catch (err) {
-    console.log(err); // هيطبع الغلط بالتفصيل في الـ Terminal عندك
+    console.log(err);
     res.status(500).json({
-      message: err.message, // هيظهر لك سبب المشكلة الحقيقي في Postman
+      message: err.message,
       error: err
     });
   }
@@ -109,16 +108,17 @@ exports.login = async (req, res) => {
     let user = await User.findOne({ email: identity });
 
     if (!user) {
-      const patient = await Patient.findOne({ phoneNumber: identity });
-      if (patient) {
-        user = await User.findById(patient.userId);
-      }
+      return res.status(401).json({
+        message: "Email or phone number not found. Please check your identity."
+      });
     }
 
-    if (!user) return res.status(401).json({ message: "Invalid credentials" });
-
     const isMatch = await bcrypt.compare(password, user.password);
-    if (!isMatch) return res.status(401).json({ message: "Invalid credentials" });
+    if (!isMatch) {
+      return res.status(401).json({
+        message: "Incorrect password. Please try again."
+      });
+    }
 
     const accessToken = generateAccessToken(user);
     const refreshToken = generateRefreshToken(user);
@@ -196,8 +196,13 @@ exports.verifyResetCode = async (req, res) => {
       expiresAt: { $gt: Date.now() }
     });
 
-    if (!resetEntry) return res.status(400).json({ message: "Invalid or expired code" });
+if (!resetEntry) {
+      return res.status(400).json({ message: "The code you entered is incorrect." });
+    }
 
+    if (resetEntry.expiresAt < Date.now()) {
+      return res.status(400).json({ message: "This code has expired. Please request a new one." });
+    }
     res.status(200).json({ message: "Code verified successfully" });
   } catch (err) {
     res.status(500).json({ message: err.message });
@@ -208,7 +213,7 @@ exports.verifyResetCode = async (req, res) => {
 
 exports.resetPassword = async (req, res) => {
   try {
-    const { identity, code, newPassword } = req.body; 
+    const { identity, code, newPassword } = req.body;
     const user = await User.findOne({ email: identity });
     if (!user) return res.status(400).json({ message: "Invalid request" });
 
@@ -225,7 +230,7 @@ exports.resetPassword = async (req, res) => {
     // --- التعديل هنا: تشفير الباسورد الجديد قبل الحفظ ---
     const salt = await bcrypt.genSalt(10);
     user.password = await bcrypt.hash(newPassword, salt);
-    
+
     await user.save();
 
     // حذف الكود بعد النجاح
