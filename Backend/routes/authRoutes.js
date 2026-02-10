@@ -20,10 +20,10 @@ cloudinary.config({
 const storage = new CloudinaryStorage({
   cloudinary: cloudinary,
   params: {
-    folder: 'doctor_memberships',
-    resource_type: 'raw', // ده اللي بيخلي Cloudinary يقبل الـ PDF
-    format: async (req, file) => 'pdf', // إجبار التنسيق يكون pdf
-    public_id: (req, file) => 'membership-' + Date.now(),
+    folder: 'shefaa_documents', // تغيير الاسم ليكون عاماً
+    resource_type: 'raw',
+    format: async (req, file) => 'pdf',
+    public_id: (req, file) => file.fieldname + '-' + Date.now(), // استخدام اسم الحقل في التسمية
   },
 });
 
@@ -33,7 +33,10 @@ const upload = multer({ storage: storage });
 
 router.post(
   "/register",
-  upload.single('membership'), 
+  upload.fields([
+    { name: 'membership', maxCount: 1 },
+    { name: 'medicalLicence', maxCount: 1 }
+  ]),
   [
     body("name").notEmpty().withMessage("Name is required"),
     body("username").notEmpty().withMessage("Username is required"),
@@ -41,6 +44,12 @@ router.post(
     body("password").isLength({ min: 6 }).withMessage("Password must be at least 6 characters"),
     body("role").isIn(['patient', 'doctor', 'pharmacy', 'lab']).withMessage("Invalid role"),
     body("phoneNumber").notEmpty().withMessage("Phone number is required"),
+    body("commercialRegisterNumber").custom((value, { req }) => {
+      if (['pharmacy', 'lab'].includes(req.body.role) && !value) {
+        throw new Error("Commercial Register Number is required for this role");
+      }
+      return true;
+    }),
   ],
   runValidation,
   authController.register
