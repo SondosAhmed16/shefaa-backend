@@ -64,7 +64,7 @@ router.post(
   runValidation,
   authController.login
 );
-// Forgot password (إرسال الكود)
+// Forgot password 
 router.post(
   "/forgot-password",
   [

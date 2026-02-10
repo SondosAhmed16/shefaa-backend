@@ -110,12 +110,16 @@ exports.login = async (req, res) => {
   try {
     const { identity, password } = req.body;
 
-
-    let user = await User.findOne({ email: identity });
+    const user = await User.findOne({
+      $or: [
+        { email: identity.toLowerCase() },
+        { phoneNumber: identity }
+      ]
+    });
 
     if (!user) {
       return res.status(401).json({
-        message: "Email or phone number not found. Please check your identity."
+        message: "This email or phone number is not registered."
       });
     }
 
@@ -135,12 +139,16 @@ exports.login = async (req, res) => {
       expiresAt: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000),
     });
 
-    res.json({ accessToken, refreshToken });
+    res.json({ 
+      accessToken, 
+      refreshToken,
+      user: { id: user._id, name: user.name, role: user.role } 
+    });
+
   } catch (err) {
     res.status(500).json({ message: err.message });
   }
 };
-
 
 //Refresh token
 exports.refreshToken = async (req, res) => {
