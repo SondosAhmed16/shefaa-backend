@@ -17,9 +17,16 @@ exports.bookAppointment = async (req, res) => {
   try {
     const { clinicId, date, startTime, endTime, paymentOption, price, isFollowUp } = req.body;
 
+    // --- التعديل الجوهري هنا ---
+    // بنجيب بروفايل المريض عشان ناخد الـ _id بتاعه من جدول Patients
+    const patientProfile = await Patient.findOne({ userId: req.user._id });
+    if (!patientProfile) {
+      return res.status(404).json({ message: 'Patient profile not found. Please complete your profile first.' });
+    }
+    // -------------------------
+
     const clinic = await Clinic.findById(clinicId);
     if (!clinic) return res.status(404).json({ message: 'Clinic not found' });
-
 
     const appointmentCount = await Appointment.countDocuments({
       clinic: clinicId,
@@ -35,7 +42,7 @@ exports.bookAppointment = async (req, res) => {
     }
 
     const appointment = new Appointment({
-      patient: req.user._id, 
+      patient: patientProfile._id, // استبدلنا req.user._id بـ patientProfile._id ✅
       doctor: clinic.doctorId,
       clinic: clinicId,
       date: new Date(date),
@@ -65,7 +72,6 @@ exports.bookAppointment = async (req, res) => {
     res.status(500).json({ message: err.message });
   }
 };
-
 exports.getAppointments = async (req, res) => {
   try {
     let filter = {};
