@@ -14,7 +14,7 @@ router.get('/profile', auth, authorizeRoles('patient'), patientController.getPro
 router.put('/profile', auth, authorizeRoles('patient'), runValidation, patientController.updateProfile);
 
 
-router.get('/appointments', auth, authorizeRoles('patient'), patientController.getAppointments);
+//router.get('/appointments', auth, authorizeRoles('patient'), patientController.getAppointments);
 
 
 router.post('/upload-scan', auth, authorizeRoles('patient'), upload.single("scan"), patientController.uploadAttachment);

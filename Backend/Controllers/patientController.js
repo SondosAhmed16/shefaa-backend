@@ -57,7 +57,7 @@ exports.updateProfile = async (req, res) => {
   }
 };
 
-exports.getAppointments = async (req, res) => {
+/*exports.getAppointments = async (req, res) => {
   try {
     const patient = await getPatientByUserId(req.user._id);
     if (!patient) return res.status(404).json({ message: 'Patient not found' });
@@ -70,7 +70,7 @@ exports.getAppointments = async (req, res) => {
   } catch (err) {
     res.status(500).json({ message: err.message });
   }
-};
+};*/
 
 exports.uploadAttachment = async (req, res) => {
   try {

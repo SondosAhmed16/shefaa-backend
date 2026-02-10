@@ -38,6 +38,7 @@ exports.updateDoctorProfile = async (req, res) => {
   }
 };
 
+/*
 // 3. Add a new Clinic
 exports.addClinic = async (req, res) => {
   try {
@@ -70,7 +71,9 @@ exports.addClinic = async (req, res) => {
   } catch (err) {
     res.status(500).json({ message: err.message });
   }
-};
+};*/
+
+/*
 
 // 4. Get all Appointments for the logged-in Doctor
 exports.getAppointments = async (req, res) => {
@@ -87,7 +90,7 @@ exports.getAppointments = async (req, res) => {
   } catch (err) {
     res.status(500).json({ message: err.message });
   }
-};
+};*/
 
 // 5. Create a new Medical Record for a patient
 exports.addMedicalRecord = async (req, res) => {

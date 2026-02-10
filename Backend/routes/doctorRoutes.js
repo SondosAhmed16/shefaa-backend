@@ -12,10 +12,12 @@ router.get('/profile', auth, authorizeRoles('doctor'), doctorController.getDocto
 router.put('/profile', auth, authorizeRoles('doctor'), runValidation, doctorController.updateDoctorProfile);
 
 // 2. Clinic Management
-router.post('/add-clinic', auth, authorizeRoles('doctor'), runValidation, doctorController.addClinic);
+
+//router.post('/add-clinic', auth, authorizeRoles('doctor'), runValidation, doctorController.addClinic);
 
 // 3. Appointments & Medical Records
-router.get('/appointments', auth, authorizeRoles('doctor'), doctorController.getAppointments);
+
+//router.get('/appointments', auth, authorizeRoles('doctor'), doctorController.getAppointments);
 router.post('/add-medical-record', auth, authorizeRoles('doctor'), runValidation, doctorController.addMedicalRecord);
 
 module.exports = router;
