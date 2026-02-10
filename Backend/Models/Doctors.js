@@ -10,25 +10,25 @@ const doctorSchema = new mongoose.Schema(
 
     specialization: {
       type: String,
-      required: true,
+      required: false,
       trim: true,
     },
 
     age: {
       type: Number,
-      required: true,
+      required: false,
       min: 24,
       max: 100,
     },
 
     yearsOfExperience: {
       type: Number,
-      required: true,
+      required: false,
       min: 0,
     },
 
     image: {
-      type: String, // URL
+      type: String, 
       default: "",
     },
 
@@ -42,7 +42,7 @@ const doctorSchema = new mongoose.Schema(
     },
 
     degrees: {
-      type: [String], // Optional list
+      type: [String], 
       default: [],
     },
 
@@ -61,7 +61,7 @@ const doctorSchema = new mongoose.Schema(
     paymentOption: {
       type: String,
       enum: ["in_clinic", "pre_payment", "both"],
-      required: true,
+      required: false,
       default: "in_clinic",
     },
 

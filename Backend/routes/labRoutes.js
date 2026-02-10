@@ -2,8 +2,8 @@ const express = require('express');
 const router = express.Router();
 const labController = require('../Controllers/labController');
 const { auth } = require('../middleware/auth'); 
-const { runValidation } = require('../middleware/validate'); // استدعاء الـ Validation
-const { body } = require('express-validator'); // عشان نحدد الشروط
+const { runValidation } = require('../middleware/validate'); 
+const { body } = require('express-validator'); 
 const multer = require('multer');
 const { CloudinaryStorage } = require('multer-storage-cloudinary');
 const cloudinary = require('cloudinary').v2;
@@ -28,7 +28,7 @@ router.post(
     body("testName").notEmpty().withMessage("Test name is required"),
     body("price").isNumeric().withMessage("Price must be a number")
   ],
-  runValidation, // التأكد من صحة الشروط
+  runValidation, 
   labController.addTest
 );
 

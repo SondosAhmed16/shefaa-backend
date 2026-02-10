@@ -9,10 +9,11 @@ const errorHandler = require("./middleware/errorHandler.js");
 // --- [تعديل هنا] Import Routes ---
 const authRoutes = require("./routes/authRoutes.js");
 const patientRoutes = require("./routes/patientRoute.js"); 
-const doctorRoutes = require("./routes/doctorRoutes.js"); // إضافة راوت الدكتور
-const pharmacyRoutes = require("./routes/pharmacyRoutes.js"); // إضافة راوت الصيدلية
+const doctorRoutes = require("./routes/doctorRoutes.js"); 
+const pharmacyRoutes = require("./routes/pharmacyRoutes.js"); 
 const labRoutes = require("./routes/labRoutes.js");
 const clinicRoutes = require("./routes/clinicRoutes.js");
+const appointmentRoutes = require('./routes/appointmentRoutes.js');
 const app = express();
 
 // 1. Security Middlewares
@@ -40,6 +41,7 @@ app.use("/api/doctor", doctorRoutes);
 app.use("/api/pharmacy", pharmacyRoutes); 
 app.use("/api/lab", labRoutes);
 app.use("/api/clinic", clinicRoutes);
+app.use('/api/appointments', appointmentRoutes);
 // 5. Global Error Handler
 app.use(errorHandler);
 
