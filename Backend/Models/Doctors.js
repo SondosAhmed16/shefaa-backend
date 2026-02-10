@@ -10,7 +10,7 @@ const doctorSchema = new mongoose.Schema(
 
     specialization: {
       type: String,
-      required: false,
+      required: true,
       trim: true,
     },
 

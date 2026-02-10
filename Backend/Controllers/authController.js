@@ -54,12 +54,8 @@ exports.register = async (req, res) => {
       await Doctor.create({
         userId: user._id,
         specialization: req.body.specialization || "General",
-        age: req.body.age || 30,
-        yearsOfExperience: req.body.yearsOfExperience || 0,
-        paymentOption: req.body.paymentOption || "in_clinic",
         membershipPdf: pdfUrl,
-        about: req.body.about || "",
-        preOnlineConsultation: req.body.preOnlineConsultation || false
+
       });
     }
     else if (user.role === 'pharmacy') {
