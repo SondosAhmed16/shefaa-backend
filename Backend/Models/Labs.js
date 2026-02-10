@@ -1,4 +1,5 @@
 const mongoose = require("mongoose");
+
 const labSchema = new mongoose.Schema(
   {
     userId: {
@@ -7,30 +8,33 @@ const labSchema = new mongoose.Schema(
       required: true,
       unique: true,
     },
-
-    licence: {
-      type: String,
-      required: true,
-      trim: true,
-    },
-
-    registrationNumber: {
-      type: String,
-      required: true,
-      unique: true,
-      trim: true,
-    },
-
     commercialRegisterNumber: {
       type: String,
       required: true,
       unique: true,
-      trim: true,
+      trim: true
+    },
+
+    medicalLicencePdf: {
+      type: String
+    },
+    facilityType: {
+      type: String,
+      enum: ["lab", "radiology center"],
+      required: true
+    },
+    medicalDirectorName: {
+      type: String,
+      required: true
+    },
+    directorProfessionalId: {
+      type: String,
+      required: true
     },
 
     addresses: [
       {
-        addressText: { type: String, required: true, trim: true },
+        addressText: { type: String, required: false, trim: true },
         location: {
           type: {
             type: String,
@@ -38,13 +42,12 @@ const labSchema = new mongoose.Schema(
             default: "Point",
           },
           coordinates: {
-            type: [Number], 
+            type: [Number],
             required: true,
           },
         },
       },
     ],
-
     tests: [
       {
         type: mongoose.Schema.Types.ObjectId,
@@ -55,7 +58,6 @@ const labSchema = new mongoose.Schema(
   { timestamps: true }
 );
 
-
 labSchema.index({ "addresses.location": "2dsphere" });
 
-module.exports= mongoose.model("Lab", labSchema);
+module.exports = mongoose.model("Lab", labSchema);

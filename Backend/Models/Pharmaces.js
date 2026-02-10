@@ -6,32 +6,22 @@ const pharmacySchema = new mongoose.Schema(
       type: mongoose.Schema.Types.ObjectId,
       ref: "User",
       required: true,
-      unique: true, 
-     },
-
-    licence: {
-      type: String,
-      required: true,
-      trim: true,
-    },
-
-    registrationNumber: {
-      type: String,
-      required: true,
       unique: true,
-      trim: true,
     },
 
     commercialRegisterNumber: {
       type: String,
       required: true,
       unique: true,
-      trim: true,
+      trim: true
     },
 
+    medicalLicencePdf: {
+      type: String
+    },
     addresses: [
       {
-        addressText: { type: String, required: true, trim: true },
+        addressText: { type: String, required: false, trim: true },
         location: {
           type: {
             type: String,
@@ -39,7 +29,7 @@ const pharmacySchema = new mongoose.Schema(
             default: "Point",
           },
           coordinates: {
-            type: [Number], 
+            type: [Number],
             required: true,
           },
         },

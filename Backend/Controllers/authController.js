@@ -1,7 +1,7 @@
 const bcrypt = require("bcryptjs");
 const jwt = require("jsonwebtoken");
 const crypto = require("crypto");
-const fs = require('fs'); // ضيفي دي فوق خالص مع الـ imports لو مش موجودة
+const fs = require('fs'); 
 const User = require('../Models/Users');
 const Patient = require('../Models/Patients');
 const Doctor = require('../Models/Doctors');
@@ -20,8 +20,13 @@ const { sendVerificationEmail } = require("../utils/sendEmail");
 
 // Register 
 exports.register = async (req, res) => {
-  try {
-    const { name, username, email, password, role, phoneNumber, address, age, gender } = req.body;
+try {
+    const { 
+      name, username, email, password, role, 
+      commercialRegisterNumber, 
+      facilityType, medicalDirectorName, directorProfessionalId, 
+      addresses 
+    } = req.body;
 
     // 1. Auto hash password
     const salt = await bcrypt.genSalt(10);
@@ -36,7 +41,7 @@ exports.register = async (req, res) => {
       role: role || 'patient',
       isVerified: true
     });
-
+const medicalLicenceUrl = req.file ? req.file.path : "";
     // 3. Create Profile based on role
     if (user.role === 'patient') {
       await Patient.create({
@@ -52,29 +57,30 @@ exports.register = async (req, res) => {
         age: req.body.age || 30,
         yearsOfExperience: req.body.yearsOfExperience || 0,
         paymentOption: req.body.paymentOption || "in_clinic",
-        membershipPdf: pdfUrl, // حفظ المسار
+        membershipPdf: pdfUrl, 
         about: req.body.about || "",
         preOnlineConsultation: req.body.preOnlineConsultation || false
       });
     }
-    else if (user.role === 'pharmacy') {
+else if (user.role === 'pharmacy') {
       await Pharmacy.create({
         userId: user._id,
-        licence: req.body.licence || "N/A",
-        registrationNumber: req.body.registrationNumber || "N/A",
-        commercialRegisterNumber: req.body.commercialRegisterNumber || `COM-${Date.now()}`,
-        addresses: req.body.addresses || []
+        commercialRegisterNumber: commercialRegisterNumber, 
+        medicalLicencePdf: medicalLicenceUrl, 
+        addresses: addresses || []
       });
     }
-    else if (user.role === 'lab') {
+else if (user.role === 'lab') {
       await Lab.create({
         userId: user._id,
-        licence: req.body.licence || "N/A",
-        registrationNumber: req.body.registrationNumber || "N/A",
-        commercialRegisterNumber: req.body.commercialRegisterNumber || `LAB-${Date.now()}`
+        commercialRegisterNumber: commercialRegisterNumber, 
+        medicalLicencePdf: medicalLicenceUrl, 
+        facilityType, 
+        medicalDirectorName, 
+        directorProfessionalId,
+        addresses: addresses || []
       });
     }
-
     const accessToken = generateAccessToken(user);
     const refreshToken = generateRefreshToken(user);
 
