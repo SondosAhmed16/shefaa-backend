@@ -36,8 +36,8 @@ exports.bookAppointment = async (req, res) => {
     });
 
     if (appointmentCount >= clinic.capacityPerSlot) {
-      return res.status(400).json({ 
-        message: 'This time slot is full. Please choose another time.' 
+      return res.status(400).json({
+        message: 'This time slot is full. Please choose another time.'
       });
     }
 
@@ -80,10 +80,10 @@ exports.getAppointments = async (req, res) => {
       const doctorProfile = await Doctor.findOne({ userId: req.user._id });
       if (!doctorProfile) return res.status(404).json({ message: "Doctor profile not found" });
       filter.doctor = doctorProfile._id;
-    } 
+    }
     else if (req.user.role === 'patient') {
       const patientProfile = await Patient.findOne({ userId: req.user._id });
-      
+
       if (!patientProfile) {
         filter.patient = req.user._id;
       } else {
@@ -98,14 +98,17 @@ exports.getAppointments = async (req, res) => {
     const appointments = await Appointment.find(filter)
       .populate({
         path: 'patient',
-        populate: { path: 'userId', select: 'name email' }
+        select: 'userId',
+        populate: { path: 'userId', select: 'name' }
       })
       .populate({
         path: 'doctor',
+        select: 'userId',
         populate: { path: 'userId', select: 'name' }
       })
       .populate('clinic', 'name address city')
-      .sort({ createdAt: -1 }); 
+      .select('date slotStart slotEnd status price paymentOption')
+      .sort({ createdAt: -1 });
 
     res.json(appointments);
   } catch (err) {
@@ -138,7 +141,7 @@ exports.cancelAppointment = async (req, res) => {
 exports.confirmAppointment = async (req, res) => {
   try {
     const { id } = req.params;
-    
+
     const appointment = await Appointment.findByIdAndUpdate(
       id,
       { paymentStatus: 'paid', status: 'confirmed' },
@@ -160,14 +163,14 @@ exports.sendReminders = async () => {
     tomorrow.setDate(tomorrow.getDate() + 1);
 
     const appointments = await Appointment.find({
-      date: { 
-        $gte: new Date().setHours(0,0,0,0), 
-        $lte: tomorrow.setHours(23,59,59,999) 
+      date: {
+        $gte: new Date().setHours(0, 0, 0, 0),
+        $lte: tomorrow.setHours(23, 59, 59, 999)
       },
       status: 'booked'
     }).populate({
-        path: 'patient',
-        populate: { path: 'userId', select: 'email name' }
+      path: 'patient',
+      populate: { path: 'userId', select: 'email name' }
     });
 
     for (const app of appointments) {
