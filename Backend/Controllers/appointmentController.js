@@ -75,26 +75,37 @@ exports.bookAppointment = async (req, res) => {
 exports.getAppointments = async (req, res) => {
   try {
     let filter = {};
-    
+
     if (req.user.role === 'doctor') {
-      filter.doctor = req.user._id;
-    } else {
-      filter.patient = req.user._id;
+      const doctorProfile = await Doctor.findOne({ userId: req.user._id });
+      if (!doctorProfile) return res.status(404).json({ message: "Doctor profile not found" });
+      filter.doctor = doctorProfile._id;
+    } 
+    else if (req.user.role === 'patient') {
+      const patientProfile = await Patient.findOne({ userId: req.user._id });
+      
+      if (!patientProfile) {
+        filter.patient = req.user._id;
+      } else {
+
+        filter.$or = [
+          { patient: patientProfile._id },
+          { patient: req.user._id }
+        ];
+      }
     }
 
     const appointments = await Appointment.find(filter)
       .populate({
-          path: 'doctor',
-          select: 'userId', 
-          populate: { path: 'userId', select: 'name' }
+        path: 'patient',
+        populate: { path: 'userId', select: 'name email' }
       })
       .populate({
-          path: 'patient',
-          select: 'userId phoneNumber',
-          populate: { path: 'userId', select: 'name' }
+        path: 'doctor',
+        populate: { path: 'userId', select: 'name' }
       })
       .populate('clinic', 'name address city')
-      .sort({ date: -1 });
+      .sort({ createdAt: -1 }); 
 
     res.json(appointments);
   } catch (err) {
