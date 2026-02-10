@@ -1,7 +1,7 @@
 const bcrypt = require("bcryptjs");
 const jwt = require("jsonwebtoken");
 const crypto = require("crypto");
-const fs = require('fs'); 
+const fs = require('fs');
 const User = require('../Models/Users');
 const Patient = require('../Models/Patients');
 const Doctor = require('../Models/Doctors');
@@ -20,12 +20,12 @@ const { sendVerificationEmail } = require("../utils/sendEmail");
 
 // Register 
 exports.register = async (req, res) => {
-try {
-    const { 
+  try {
+    const {
       name, username, email, password, role, phoneNumber,
-      commercialRegisterNumber, 
-      facilityType, medicalDirectorName, directorProfessionalId, 
-      addresses 
+      commercialRegisterNumber,
+      facilityType, medicalDirectorName, directorProfessionalId,
+      addresses
     } = req.body;
 
     // 1. Auto hash password
@@ -41,7 +41,7 @@ try {
       role: role || 'patient',
       isVerified: true
     });
-const medicalLicenceUrl = req.file ? req.file.path : "";
+    const medicalLicenceUrl = req.file ? req.file.path : "";
     // 3. Create Profile based on role
     if (user.role === 'patient') {
       await Patient.create({
@@ -57,26 +57,26 @@ const medicalLicenceUrl = req.file ? req.file.path : "";
         age: req.body.age || 30,
         yearsOfExperience: req.body.yearsOfExperience || 0,
         paymentOption: req.body.paymentOption || "in_clinic",
-        membershipPdf: pdfUrl, 
+        membershipPdf: pdfUrl,
         about: req.body.about || "",
         preOnlineConsultation: req.body.preOnlineConsultation || false
       });
     }
-else if (user.role === 'pharmacy') {
+    else if (user.role === 'pharmacy') {
       await Pharmacy.create({
         userId: user._id,
-        commercialRegisterNumber: commercialRegisterNumber, 
-        medicalLicencePdf: medicalLicenceUrl, 
+        commercialRegisterNumber: commercialRegisterNumber,
+        medicalLicencePdf: medicalLicenceUrl,
         addresses: addresses || []
       });
     }
-else if (user.role === 'lab') {
+    else if (user.role === 'lab') {
       await Lab.create({
         userId: user._id,
-        commercialRegisterNumber: commercialRegisterNumber, 
-        medicalLicencePdf: medicalLicenceUrl, 
-        facilityType, 
-        medicalDirectorName, 
+        commercialRegisterNumber: commercialRegisterNumber,
+        medicalLicencePdf: medicalLicenceUrl,
+        facilityType,
+        medicalDirectorName,
         directorProfessionalId,
         addresses: addresses || []
       });
@@ -109,13 +109,17 @@ else if (user.role === 'lab') {
 exports.login = async (req, res) => {
   try {
     const { identity, password } = req.body;
+    let user = null;
 
-    const user = await User.findOne({
-      $or: [
-        { email: identity.toLowerCase() },
-        { phoneNumber: identity }
-      ]
+    user = await User.findOne({
+      email: { $regex: new RegExp(`^${identity}$`, 'i') }
     });
+    if (!user) {
+      const patient = await Patient.findOne({ phoneNumber: identity });
+      if (patient) {
+        user = await User.findById(patient.userId);
+      }
+    }
 
     if (!user) {
       return res.status(401).json({
@@ -139,10 +143,10 @@ exports.login = async (req, res) => {
       expiresAt: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000),
     });
 
-    res.json({ 
-      accessToken, 
+    res.json({
+      accessToken,
       refreshToken,
-      user: { id: user._id, name: user.name, role: user.role } 
+      user: { id: user._id, name: user.name, role: user.role }
     });
 
   } catch (err) {
@@ -210,7 +214,7 @@ exports.verifyResetCode = async (req, res) => {
       expiresAt: { $gt: Date.now() }
     });
 
-if (!resetEntry) {
+    if (!resetEntry) {
       return res.status(400).json({ message: "The code you entered is incorrect." });
     }
 
