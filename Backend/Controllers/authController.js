@@ -49,8 +49,7 @@ exports.register = async (req, res) => {
         phoneNumber: phoneNumber,
       });
     } else if (user.role === 'doctor') {
-      const pdfUrl = req.file ? req.file.path : "";
-
+const pdfUrl = req.files && req.files['membership'] ? req.files['membership'][0].path : "";
       await Doctor.create({
         userId: user._id,
         specialization: req.body.specialization || "General",
