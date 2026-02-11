@@ -14,6 +14,7 @@ const pharmacyRoutes = require("./routes/pharmacyRoutes.js");
 const labRoutes = require("./routes/labRoutes.js");
 const clinicRoutes = require("./routes/clinicRoutes.js");
 const appointmentRoutes = require('./routes/appointmentRoutes.js');
+const reviewRoutes = require('./routes/reviewRoutes.js');
 const app = express();
 
 // 1. Security Middlewares
@@ -42,6 +43,8 @@ app.use("/api/pharmacy", pharmacyRoutes);
 app.use("/api/lab", labRoutes);
 app.use("/api/clinic", clinicRoutes);
 app.use('/api/appointments', appointmentRoutes);
+app.use('/api/reviews', reviewRoutes);
+
 // 5. Global Error Handler
 app.use(errorHandler);
 
