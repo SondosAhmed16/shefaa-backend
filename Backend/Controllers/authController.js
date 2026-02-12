@@ -92,13 +92,14 @@ const pdfUrl = req.files && req.files['membership'] ? req.files['membership'][0]
       user: { id: user._id, name: user.name, role: user.role }
     });
 
-  } catch (err) {
-    console.log(err);
-    res.status(500).json({
-      message: err.message,
-      error: err
-    });
-  }
+} catch (err) {
+    if (err.code === 11000) {
+        return res.status(400).json({
+            message: "Username or Email already exists. Please try another one."
+        });
+    }
+    res.status(500).json({ message: err.message });
+}
 };
 // Login 
 exports.login = async (req, res) => {
