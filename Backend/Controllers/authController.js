@@ -94,8 +94,9 @@ const pdfUrl = req.files && req.files['membership'] ? req.files['membership'][0]
 
 } catch (err) {
     if (err.code === 11000) {
-        return res.status(400).json({
-            message: "Username or Email already exists. Please try another one."
+return res.status(400).json({
+            message: "Duplicate key error",
+            field: err.keyValue 
         });
     }
     res.status(500).json({ message: err.message });
