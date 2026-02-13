@@ -45,27 +45,42 @@ exports.register = async (req, res) => {
     const medicalLicenceUrl = req.file ? req.file.path : "";
     // 3. Create Profile based on role
     if (user.role === 'patient') {
+
       await Patient.create({
         userId: user._id,
       });
     } else if (user.role === 'doctor') {
-      const pdfUrl = req.files && req.files['membership'] ? req.files['membership'][0].path : "";
-      await Doctor.create({
-        userId: user._id,
-        specialization: req.body.specialization || "General",
-        membershipPdf: pdfUrl,
+      try {
+        const pdfUrl = req.files && req.files['membership'] ? req.files['membership'][0].path : "";
+        await Doctor.create({
+          userId: user._id,
+          specialization: req.body.specialization || "General",
+          membershipPdf: pdfUrl,
 
-      });
+        });
+      } catch (error) {
+        await User.findByIdAndDelete(user._id);
+        return res.status(400).json({
+          message: "Doctor profile creation failed, user deleted. Error: " + error.message
+        });
+      }
     }
     else if (user.role === 'pharmacy') {
-      await Pharmacy.create({
-        userId: user._id,
-        commercialRegisterNumber: commercialRegisterNumber,
-        medicalLicencePdf: medicalLicenceUrl,
-        addresses: addresses || []
-      });
+      try {
+        await Pharmacy.create({
+          userId: user._id,
+          commercialRegisterNumber: commercialRegisterNumber,
+          medicalLicencePdf: medicalLicenceUrl,
+          addresses: addresses || []
+        });
+      } catch (error) {
+        await User.findByIdAndDelete(user._id);
+        return res.status(400).json({
+          message: "Pharmacy profile creation failed, user deleted. Error: " + error.message
+        });
+      }
     }
-else if (user.role === 'lab') {
+    else if (user.role === 'lab') {
       try {
         await Lab.create({
           userId: user._id,
@@ -78,8 +93,8 @@ else if (user.role === 'lab') {
         });
       } catch (error) {
         await User.findByIdAndDelete(user._id);
-        return res.status(400).json({ 
-          message: "Lab profile creation failed, user deleted. Error: " + error.message 
+        return res.status(400).json({
+          message: "Lab profile creation failed, user deleted. Error: " + error.message
         });
       }
     }
