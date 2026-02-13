@@ -1,12 +1,13 @@
 require("dotenv").config();
 const express = require("express");
 const connectDB = require("./config/db.js");  
-
+const bcrypt = require('bcryptjs');
 // Import Middlewares
 const securityMiddleware = require("./middleware/security.js"); 
 const errorHandler = require("./middleware/errorHandler.js");
 
 // --- [تعديل هنا] Import Routes ---
+const User = require('./Models/Users.js');
 const authRoutes = require("./routes/authRoutes.js");
 const patientRoutes = require("./routes/patientRoute.js"); 
 const doctorRoutes = require("./routes/doctorRoutes.js"); 
@@ -15,6 +16,7 @@ const labRoutes = require("./routes/labRoutes.js");
 const clinicRoutes = require("./routes/clinicRoutes.js");
 const appointmentRoutes = require('./routes/appointmentRoutes.js');
 const reviewRoutes = require('./routes/reviewRoutes.js');
+const adminRoutes = require('./routes/adminRoutes.js');
 const app = express();
 
 // 1. Security Middlewares
@@ -44,7 +46,31 @@ app.use("/api/lab", labRoutes);
 app.use("/api/clinic", clinicRoutes);
 app.use('/api/appointments', appointmentRoutes);
 app.use('/api/reviews', reviewRoutes);
+app.use('/api/admin', adminRoutes);
 
+const seedAdmin = async () => {
+  try {
+    const adminExists = await User.findOne({ email: 'admin@shefaa.com' });
+
+    if (!adminExists) {
+      const hashedPassword = await bcrypt.hash('admin123456', 10);
+      
+      await User.create({
+        name: 'Super Admin',
+        username: 'admin_shefaa',
+        email: 'admin@shefaa.com',
+        password: hashedPassword,
+        role: 'admin',
+        isVerified: true
+      });
+      
+      console.log('✅ Admin account seeded!');
+    }
+  } catch (err) {
+    console.log('Admin seeding skipped or error occurred');
+  }
+};
+ 
 // 5. Global Error Handler
 app.use(errorHandler);
 
@@ -53,3 +79,5 @@ const PORT = process.env.PORT || 5000;
 app.listen(PORT, () => {
   console.log(`Server is running on port ${PORT}`);
 });
+
+seedAdmin();

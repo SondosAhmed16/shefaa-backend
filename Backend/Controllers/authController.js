@@ -38,18 +38,18 @@ exports.register = async (req, res) => {
       username,
       email,
       password: hashedPassword,
+      phoneNumber: phoneNumber,
       role: role || 'patient',
-      isVerified: true
+      isVerified: role === 'patient' ? true : false
     });
     const medicalLicenceUrl = req.file ? req.file.path : "";
     // 3. Create Profile based on role
     if (user.role === 'patient') {
       await Patient.create({
         userId: user._id,
-        phoneNumber: phoneNumber,
       });
     } else if (user.role === 'doctor') {
-const pdfUrl = req.files && req.files['membership'] ? req.files['membership'][0].path : "";
+      const pdfUrl = req.files && req.files['membership'] ? req.files['membership'][0].path : "";
       await Doctor.create({
         userId: user._id,
         specialization: req.body.specialization || "General",
@@ -92,15 +92,15 @@ const pdfUrl = req.files && req.files['membership'] ? req.files['membership'][0]
       user: { id: user._id, name: user.name, role: user.role }
     });
 
-} catch (err) {
+  } catch (err) {
     if (err.code === 11000) {
-return res.status(400).json({
-            message: "Duplicate key error",
-            field: err.keyValue 
-        });
+      return res.status(400).json({
+        message: "Duplicate key error",
+        field: err.keyValue
+      });
     }
     res.status(500).json({ message: err.message });
-}
+  }
 };
 // Login 
 exports.login = async (req, res) => {

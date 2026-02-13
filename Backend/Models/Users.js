@@ -33,10 +33,16 @@ const userSchema = new mongoose.Schema(
       enum: ["doctor", "patient", "pharmacy", "lab", "admin"],
       default: "patient",
     },
+      phoneNumber: {
+      type: String,
+      required: true,
+      unique: true,
+      trim: true,
+    },
 
     isVerified: {
       type: Boolean,
-      default: true,
+      default: false,
     },
   },
   { timestamps: true }

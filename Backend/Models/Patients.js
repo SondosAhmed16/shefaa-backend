@@ -8,12 +8,6 @@ const patientSchema = new mongoose.Schema(
       required: true,
       unique: true,
     },
-    phoneNumber: {
-      type: String,
-      required: true,
-      unique: true,
-      trim: true,
-    },
     address: {
       type: String,
       default: "",
