@@ -65,16 +65,23 @@ exports.register = async (req, res) => {
         addresses: addresses || []
       });
     }
-    else if (user.role === 'lab') {
-      await Lab.create({
-        userId: user._id,
-        commercialRegisterNumber: commercialRegisterNumber,
-        medicalLicencePdf: medicalLicenceUrl,
-        facilityType,
-        medicalDirectorName,
-        directorProfessionalId,
-        addresses: addresses || []
-      });
+else if (user.role === 'lab') {
+      try {
+        await Lab.create({
+          userId: user._id,
+          commercialRegisterNumber: commercialRegisterNumber,
+          medicalLicencePdf: medicalLicenceUrl,
+          facilityType,
+          medicalDirectorName,
+          directorProfessionalId,
+          addresses: addresses || []
+        });
+      } catch (error) {
+        await User.findByIdAndDelete(user._id);
+        return res.status(400).json({ 
+          message: "Lab profile creation failed, user deleted. Error: " + error.message 
+        });
+      }
     }
     const accessToken = generateAccessToken(user);
     const refreshToken = generateRefreshToken(user);
