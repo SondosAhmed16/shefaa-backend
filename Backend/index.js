@@ -60,14 +60,17 @@ const seedAdmin = async () => {
         username: 'admin_shefaa',
         email: 'admin@shefaa.com',
         password: hashedPassword,
+        phoneNumber: '01012345678', 
         role: 'admin',
         isVerified: true
       });
       
       console.log('✅ Admin account seeded!');
+    } else {
+      console.log('ℹ️ Admin account already exists.');
     }
   } catch (err) {
-    console.log('Admin seeding skipped or error occurred');
+    console.log('❌ Admin seeding error:', err.message); 
   }
 };
  

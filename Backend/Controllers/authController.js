@@ -107,8 +107,14 @@ const medicalLicenceUrl = req.files && req.files['medicalLicence'] ? req.files['
       expiresAt: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000) // 7 أيام
     });
 
+    let successMessage = "User registered successfully";
+    
+    if (user.role !== 'patient') {
+      successMessage = "Registration successful! Your data is currently being reviewed by the administration. You will receive an email notification once your account is activated.";
+    }
+
     res.status(201).json({
-      message: "User registered successfully",
+      message: successMessage,
       accessToken,
       refreshToken,
       user: { id: user._id, name: user.name, role: user.role }
