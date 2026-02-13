@@ -38,6 +38,7 @@ const doctorSchema = new mongoose.Schema(
     },
     membershipPdf: {
       type: String,
+      required: true,
       default: "",
     },
 
