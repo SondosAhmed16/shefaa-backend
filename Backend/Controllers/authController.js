@@ -42,7 +42,7 @@ exports.register = async (req, res) => {
       role: role || 'patient',
       isVerified: role === 'patient' ? true : false
     });
-    const medicalLicenceUrl = req.file ? req.file.path : "";
+const medicalLicenceUrl = req.files && req.files['medicalLicence'] ? req.files['medicalLicence'][0].path : "";
     // 3. Create Profile based on role
     if (user.role === 'patient') {
 
