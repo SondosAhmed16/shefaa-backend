@@ -42,7 +42,7 @@ exports.register = async (req, res) => {
       role: role || 'patient',
       isVerified: role === 'patient' ? true : false
     });
-const medicalLicenceUrl = req.files && req.files['medicalLicence'] ? req.files['medicalLicence'][0].path : "";
+    const medicalLicenceUrl = req.files && req.files['medicalLicence'] ? req.files['medicalLicence'][0].path : "";
     // 3. Create Profile based on role
     if (user.role === 'patient') {
 
@@ -108,7 +108,7 @@ const medicalLicenceUrl = req.files && req.files['medicalLicence'] ? req.files['
     });
 
     let successMessage = "User registered successfully";
-    
+
     if (user.role !== 'patient') {
       successMessage = "Registration successful! Your data is currently being reviewed by the administration. You will receive an email notification once your account is activated.";
     }
@@ -156,6 +156,11 @@ exports.login = async (req, res) => {
     if (!isMatch) {
       return res.status(401).json({
         message: "Incorrect password. Please try again."
+      });
+    }
+    if (!user.isVerified) {
+      return res.status(403).json({
+        message: "Your account is still pending review. You will be able to login once the administrator activates your account."
       });
     }
 
