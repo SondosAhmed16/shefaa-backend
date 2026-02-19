@@ -1,4 +1,4 @@
-const twilio = require('twilio'); // npm install twilio
+const twilio = require('twilio'); 
 
 const client = twilio(process.env.TWILIO_SID, process.env.TWILIO_TOKEN);
 

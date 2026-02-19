@@ -67,7 +67,7 @@ const seedAdmin = async () => {
       
       console.log('✅ Admin account seeded!');
     } else {
-      console.log('ℹ️ Admin account already exists.');
+      console.log('ℹ️  Admin account already exists.');
     }
   } catch (err) {
     console.log('❌ Admin seeding error:', err.message); 
