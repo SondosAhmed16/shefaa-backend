@@ -136,15 +136,12 @@ exports.login = async (req, res) => {
     const { identity, password } = req.body;
     let user = null;
 
-    user = await User.findOne({
-      email: { $regex: new RegExp(`^${identity}$`, 'i') }
+user = await User.findOne({
+      $or: [
+        { email: { $regex: new RegExp(`^${identity}$`, 'i') } }, 
+        { phoneNumber: identity } 
+      ]
     });
-    if (!user) {
-      const patient = await Patient.findOne({ phoneNumber: identity });
-      if (patient) {
-        user = await User.findById(patient.userId);
-      }
-    }
 
     if (!user) {
       return res.status(401).json({
