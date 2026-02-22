@@ -66,9 +66,16 @@ router.get('/google/callback', (req, res, next) => {
       });
 
       //res.json({ accessToken, refreshToken, user: { id: user._id, name: user.name, role: user.role } });
-      const url = `chefaa://login-success?token=${accessToken}&refresh=${refreshToken}`;
-      console.log("Redirecting to:", url); 
-      return res.redirect(url);
+      return res.send(`
+  <html>
+    <script>
+      window.location.href = "chefaa://login-success?token=${accessToken}&refresh=${refreshToken}";
+    </script>
+    <body style="display:flex; justify-content:center; align-items:center; height:100vh; font-family:sans-serif;">
+      <p>Redirecting to Shefaa App...</p>
+    </body>
+  </html>
+`);
     } catch (error) {
       // res.redirect(`chefaa://auth-error?message=ServerError`);
       res.status(500).json({ message: "Server Error" });
