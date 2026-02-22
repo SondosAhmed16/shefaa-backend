@@ -42,17 +42,17 @@ router.get('/google', passport.authenticate('google', { scope: ['profile', 'emai
 router.get('/google/callback', (req, res, next) => {
   passport.authenticate('google', { session: false }, async (err, user) => {
     if (!user) {
-      // return res.status(404).json({ message: "Account not found. Please register first." });
-      return res.redirect(`chefaa://auth-error?message=AccountNotFound`);
+       return res.status(404).json({ message: "Account not found. Please register first." });
+     // return res.redirect(`chefaa://auth-error?message=AccountNotFound`);
     }
 
     if (!user.isVerified) {
-     /* return res.status(403).json({ 
+      return res.status(403).json({ 
      success: false,
      message: "Your account is still pending review. You will be able to login once the administrator activates your account",
      code: "PendingReview"
-   });*/
-      return res.redirect(`chefaa://auth-error?message=PendingReview`);
+   });
+     // return res.redirect(`chefaa://auth-error?message=PendingReview`);
     }
 
     try {
@@ -65,11 +65,11 @@ router.get('/google/callback', (req, res, next) => {
         expiresAt: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000),
       });
 
-     // res.json({ accessToken, refreshToken, user: { id: user._id, name: user.name, role: user.role } });
-      res.redirect(`chefaa://login-success?token=${accessToken}&refresh=${refreshToken}`);
+      res.json({ accessToken, refreshToken, user: { id: user._id, name: user.name, role: user.role } });
+      //res.redirect(`chefaa://login-success?token=${accessToken}&refresh=${refreshToken}`);
     } catch (error) {
-      res.redirect(`chefaa://auth-error?message=ServerError`);
-     // res.status(500).json({ message: "Server Error" });
+     // res.redirect(`chefaa://auth-error?message=ServerError`);
+     res.status(500).json({ message: "Server Error" });
     }
   })(req, res, next);
 });
