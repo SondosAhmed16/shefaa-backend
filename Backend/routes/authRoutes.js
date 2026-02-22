@@ -6,30 +6,63 @@ const cloudinary = require("cloudinary").v2;
 const { CloudinaryStorage } = require("multer-storage-cloudinary");
 const path = require("path");
 
+const passport = require('passport');
+const { generateAccessToken, generateRefreshToken } = require("../utils/tokens");
+const RefreshToken = require("../Models/RefreshToken");
+
+
+
 const authController = require("../Controllers/authController");
 const { runValidation } = require("../middleware/validate");
 
-// إعدادات Cloudinary
 cloudinary.config({
   cloud_name: process.env.CLOUDINARY_CLOUD_NAME,
   api_key: process.env.CLOUDINARY_API_KEY,
   api_secret: process.env.CLOUDINARY_API_SECRET
 });
 
-// في ملف authRoutes.js
 const storage = new CloudinaryStorage({
   cloudinary: cloudinary,
   params: {
-    folder: 'shefaa_documents', // تغيير الاسم ليكون عاماً
+    folder: 'shefaa_documents', 
     resource_type: 'raw',
     format: async (req, file) => 'pdf',
-    public_id: (req, file) => file.fieldname + '-' + Date.now(), // استخدام اسم الحقل في التسمية
+    public_id: (req, file) => file.fieldname + '-' + Date.now(), 
   },
 });
 
 const upload = multer({ storage: storage });
 
-// --- الراوتس ---
+
+/************************************* */
+
+router.get('/google', passport.authenticate('google', { scope: ['profile', 'email'] }));
+
+
+router.get('/google/callback', (req, res, next) => {
+  passport.authenticate('google', { session: false }, async (err, user) => {
+    if (!user) {
+      return res.status(404).json({ message: "Account not found. Please register first." });
+    }
+
+    try {
+      const accessToken = generateAccessToken(user);
+      const refreshToken = generateRefreshToken(user);
+
+      await RefreshToken.create({
+        token: refreshToken,
+        user: user._id,
+        expiresAt: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000),
+      });
+
+      res.json({ accessToken, refreshToken, user: { id: user._id, name: user.name, role: user.role } });
+    } catch (error) {
+      res.status(500).json({ message: "Server Error" });
+    }
+  })(req, res, next);
+});
+
+/*************************************** */
 
 router.post(
   "/register",

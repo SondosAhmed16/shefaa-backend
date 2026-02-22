@@ -2,6 +2,8 @@ require("dotenv").config();
 const express = require("express");
 const connectDB = require("./config/db.js");  
 const bcrypt = require('bcryptjs');
+const passport = require('passport');
+require('./config/passport.js');
 // Import Middlewares
 const securityMiddleware = require("./middleware/security.js"); 
 const errorHandler = require("./middleware/errorHandler.js");
@@ -25,6 +27,7 @@ securityMiddleware(app);
 // 2. Standard Middlewares
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
+app.use(passport.initialize());
 
 // 3. Static Folder
 app.use("/uploads", express.static("uploads"));
