@@ -17,13 +17,11 @@ exports.bookAppointment = async (req, res) => {
   try {
     const { clinicId, date, startTime, endTime, paymentOption, price, isFollowUp } = req.body;
 
-    // --- التعديل الجوهري هنا ---
-    // بنجيب بروفايل المريض عشان ناخد الـ _id بتاعه من جدول Patients
+  
     const patientProfile = await Patient.findOne({ userId: req.user._id });
     if (!patientProfile) {
       return res.status(404).json({ message: 'Patient profile not found. Please complete your profile first.' });
     }
-    // -------------------------
 
     const clinic = await Clinic.findById(clinicId);
     if (!clinic) return res.status(404).json({ message: 'Clinic not found' });
@@ -42,7 +40,7 @@ exports.bookAppointment = async (req, res) => {
     }
 
     const appointment = new Appointment({
-      patient: patientProfile._id, // استبدلنا req.user._id بـ patientProfile._id ✅
+      patient: patientProfile._id, 
       doctor: clinic.doctorId,
       clinic: clinicId,
       date: new Date(date),
@@ -123,8 +121,9 @@ exports.cancelAppointment = async (req, res) => {
 
     if (!appointment) return res.status(404).json({ message: 'Appointment not found' });
 
+    const patientProfile = await Patient.findOne({ userId: req.user._id });
 
-    if (appointment.patient.toString() !== req.user._id.toString() && req.user.role !== 'admin') {
+    if (!patientProfile || (appointment.patient.toString() !== patientProfile._id.toString() && req.user.role !== 'admin')) {
       return res.status(403).json({ message: 'Not authorized to cancel this appointment' });
     }
 
