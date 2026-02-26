@@ -27,10 +27,10 @@ router.delete(
 );
 
 
-router.put(
+/*router.put(
   '/confirm/:id', 
   auth, 
   appointmentController.confirmAppointment
-);
+);*/
 
 module.exports = router;

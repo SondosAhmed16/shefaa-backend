@@ -137,7 +137,7 @@ exports.cancelAppointment = async (req, res) => {
 };
 
 
-exports.confirmAppointment = async (req, res) => {
+/*exports.confirmAppointment = async (req, res) => {
   try {
     const { id } = req.params;
 
@@ -153,7 +153,7 @@ exports.confirmAppointment = async (req, res) => {
   } catch (err) {
     res.status(500).json({ message: err.message });
   }
-};
+};*/
 
 
 exports.sendReminders = async () => {
