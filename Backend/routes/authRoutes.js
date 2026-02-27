@@ -78,8 +78,8 @@ router.post("/google/mobile", async (req, res) => {
     });
 
   } catch (error) {
-    res.status(401).json({ success: false, message: "Invalid Google Token" });
-    console.log("Full Error Detail:", error.message);
+    res.status(401).json({ success: false, message: error.message });
+    //console.log("Full Error Detail:", error.message);
   }
 });
 
