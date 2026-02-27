@@ -45,7 +45,10 @@ router.post("/google/mobile", async (req, res) => {
 
     const ticket = await client.verifyIdToken({
         idToken,
-        audience: process.env.GOOGLE_CLIENT_ID,
+       audience: [
+        process.env.GOOGLE_CLIENT_ID, 
+        "407408718192.apps.googleusercontent.com" 
+    ],
     });
     const payload = ticket.getPayload();
     const { email, name, sub: googleId } = payload;
