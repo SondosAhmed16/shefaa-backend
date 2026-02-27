@@ -10,7 +10,8 @@ const passport = require('passport');
 const { generateAccessToken, generateRefreshToken } = require("../utils/tokens");
 const RefreshToken = require("../Models/RefreshToken");
 
-
+const { OAuth2Client } = require('google-auth-library');
+const client = new OAuth2Client(process.env.GOOGLE_CLIENT_ID);
 
 const authController = require("../Controllers/authController");
 const { runValidation } = require("../middleware/validate");
@@ -36,43 +37,49 @@ const upload = multer({ storage: storage });
 
 /************************************* */
 
-router.get('/google', passport.authenticate('google', { scope: ['profile', 'email'] }));
 
+router.post("/google/mobile", async (req, res) => {
+  const { idToken } = req.body; 
 
-router.get('/google/callback', (req, res, next) => {
-  passport.authenticate('google', { session: false }, async (err, user) => {
+  try {
+
+    const ticket = await client.verifyIdToken({
+        idToken,
+        audience: process.env.GOOGLE_CLIENT_ID,
+    });
+    const payload = ticket.getPayload();
+    const { email, name, sub: googleId } = payload;
+
+    let user = await User.findOne({ email });
+
     if (!user) {
-      return res.status(404).json({ message: "Account not found. Please register first." });
-      // return res.redirect(`chefaa://auth-error?message=AccountNotFound`);
+      return res.status(404).json({ success: false, message: "Account not found. Please register first." });
     }
 
     if (!user.isVerified) {
-      return res.status(403).json({
-        success: false,
-        message: "Your account is still pending review. You will be able to login once the administrator activates your account",
-        code: "PendingReview"
-      });
-      // return res.redirect(`chefaa://auth-error?message=PendingReview`);
+      return res.status(403).json({ success: false, message: "Account pending review" });
     }
 
-    try {
-      const accessToken = generateAccessToken(user);
-      const refreshToken = generateRefreshToken(user);
+    const accessToken = generateAccessToken(user);
+    const refreshToken = generateRefreshToken(user);
 
-      await RefreshToken.create({
-        token: refreshToken,
-        user: user._id,
-        expiresAt: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000),
-      });
+    await RefreshToken.create({
+      token: refreshToken,
+      user: user._id,
+      expiresAt: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000),
+    });
 
-      res.json({ accessToken, refreshToken, user: { id: user._id, name: user.name, role: user.role } });
-      /*const redirectUrl = `chefaa://login-success?token=${accessToken}&refresh=${refreshToken}`;
-          return res.redirect(redirectUrl);*/
-    } catch (error) {
-      // res.redirect(`chefaa://auth-error?message=ServerError`);
-      res.status(500).json({ message: "Server Error" });
-    }
-  })(req, res, next);
+
+    res.json({
+      success: true,
+      accessToken,
+      refreshToken,
+      user: { id: user._id, name: user.name, role: user.role }
+    });
+
+  } catch (error) {
+    res.status(401).json({ success: false, message: "Invalid Google Token" });
+  }
 });
 
 /*************************************** */
