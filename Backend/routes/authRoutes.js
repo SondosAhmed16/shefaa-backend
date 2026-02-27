@@ -48,7 +48,7 @@ router.post("/google/mobile", async (req, res) => {
         idToken,
        audience: [
         process.env.GOOGLE_CLIENT_ID, 
-        "407408718192.apps.googleusercontent.com" 
+   
     ],
     });
     const payload = ticket.getPayload();
@@ -83,7 +83,6 @@ router.post("/google/mobile", async (req, res) => {
 
   } catch (error) {
     res.status(401).json({ success: false, message: error.message });
-    //console.log("Full Error Detail:", error.message);
   }
 });
 
