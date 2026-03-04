@@ -28,7 +28,7 @@ const doctorSchema = new mongoose.Schema(
     },
 
     image: {
-      type: String, 
+      type: String,
       default: "",
     },
 
@@ -43,7 +43,7 @@ const doctorSchema = new mongoose.Schema(
     },
 
     degrees: {
-      type: [String], 
+      type: [String],
       default: [],
     },
 
@@ -77,6 +77,16 @@ const doctorSchema = new mongoose.Schema(
       min: 0,
       max: 5,
     },
+
+
+    gender: {
+      type: String,
+      enum: ["male", "female"],
+      required: false,
+    },
+
+    videoConsultationPrice: { type: Number, default: 0 },
+    clinicConsultationPrice: { type: Number, default: 0 },
 
     reviews: [
       {

@@ -1,8 +1,15 @@
 const express = require('express');
 const router = express.Router();
+const doctorController = require('../Controllers/doctorController');
 const appointmentController = require('../Controllers/appointmentController');
 const { auth } = require('../middleware/auth'); 
 
+
+router.get(
+  '/search-doctors', 
+  auth, 
+  doctorController.searchDoctors 
+);
 
 router.post(
   '/', 

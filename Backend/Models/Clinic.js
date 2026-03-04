@@ -32,7 +32,7 @@ const clinicSchema = new mongoose.Schema(
         default: "Point",
       },
       coordinates: {
-        type: [Number], 
+        type: [Number],
         required: true,
       },
     },
@@ -68,13 +68,13 @@ const clinicSchema = new mongoose.Schema(
           required: true,
         },
 
-        open: { type: String, required: true }, 
-        close: { type: String, required: true }, 
+        open: { type: String, required: true },
+        close: { type: String, required: true },
 
         breaks: [
           {
-            start: { type: String, required: true }, 
-            end: { type: String, required: true },  
+            start: { type: String, required: true },
+            end: { type: String, required: true },
           },
         ],
       },
@@ -87,9 +87,13 @@ const clinicSchema = new mongoose.Schema(
     },
 
     slotDuration: {
-      type: Number, 
+      type: Number,
       required: true,
       min: 5,
+    },
+    price: {
+      type: Number,
+      required: true,
     },
 
     capacityPerSlot: {
@@ -105,4 +109,4 @@ const clinicSchema = new mongoose.Schema(
 
 clinicSchema.index({ location: "2dsphere" });
 
-module.exports= mongoose.model("Clinic", clinicSchema);
+module.exports = mongoose.model("Clinic", clinicSchema);

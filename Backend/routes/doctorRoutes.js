@@ -10,6 +10,8 @@ const { runValidation } = require('../middleware/validate');
 // 1. Profile Routes
 router.get('/profile', auth, authorizeRoles('doctor'), doctorController.getDoctorProfile);
 router.put('/profile', auth, authorizeRoles('doctor'), runValidation, doctorController.updateDoctorProfile);
+// داخل ملف doctorRoutes.js
+router.get('/search-doctors', doctorController.searchDoctors);
 
 // 2. Clinic Management
 

@@ -26,12 +26,12 @@ const appointmentSchema = new mongoose.Schema(
     },
 
     slotStart: {
-      type: String, 
+      type: String,
       required: true,
     },
 
     slotEnd: {
-      type: String, 
+      type: String,
       required: true,
     },
 
@@ -46,16 +46,18 @@ const appointmentSchema = new mongoose.Schema(
       default: "pending",
     },
 
+    appointmentType: {
+      type: String,
+      enum: ["in-clinic", "video-call"],
+      required: true,
+    },
+
     paymentOption: {
       type: String,
       enum: ["atClinic", "prePay"],
       required: true,
     },
 
-    price: {
-      type: Number,
-      required: true,
-    },
 
     status: {
       type: String,
@@ -83,4 +85,4 @@ const appointmentSchema = new mongoose.Schema(
   { timestamps: true }
 );
 
-module.exports= mongoose.model("Appointment", appointmentSchema);
+module.exports = mongoose.model("Appointment", appointmentSchema);

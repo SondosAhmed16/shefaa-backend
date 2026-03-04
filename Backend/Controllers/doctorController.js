@@ -116,3 +116,49 @@ exports.addMedicalRecord = async (req, res) => {
   }
 };
 
+exports.searchDoctors = async (req, res) => {
+  try {
+    const { specialization, gender, city } = req.query;
+
+    let clinicQuery = {};
+    if (city) {
+      clinicQuery.city = { $regex: new RegExp(city, "i") }; 
+    }
+
+    const clinics = await Clinic.find(clinicQuery);
+    const doctorIdsFromClinics = clinics.map(c => c.doctorId.toString());
+
+    let doctorQuery = {};
+    
+    if (specialization) {
+      doctorQuery.specialization = { $regex: new RegExp(specialization, "i") };
+    }
+
+    if (city) {
+      doctorQuery._id = { $in: doctorIdsFromClinics };
+    }
+
+    const doctors = await Doctor.find(doctorQuery).populate('userId', 'name email phoneNumber');
+
+    const results = await Promise.all(doctors.map(async (doc) => {
+        const doctorClinics = await Clinic.find({ 
+            doctorId: doc._id,
+            ...(city && { city: { $regex: new RegExp(city, "i") } }) 
+        });
+        
+        return {
+            ...doc._doc,
+            clinics: doctorClinics
+        };
+    }));
+
+    const finalResult = city 
+        ? results.filter(r => r.clinics.length > 0) 
+        : results;
+
+    res.json(finalResult);
+
+  } catch (err) {
+    res.status(500).json({ message: err.message });
+  }
+};

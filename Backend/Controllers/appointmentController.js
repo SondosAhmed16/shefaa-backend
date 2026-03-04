@@ -1,3 +1,4 @@
+const moment = require('moment');
 const Appointment = require('../Models/Appointment');
 const Clinic = require('../Models/Clinic');
 const Doctor = require('../Models/Doctors');
@@ -15,61 +16,81 @@ const transporter = nodemailer.createTransport({
 
 exports.bookAppointment = async (req, res) => {
   try {
-    const { clinicId, date, startTime, endTime, paymentOption, price, isFollowUp } = req.body;
+    const { clinicId, date, startTime, appointmentType, paymentOption } = req.body;
 
-  
-    const patientProfile = await Patient.findOne({ userId: req.user._id });
-    if (!patientProfile) {
-      return res.status(404).json({ message: 'Patient profile not found. Please complete your profile first.' });
-    }
 
     const clinic = await Clinic.findById(clinicId);
     if (!clinic) return res.status(404).json({ message: 'Clinic not found' });
 
+
+    const requestedDate = new Date(date);
+    const dayName = requestedDate.toLocaleDateString('en-US', { weekday: 'long' });
+
+    const workingDay = clinic.daysOfWeek.find(d => d.day === dayName);
+    if (!workingDay) {
+      return res.status(400).json({ message: `Clinic is closed on ${dayName}` });
+    }
+
+
+    const timeToMinutes = (timeStr) => {
+      const [time, modifier] = timeStr.split(' ');
+      let [hours, minutes] = time.split(':');
+      if (hours === '12') hours = '00';
+      if (modifier === 'PM') hours = parseInt(hours, 10) + 12;
+      return parseInt(hours, 10) * 60 + parseInt(minutes, 10);
+    };
+
+    const requestedTime = timeToMinutes(startTime);
+    const openTime = timeToMinutes(workingDay.open);
+    const closeTime = timeToMinutes(workingDay.close);
+
+    if (requestedTime < openTime || requestedTime >= closeTime) {
+      return res.status(400).json({ 
+        message: `Selected time is outside working hours (${workingDay.open} - ${workingDay.close})` 
+      });
+    }
+
+
     const appointmentCount = await Appointment.countDocuments({
       clinic: clinicId,
-      date: new Date(date),
+      date: requestedDate,
       slotStart: startTime,
       status: { $ne: 'cancelled' }
     });
 
     if (appointmentCount >= clinic.capacityPerSlot) {
-      return res.status(400).json({
-        message: 'This time slot is full. Please choose another time.'
-      });
+      return res.status(400).json({ message: 'This time slot is already full.' });
     }
 
+
+    const endTime = moment(startTime, 'hh:mm A')
+                    .add(clinic.slotDuration, 'minutes')
+                    .format('hh:mm A');
+
+    const patientProfile = await Patient.findOne({ userId: req.user._id });
+    if (!patientProfile) return res.status(404).json({ message: 'Patient profile not found' });
+
     const appointment = new Appointment({
-      patient: patientProfile._id, 
+      patient: patientProfile._id,
       doctor: clinic.doctorId,
       clinic: clinicId,
-      date: new Date(date),
+      date: requestedDate,
       slotStart: startTime,
       slotEnd: endTime,
-      isFollowUp: isFollowUp || false,
+      appointmentType,
+      price: clinic.price, 
       paymentOption: paymentOption || 'atClinic',
-      price: price || 0,
-      status: 'booked',
-      paymentStatus: 'pending'
+      status: 'booked'
     });
 
     await appointment.save();
-
-    try {
-      await transporter.sendMail({
-        to: req.user.email,
-        subject: 'Appointment Booked Successfully',
-        text: `Your appointment at ${clinic.name} on ${date} at ${startTime} has been booked.`,
-      });
-    } catch (mailErr) {
-      console.error("Mail Error: Confirmation email couldn't be sent.");
-    }
-
     res.status(201).json({ message: 'Appointment booked successfully', appointment });
+
   } catch (err) {
     res.status(500).json({ message: err.message });
   }
 };
+
 exports.getAppointments = async (req, res) => {
   try {
     let filter = {};

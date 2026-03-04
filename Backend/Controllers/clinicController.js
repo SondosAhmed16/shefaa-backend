@@ -32,6 +32,10 @@ exports.createClinic = async (req, res) => {
         });
 
         await clinic.save();
+        await Doctor.findByIdAndUpdate(doctorId, {
+            $push: { clinics: clinic._id }
+        });
+
         res.status(201).json({ message: 'Clinic created successfully', clinic });
     } catch (err) {
         res.status(500).json({ message: err.message });
