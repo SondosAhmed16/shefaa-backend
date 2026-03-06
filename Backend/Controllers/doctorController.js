@@ -9,9 +9,9 @@ exports.getDoctorProfile = async (req, res) => {
   try {
     // Search using userId as defined in Doctors.js Schema
     const doctor = await Doctor.findOne({ userId: req.user._id })
-      .populate('userId', 'name email') 
+      .populate('userId', 'name email')
       .populate('clinics');
-    
+
     if (!doctor) return res.status(404).json({ message: 'Doctor profile not found' });
     res.json(doctor);
   } catch (err) {
@@ -21,42 +21,36 @@ exports.getDoctorProfile = async (req, res) => {
 
 
 // 2. Update Doctor Profile information
+// Controllers/doctorController.js
+
 exports.updateDoctorProfile = async (req, res) => {
   try {
-    const { 
-      specialization, 
-      yearsOfExperience, 
-      preOnlineConsultation, 
-      about, 
-      age, 
+    const {
+      specialization,
+      yearsOfExperience,
+      preOnlineConsultation,
+      about,
+      age,
       paymentOption,
-      gender 
+      gender
     } = req.body;
-    
-    if (gender && !['male', 'female'].includes(gender.toLowerCase())) {
-      return res.status(400).json({ message: "Gender must be either 'male' or 'female'" });
-    }
 
     const doctor = await Doctor.findOneAndUpdate(
       { userId: req.user._id },
-      { 
-        specialization, 
-        yearsOfExperience, 
-        preOnlineConsultation, 
-        about, 
-        age, 
+      {
+        specialization,
+        yearsOfExperience,
+        preOnlineConsultation,
+        about,
+        age,
         paymentOption,
-        gender: gender ? gender.toLowerCase() : undefined 
+        gender: gender ? gender.toLowerCase() : undefined
       },
       { new: true, runValidators: true }
     );
-    
+
     if (!doctor) return res.status(404).json({ message: 'Doctor profile not found' });
-    
-    res.json({ 
-      message: 'Doctor profile updated successfully', 
-      doctor 
-    });
+    res.json({ message: 'Doctor profile updated successfully', doctor });
   } catch (err) {
     res.status(500).json({ message: err.message });
   }
@@ -120,7 +114,7 @@ exports.getAppointments = async (req, res) => {
 exports.addMedicalRecord = async (req, res) => {
   try {
     const { patientId, diagnosis, prescription, notes, nextVisitDate } = req.body;
-    
+
     const doctor = await Doctor.findOne({ userId: req.user._id });
     if (!doctor) return res.status(404).json({ message: 'Doctor profile not found' });
 
@@ -147,7 +141,7 @@ exports.searchDoctors = async (req, res) => {
 
     let clinicQuery = {};
     if (city) {
-      clinicQuery.city = { $regex: new RegExp(city, "i") }; 
+      clinicQuery.city = { $regex: new RegExp(city, "i") };
     }
 
     const clinics = await Clinic.find(clinicQuery);
@@ -155,16 +149,13 @@ exports.searchDoctors = async (req, res) => {
 
 
     let doctorQuery = {};
-    
+
 
     if (specialization) {
       doctorQuery.specialization = { $regex: new RegExp(specialization, "i") };
     }
-
-
-    if (gender) {
-
-      doctorQuery.gender = { $regex: new RegExp(`^${gender}$`, "i") };
+    if (gender && gender.trim() !== "") {
+      doctorQuery.gender = gender.toLowerCase();
     }
 
 
@@ -175,20 +166,20 @@ exports.searchDoctors = async (req, res) => {
     const doctors = await Doctor.find(doctorQuery).populate('userId', 'name email phoneNumber');
 
     const results = await Promise.all(doctors.map(async (doc) => {
-        const doctorClinics = await Clinic.find({ 
-            doctorId: doc._id,
-            ...(city && { city: { $regex: new RegExp(city, "i") } }) 
-        });
-        
-        return {
-            ...doc._doc,
-            clinics: doctorClinics
-        };
+      const doctorClinics = await Clinic.find({
+        doctorId: doc._id,
+        ...(city && { city: { $regex: new RegExp(city, "i") } })
+      });
+
+      return {
+        ...doc._doc,
+        clinics: doctorClinics
+      };
     }));
 
-    const finalResult = city 
-        ? results.filter(r => r.clinics.length > 0) 
-        : results;
+    const finalResult = city
+      ? results.filter(r => r.clinics.length > 0)
+      : results;
 
     res.json(finalResult);
 
