@@ -19,20 +19,44 @@ exports.getDoctorProfile = async (req, res) => {
   }
 };
 
+
 // 2. Update Doctor Profile information
 exports.updateDoctorProfile = async (req, res) => {
   try {
-    // Fields matching the Doctors.js Schema
-    const { specialization, yearsOfExperience, preOnlineConsultation, about, age, paymentOption } = req.body;
+    const { 
+      specialization, 
+      yearsOfExperience, 
+      preOnlineConsultation, 
+      about, 
+      age, 
+      paymentOption,
+      gender 
+    } = req.body;
     
+    if (gender && !['male', 'female'].includes(gender.toLowerCase())) {
+      return res.status(400).json({ message: "Gender must be either 'male' or 'female'" });
+    }
+
     const doctor = await Doctor.findOneAndUpdate(
       { userId: req.user._id },
-      { specialization, yearsOfExperience, preOnlineConsultation, about, age, paymentOption },
+      { 
+        specialization, 
+        yearsOfExperience, 
+        preOnlineConsultation, 
+        about, 
+        age, 
+        paymentOption,
+        gender: gender ? gender.toLowerCase() : undefined 
+      },
       { new: true, runValidators: true }
     );
     
     if (!doctor) return res.status(404).json({ message: 'Doctor profile not found' });
-    res.json({ message: 'Doctor profile updated successfully', doctor });
+    
+    res.json({ 
+      message: 'Doctor profile updated successfully', 
+      doctor 
+    });
   } catch (err) {
     res.status(500).json({ message: err.message });
   }
@@ -116,6 +140,7 @@ exports.addMedicalRecord = async (req, res) => {
   }
 };
 
+
 exports.searchDoctors = async (req, res) => {
   try {
     const { specialization, gender, city } = req.query;
@@ -128,11 +153,20 @@ exports.searchDoctors = async (req, res) => {
     const clinics = await Clinic.find(clinicQuery);
     const doctorIdsFromClinics = clinics.map(c => c.doctorId.toString());
 
+
     let doctorQuery = {};
     
+
     if (specialization) {
       doctorQuery.specialization = { $regex: new RegExp(specialization, "i") };
     }
+
+
+    if (gender) {
+
+      doctorQuery.gender = { $regex: new RegExp(`^${gender}$`, "i") };
+    }
+
 
     if (city) {
       doctorQuery._id = { $in: doctorIdsFromClinics };
