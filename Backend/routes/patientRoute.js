@@ -11,8 +11,8 @@ const { upload } = require('../middleware/upload');
 router.get('/profile', auth, authorizeRoles('patient'), patientController.getProfile);
 
 
-router.put('/profile', auth, authorizeRoles('patient'), runValidation, patientController.updateProfile);
-
+router.put('/profile/basic-info', auth, patientController.updateBasicInfo); 
+router.put('/profile/medical-info', auth, patientController.updateMedicalInfo);
 
 //router.get('/appointments', auth, authorizeRoles('patient'), patientController.getAppointments);
 

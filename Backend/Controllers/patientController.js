@@ -16,10 +16,30 @@ exports.getProfile = async (req, res) => {
   }
 };
 
-exports.updateProfile = async (req, res) => {
+exports.updateBasicInfo = async (req, res) => {
+  try {
+    const { address, phoneNumber, age, gender } = req.body;
+
+    const patient = await Patient.findOneAndUpdate(
+      { userId: req.user._id },
+      { address, phoneNumber, age, gender },
+      { new: true, runValidators: true }
+    );
+
+    if (!patient) return res.status(404).json({ message: 'Patient profile not found' });
+
+    res.json({
+      message: 'Basic information updated successfully',
+      patient
+    });
+  } catch (err) {
+    res.status(500).json({ message: err.message });
+  }
+};
+
+exports.updateMedicalInfo = async (req, res) => {
   try {
     const {
-      address, phoneNumber, age, gender,
       bloodType, allergies, height, weight,
       chronicConditions
     } = req.body;
@@ -39,7 +59,6 @@ exports.updateProfile = async (req, res) => {
     const patient = await Patient.findOneAndUpdate(
       { userId: req.user._id },
       {
-        address, phoneNumber, age, gender,
         bloodType, allergies, height, weight,
         chronicConditions
       },
@@ -49,28 +68,13 @@ exports.updateProfile = async (req, res) => {
     if (!patient) return res.status(404).json({ message: 'Patient profile not found' });
 
     res.json({
-      message: 'Profile updated successfully',
+      message: 'Medical information updated successfully',
       patient
     });
   } catch (err) {
     res.status(500).json({ message: err.message });
   }
 };
-
-/*exports.getAppointments = async (req, res) => {
-  try {
-    const patient = await getPatientByUserId(req.user._id);
-    if (!patient) return res.status(404).json({ message: 'Patient not found' });
-
-    const appointments = await Appointment.find({ patient: patient._id })
-      .populate('doctor clinic')
-      .sort({ date: -1 });
-
-    res.json(appointments);
-  } catch (err) {
-    res.status(500).json({ message: err.message });
-  }
-};*/
 
 exports.uploadAttachment = async (req, res) => {
   try {
