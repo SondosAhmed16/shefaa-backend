@@ -13,6 +13,7 @@ router.get('/profile', auth, authorizeRoles('patient'), patientController.getPro
 
 router.put('/profile/basic-info', auth, patientController.updateBasicInfo); 
 router.put('/profile/medical-info', auth, patientController.updateMedicalInfo);
+router.put('/profile', auth, authorizeRoles('patient'), runValidation, patientController.updateProfile);
 
 //router.get('/appointments', auth, authorizeRoles('patient'), patientController.getAppointments);
 

@@ -21,7 +21,6 @@ cron.schedule('*/30 * * * *', async () => {
     console.log(`✅ Appointment reminders sent at ${new Date().toISOString()}`);
   } catch (err) {
     console.error('Scheduler error:', err.message);
-    // إيقاف الـ cron في حالة خطأ متكرر
     if (err.code === 'ECONNREFUSED') cron.destroy();
   }
 });

@@ -16,6 +16,47 @@ exports.getProfile = async (req, res) => {
   }
 };
 
+exports.updateProfile = async (req, res) => {
+  try {
+    const {
+      address, phoneNumber, age, gender,
+      bloodType, allergies, height, weight,
+      chronicConditions
+    } = req.body;
+
+    if (allergies && !Array.isArray(allergies)) {
+      return res.status(400).json({
+        message: "Allergies must be a list of selected items."
+      });
+    }
+
+    if (chronicConditions && !Array.isArray(chronicConditions)) {
+      return res.status(400).json({
+        message: "Chronic conditions must be a list of selected items."
+      });
+    }
+
+    const patient = await Patient.findOneAndUpdate(
+      { userId: req.user._id },
+      {
+        address, phoneNumber, age, gender,
+        bloodType, allergies, height, weight,
+        chronicConditions
+      },
+      { new: true, runValidators: true }
+    );
+
+    if (!patient) return res.status(404).json({ message: 'Patient profile not found' });
+
+    res.json({
+      message: 'Profile updated successfully',
+      patient
+    });
+  } catch (err) {
+    res.status(500).json({ message: err.message });
+  }
+};
+
 exports.updateBasicInfo = async (req, res) => {
   try {
     const { address, phoneNumber, age, gender, height, weight } = req.body;
