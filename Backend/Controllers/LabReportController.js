@@ -21,7 +21,7 @@ exports.analyzeReport = async (req, res) => {
         });
     } catch (err) {
         console.error("Pipeline Error:", err);
-        res.status(500).json({ message: "AI Analysis failed", error: err.message });
+        res.status(500).json({ message: "AI Analysis failed ya albi", error: err.message });
     }
 };
 
