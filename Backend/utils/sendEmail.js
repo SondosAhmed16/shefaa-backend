@@ -1,4 +1,3 @@
-// التعديل في السطر الأول
 const { sendMail } = require('../config/mailer'); 
 
 exports.sendVerificationEmail = async (userEmail, code) => {
