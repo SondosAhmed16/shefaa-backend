@@ -13,6 +13,8 @@
   "license": "ISC",
   "type": "commonjs",
   "dependencies": {
+    "@azure/ai-form-recognizer": "^5.1.0",
+    "@google-cloud/vision": "^5.3.5",
     "bcryptjs": "^3.0.3",
     "cloudinary": "^1.41.3",
     "cookie-parser": "^1.4.7",
@@ -30,7 +32,7 @@
     "mongodb": "^7.0.0",
     "mongoose": "^9.1.5",
     "morgan": "^1.10.1",
-    "multer": "^2.0.2",
+    "multer": "^2.1.1",
     "multer-storage-cloudinary": "^4.0.0",
     "nodemailer": "^7.0.12",
     "passport": "^0.7.0",

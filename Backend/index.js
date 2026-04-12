@@ -19,6 +19,7 @@ const clinicRoutes = require("./routes/clinicRoutes.js");
 const appointmentRoutes = require('./routes/appointmentRoutes.js');
 const reviewRoutes = require('./routes/reviewRoutes.js');
 const adminRoutes = require('./routes/adminRoutes.js');
+const LabReportRoutes = require('./routes/LabReportRoutes');
 const app = express();
 
 // 1. Security Middlewares
@@ -50,6 +51,7 @@ app.use("/api/clinic", clinicRoutes);
 app.use('/api/appointments', appointmentRoutes);
 app.use('/api/reviews', reviewRoutes);
 app.use('/api/admin', adminRoutes);
+app.use('/api/labReport', LabReportRoutes);
 
 const seedAdmin = async () => {
   try {
@@ -77,7 +79,6 @@ const seedAdmin = async () => {
   }
 };
  
-// 5. Global Error Handler
 app.use(errorHandler);
 
 // Start Server
