@@ -18,6 +18,8 @@ router.get('/search-doctors', doctorController.searchDoctors);
 //router.post('/add-clinic', auth, authorizeRoles('doctor'), runValidation, doctorController.addClinic);
 
 // 3. Appointments & Medical Records
+// Get data for the doctor's dashboard (Stats, Today's appointments, and Requests)
+router.get('/doctorDashboard', auth, authorizeRoles('doctor'), doctorController.getDoctorDashboard);
 
 //router.get('/appointments', auth, authorizeRoles('doctor'), doctorController.getAppointments);
 router.post('/add-medical-record', auth, authorizeRoles('doctor'), runValidation, doctorController.addMedicalRecord);

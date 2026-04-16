@@ -187,3 +187,36 @@ exports.searchDoctors = async (req, res) => {
     res.status(500).json({ message: err.message });
   }
 };
+
+exports.getDoctorDashboard = async (req, res) => {
+  try {
+    const doctorProfile = await Doctor.findOne({ userId: req.user._id });
+    if (!doctorProfile) return res.status(404).json({ message: "Doctor profile not found" });
+
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+
+    const appointments = await Appointment.find({ doctor: doctorProfile._id })
+      .populate({
+        path: 'patient',
+        populate: { path: 'userId', select: 'name image' } 
+      })
+      .populate('clinic', 'name')
+      .sort({ date: 1, slotStart: 1 }); 
+
+   
+    const todayApps = appointments.filter(a => new Date(a.date).getTime() === today.getTime());
+    const stats = {
+      totalToday: todayApps.length,
+      completed: todayApps.filter(a => a.status === 'completed').length,
+      pending: todayApps.filter(a => a.status === 'booked').length
+    };
+
+    res.json({
+      stats,
+      appointments // You can now filter this array on frontend for "Requests" vs "Upcoming"
+    });
+  } catch (err) {
+    res.status(500).json({ message: err.message });
+  }
+};
