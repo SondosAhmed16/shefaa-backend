@@ -44,10 +44,17 @@ async function analyzeWithAI(rawText) {
       "findings": [
         { "testName": "string", "result": "number", "unit": "string", "status": "Normal/High/Low/Pre-Risk" }
       ],
-      "dangerScore": 0-100 (where 0 is perfectly healthy and 100 is a critical medical emergency requiring immediate hospitalization)",
+      "dangerScore": 0,
       "summary": "Brief analysis in English",
       "tips": ["Tip 1", "Tip 2", "Tip 3"]
     }
+
+    GUIDELINES FOR TIPS:
+    1. Focus on lifestyle: Suggest habits like hydration, dietary changes (e.g., "reduce salt"), or activity levels.
+    2. Referrals: Suggest consulting a specialist generally (e.g., "Consult a cardiologist") without naming specific doctors.
+    3. NO MEDICINE: Do not mention any drug names, dosages, or supplements.
+    4. Conciseness: Keep each tip under 10 words.
+    5. Formatting: Provide exactly 3 actionable tips.
     `;
 
     try {
