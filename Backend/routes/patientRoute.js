@@ -2,6 +2,8 @@ const express = require('express');
 const router = express.Router();
 
 const patientController = require('../Controllers/patientController');
+const appointmentController = require('../Controllers/appointmentController');
+const notificationController = require('../Controllers/notificationController');
 
 const { auth } = require('../middleware/auth');
 const { authorizeRoles } = require('../middleware/role');
@@ -15,8 +17,13 @@ router.put('/profile/basic-info', auth, patientController.updateBasicInfo);
 router.put('/profile/medical-info', auth, patientController.updateMedicalInfo);
 router.put('/profile', auth, authorizeRoles('patient'), runValidation, patientController.updateProfile);
 
-//router.get('/appointments', auth, authorizeRoles('patient'), patientController.getAppointments);
+router.get('/medications', auth, patientController.getMedications);
+router.post('/medications', auth, patientController.addMedication);
 
+router.get('/appointments/upcoming', auth, appointmentController.getAppointments);
+//router.get('/appointments', auth, authorizeRoles('patient'), patientController.getAppointments);
+router.get('/notifications', auth, notificationController.getMyNotifications);
+router.patch('/notifications/:id/read', auth, notificationController.markAsRead);
 
 router.post('/upload-scan', auth, authorizeRoles('patient'), upload.single("scan"), patientController.uploadAttachment);
 

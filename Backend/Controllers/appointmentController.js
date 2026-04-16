@@ -5,6 +5,8 @@ const Doctor = require('../Models/Doctors');
 const User = require('../Models/Users');
 const Patient = require('../Models/Patients');
 const nodemailer = require('nodemailer');
+const Notification = require('../Models/Notification');
+
 
 const transporter = nodemailer.createTransport({
   service: 'gmail',
@@ -45,8 +47,8 @@ exports.bookAppointment = async (req, res) => {
     const closeTime = timeToMinutes(workingDay.close);
 
     if (requestedTime < openTime || requestedTime >= closeTime) {
-      return res.status(400).json({ 
-        message: `Selected time is outside working hours (${workingDay.open} - ${workingDay.close})` 
+      return res.status(400).json({
+        message: `Selected time is outside working hours (${workingDay.open} - ${workingDay.close})`
       });
     }
 
@@ -64,8 +66,8 @@ exports.bookAppointment = async (req, res) => {
 
 
     const endTime = moment(startTime, 'hh:mm A')
-                    .add(clinic.slotDuration, 'minutes')
-                    .format('hh:mm A');
+      .add(clinic.slotDuration, 'minutes')
+      .format('hh:mm A');
 
     const patientProfile = await Patient.findOne({ userId: req.user._id });
     if (!patientProfile) return res.status(404).json({ message: 'Patient profile not found' });
@@ -78,12 +80,20 @@ exports.bookAppointment = async (req, res) => {
       slotStart: startTime,
       slotEnd: endTime,
       appointmentType,
-      price: clinic.price, 
+      price: clinic.price,
       paymentOption: paymentOption || 'atClinic',
       status: 'booked'
     });
 
     await appointment.save();
+
+
+    await Notification.create({
+      recipient: req.user._id,
+      title: "Appointment Booked",
+      message: `Your appointment with the clinic has been confirmed for ${date} at ${startTime}`,
+      type: 'appointment'
+    });
     res.status(201).json({ message: 'Appointment booked successfully', appointment });
 
   } catch (err) {

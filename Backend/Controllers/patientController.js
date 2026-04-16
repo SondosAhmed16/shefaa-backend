@@ -130,3 +130,27 @@ exports.getMedicalHistory = async (req, res) => {
     res.status(500).json({ message: err.message });
   }
 };
+
+// get his medication
+exports.getMedications = async (req, res) => {
+  try {
+    const patient = await Patient.findOne({ userId: req.user._id });
+    res.json(patient.medications || []);
+  } catch (err) {
+    res.status(500).json({ message: err.message });
+  }
+};
+
+// add his medication
+exports.addMedication = async (req, res) => {
+  try {
+    const patient = await Patient.findOneAndUpdate(
+      { userId: req.user._id },
+      { $push: { medications: req.body } },
+      { new: true }
+    );
+    res.json({ message: "Medication added", medications: patient.medications });
+  } catch (err) {
+    res.status(500).json({ message: err.message });
+  }
+};

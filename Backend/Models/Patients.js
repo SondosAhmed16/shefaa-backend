@@ -23,6 +23,15 @@ const patientSchema = new mongoose.Schema(
       enum: ["male", "female", ""],
       default: "",
     },
+    // to add medication 
+    medications: [{
+      name: String,
+      dosage: String,
+      form: { type: String, enum: ["Tablet", "Capsule", "Syrup", "Injection"] },
+      timesPerDay: Number,
+      schedule: [String],
+      isActive: { type: Boolean, default: true }
+    }],
     height: { type: Number, default: 0 },
     weight: { type: Number, default: 0 },
     bloodType: {
