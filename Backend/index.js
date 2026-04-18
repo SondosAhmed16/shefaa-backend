@@ -21,7 +21,15 @@ const reviewRoutes = require('./routes/reviewRoutes.js');
 const adminRoutes = require('./routes/adminRoutes.js');
 const LabReportRoutes = require('./routes/LabReportRoutes');
 const app = express();
+const cors = require('cors');
 
+// This allows your local development environment
+const corsOptions = {
+  origin: 'http://localhost:5173', 
+  credentials: true,
+};
+
+app.use(cors(corsOptions));
 // 1. Security Middlewares
 securityMiddleware(app); 
 
