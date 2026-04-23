@@ -5,30 +5,38 @@ const moment = require('moment');
 
 // وظيفة تعمل كل دقيقة
 cron.schedule('* * * * *', async () => {
-    // استخدمي الصيغة دي بالظبط عشان تطابق اللي بنبعته من بوست مان
+    // التأكد من جلب الوقت بصيغة مطابقة تماماً لما هو مخزن في الأطلس
     const currentTime = moment().format('hh:mm A'); 
-    console.log(`[Cron Job] Checking at: ${currentTime}`); // عشان تشوفيها في الكونسول كل دقيقة
+    console.log(`[Cron Job] System Time: ${currentTime}`); 
 
     try {
-        // البحث عن المرضى اللي عندهم دواء في الوقت ده "بالظبط"
+        // البحث باستخدام $in للتأكد من وجود الوقت الحالي داخل مصفوفة الـ schedule
         const patients = await Patient.find({ 
             "medications.schedule": currentTime,
             "medications.isActive": true 
         });
 
         if (patients.length > 0) {
-            console.log(`Found ${patients.length} patients with meds at ${currentTime}`);
             for (const patient of patients) {
-                // فلترة الأدوية اللي موعدها دلوقتي
+                // تصفية الأدوية التي تطابق هذا الوقت
                 const meds = patient.medications.filter(m => m.schedule.includes(currentTime));
                 
                 for (const med of meds) {
-                    await Notification.create({
+                    const exists = await Notification.findOne({
                         recipient: patient.userId,
-                        title: "Medication Reminder 💊",
-                        message: `It's time for your ${med.name} dose (${med.dosage}).`,
-                        type: 'medication'
+                        message: new RegExp(med.name, 'i'),
+                        createdAt: { $gte: moment().startOf('minute').toDate() }
                     });
+
+                    if (!exists) {
+                        await Notification.create({
+                            recipient: patient.userId,
+                            title: "Medication Reminder 💊",
+                            message: `It's time for your ${med.name} dose (${med.dosage}).`,
+                            type: 'medication'
+                        });
+                        console.log(`Notification sent for ${med.name} to user ${patient.userId}`);
+                    }
                 }
             }
         }
