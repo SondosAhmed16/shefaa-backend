@@ -3,7 +3,7 @@ const express = require("express");
 const connectDB = require("./config/db.js");  
 const bcrypt = require('bcryptjs');
 const passport = require('passport');
-require('./utils/cronJobs');
+require('./utils/cronJobs.js');
 require('./config/passport.js');
 // Import Middlewares
 const securityMiddleware = require("./middleware/security.js"); 

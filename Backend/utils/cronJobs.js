@@ -5,21 +5,34 @@ const moment = require('moment');
 
 // وظيفة تعمل كل دقيقة
 cron.schedule('* * * * *', async () => {
-    const currentTime = moment().format('hh:mm A'); // الوقت الحالي مثل 09:00 AM
-    console.log(`[Cron Job] Checking medications for: ${currentTime}`); 
-    // البحث عن المرضى الذين لديهم دواء في هذا الوقت
-    const patients = await Patient.find({ "medications.schedule": currentTime });
+    // استخدمي الصيغة دي بالظبط عشان تطابق اللي بنبعته من بوست مان
+    const currentTime = moment().format('hh:mm A'); 
+    console.log(`[Cron Job] Checking at: ${currentTime}`); // عشان تشوفيها في الكونسول كل دقيقة
 
-    for (const patient of patients) {
-        const medsToRemind = patient.medications.filter(m => m.schedule.includes(currentTime));
-        
-        for (const med of medsToRemind) {
-            await Notification.create({
-                recipient: patient.userId,
-                title: "Medication Reminder 💊",
-                message: `It's time for your ${med.name} dose (${med.dosage}).`,
-                type: 'medication'
-            });
+    try {
+        // البحث عن المرضى اللي عندهم دواء في الوقت ده "بالظبط"
+        const patients = await Patient.find({ 
+            "medications.schedule": currentTime,
+            "medications.isActive": true 
+        });
+
+        if (patients.length > 0) {
+            console.log(`Found ${patients.length} patients with meds at ${currentTime}`);
+            for (const patient of patients) {
+                // فلترة الأدوية اللي موعدها دلوقتي
+                const meds = patient.medications.filter(m => m.schedule.includes(currentTime));
+                
+                for (const med of meds) {
+                    await Notification.create({
+                        recipient: patient.userId,
+                        title: "Medication Reminder 💊",
+                        message: `It's time for your ${med.name} dose (${med.dosage}).`,
+                        type: 'medication'
+                    });
+                }
+            }
         }
+    } catch (err) {
+        console.error("Cron Job Error:", err);
     }
 });
