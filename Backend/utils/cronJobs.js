@@ -6,7 +6,7 @@ const moment = require('moment');
 // وظيفة تعمل كل دقيقة
 cron.schedule('* * * * *', async () => {
     const currentTime = moment().format('hh:mm A'); // الوقت الحالي مثل 09:00 AM
-    
+    console.log(`[Cron Job] Checking medications for: ${currentTime}`); 
     // البحث عن المرضى الذين لديهم دواء في هذا الوقت
     const patients = await Patient.find({ "medications.schedule": currentTime });
 
