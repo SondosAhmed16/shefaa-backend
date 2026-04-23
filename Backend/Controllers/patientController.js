@@ -163,3 +163,17 @@ exports.addMedication = async (req, res) => {
     res.status(500).json({ message: err.message });
   }
 };
+
+exports.confirmMedicationDose = async (req, res) => {
+  try {
+    const { medId } = req.params; 
+    const patient = await Patient.findOneAndUpdate(
+      { userId: req.user._id, "medications._id": medId },
+      { $push: { "medications.$.adherenceHistory": { date: new Date(), status: 'taken' } } },
+      { new: true }
+    );
+    res.json({ message: "Dose confirmed!", patient });
+  } catch (err) {
+    res.status(500).json({ message: err.message });
+  }
+};

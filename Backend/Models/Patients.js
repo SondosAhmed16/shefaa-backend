@@ -30,7 +30,11 @@ const patientSchema = new mongoose.Schema(
       form: { type: String, enum: ["Tablet", "Capsule", "Syrup", "Injection"] },
       timesPerDay: Number,
       schedule: [String],
-      isActive: { type: Boolean, default: true }
+      isActive: { type: Boolean, default: true },
+      adherenceHistory: [{
+        date: { type: Date, default: Date.now },
+        status: { type: String, enum: ['taken', 'missed'], default: 'taken' }
+      }]
     }],
     height: { type: Number, default: 0 },
     weight: { type: Number, default: 0 },

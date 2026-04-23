@@ -21,6 +21,7 @@ router.get('/medications', auth, patientController.getMedications);
 router.post('/medications', auth, patientController.addMedication);
 
 router.get('/appointments/upcoming', auth, appointmentController.getAppointments);
+
 //router.get('/appointments', auth, authorizeRoles('patient'), patientController.getAppointments);
 router.get('/notifications', auth, notificationController.getMyNotifications);
 router.patch('/notifications/:id/read', auth, notificationController.markAsRead);
@@ -28,5 +29,7 @@ router.patch('/notifications/:id/read', auth, notificationController.markAsRead)
 router.post('/upload-scan', auth, authorizeRoles('patient'), upload.single("scan"), patientController.uploadAttachment);
 
 router.get('/medical-history', auth, authorizeRoles('patient'), patientController.getMedicalHistory);
+
+router.post('/medications/:medId/confirm', auth, patientController.confirmMedicationDose);
 
 module.exports = router;
