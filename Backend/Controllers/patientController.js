@@ -175,14 +175,21 @@ exports.confirmMedicationDose = async (req, res) => {
 
     if (!patient) return res.status(404).json({ message: "Medication not found" });
 
-    // حساب نسبة الالتزام (Adherence) لهذا الدواء تحديداً
     const med = patient.medications.id(medId);
-    const totalDoses = med.adherenceHistory.length; // مثال مبسط
-    const adherenceRate = totalDoses > 0 ? 92 : 0; // هنا ممكن تحطي معادلة الحساب الحقيقية
+
+
+    const takenDoses = med.adherenceHistory.length; 
+
+
+    const totalExpectedDoses = 10; 
+    
+    let adherenceRate = Math.round((takenDoses / totalExpectedDoses) * 100);
+    
+    if (adherenceRate > 100) adherenceRate = 100;
 
     res.json({ 
       message: "Dose confirmed!", 
-      adherenceRate: adherenceRate + "%", 
+      adherenceRate: `${adherenceRate}%`, // دلوقتى الرقم هيتغير كل ما المريض يدوس Confirm
       medication: med 
     });
   } catch (err) {
