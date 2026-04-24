@@ -55,6 +55,7 @@ async function analyzeWithAI(rawText) {
     3. NO MEDICINE: Do not mention any drug names, dosages, or supplements.
     4. Conciseness: Keep each tip under 10 words.
     5. Formatting: Provide exactly 3 actionable tips.
+    6. Danger score from 0 to 100
     `;
 
     try {
