@@ -44,23 +44,32 @@ const model = genAI.getGenerativeModel({
 
 async function analyzeWithAI(rawText) {
     const prompt = `
-STRICT JSON OUTPUT ONLY. NO TEXT. NO MARKDOWN.
+Analyze the following medical lab report text and extract data into a STRICT JSON format.
+Follow these logic rules:
+1. "findings": Include ALL tests where a result is present, especially "Microscopic Examination" items like Mucus, Epithelial Cells, and Crystals, even if they aren't numeric.
+2. "status": Determine based on the "Reference Range" provided in the text. For non-numeric results (e.g., "Some", "Slightly Turbid"), mark status as "Abnormal" or "Attention" if they deviate from "Nil/Clear".
+3. "summary": Provide a concise explanation for a non-medical user. If Pus Cells or RBCs are elevated, explain what this might indicate (e.g., irritation or infection).
+4. "tips": Provide specific, actionable advice based on the findings (e.g., if specific gravity is high, suggest hydration; if pH is low, suggest reducing acidic foods).
+5. "dangerScore": Scale 0-10 (0: Perfectly normal, 10: Critical emergency).
 
-If no medical values found, return:
-{ "error": "No medical data detected" }
-
-Analyze this lab report:
+Lab Report Text:
 "${rawText}"
 
-Return:
+STRICT JSON OUTPUT ONLY:
 {
   "patientName": "string",
   "findings": [
-    { "testName": "string", "result": number, "unit": "string", "status": "Normal/High/Low/Pre-Risk" }
+    { 
+      "testName": "string", 
+      "result": "string or number", 
+      "unit": "string", 
+      "status": "Normal/High/Low/Abnormal",
+      "interpretation": "Briefly explain what this specific result means"
+    }
   ],
   "dangerScore": number,
-  "summary": "string",
-  "tips": ["", "", ""]
+  "summary": "string (in simple terms)",
+  "tips": ["string", "string", "string"]
 }
 `;
 
