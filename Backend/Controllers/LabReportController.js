@@ -5,98 +5,72 @@ const client = new DocumentAnalysisClient(endpoint, new AzureKeyCredential(key))
 
 exports.analyzeReport = async (req, res) => {
     try {
-        if (!req.file) {
-            return res.status(400).json({ message: "No file uploaded" });
-        }
+        if (!req.file) return res.status(400).json({ message: "No file uploaded" });
 
-        // 1. Extract text from Azure OCR
-        const poller = await client.beginAnalyzeDocument(
-            "prebuilt-layout",
-            req.file.buffer,
-            { contentType: req.file.mimetype }
-        );
-
+        // 1. Get text from Azure
+        const poller = await client.beginAnalyzeDocument("prebuilt-layout", req.file.buffer, { contentType: req.file.mimetype });
         const { content } = await poller.pollUntilDone();
-//new
-        // 2. Send text to AI
-        const aiAnalysis = await analyzeWithAI(content);
 
-        // 3. Return response
+        // 2. Send text to Gemini for Medical Reasoning
+        const aiAnalysis = await analyzeWithAI(content);
+        //helping
+        // 3. Send final structured JSON to Flutter
         res.status(200).json({
             success: true,
             data: aiAnalysis
         });
-
     } catch (err) {
         console.error("Pipeline Error:", err);
-        res.status(500).json({
-            message: "AI Analysis failed",
-            error: err.message
-        });
+        res.status(500).json({ message: "AI Analysis failed ya albi", error: err.message });
     }
 };
 
 const { GoogleGenerativeAI } = require("@google/generative-ai");
 
 const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
-const model = genAI.getGenerativeModel({
-    model: "gemini-1.0-pro"
+// Change your model initialization to this:
+const model = genAI.getGenerativeModel({ 
+    model: "gemini-3-flash-preview" // The 2026 stable workhorse
 });
 
 async function analyzeWithAI(rawText) {
-    // ✅ تقليل الحجم
-    const MAX_LENGTH = 5000;
-    rawText = rawText.slice(0, MAX_LENGTH);
-
     const prompt = `
-You are a medical lab expert...
+    You are a medical lab expert. Analyze the following OCR text from a lab report:
+    "${rawText}"
 
-Return ONLY valid JSON...
-`;
+    Return ONLY a JSON object with this exact structure:
+    {
+      "patientName": "string",
+      "findings": [
+        { "testName": "string", "result": "number", "unit": "string", "status": "Normal/High/Low/Pre-Risk" }
+      ],
+      "dangerScore": 0,
+      "summary": "Brief analysis in English",
+      "tips": ["Tip 1", "Tip 2", "Tip 3"]
+    }
+
+    GUIDELINES FOR TIPS:
+    1. Focus on lifestyle: Suggest habits like hydration, dietary changes (e.g., "reduce salt"), or activity levels.
+    2. Referrals: Suggest consulting a specialist generally (e.g., "Consult a cardiologist") without naming specific doctors.
+    3. NO MEDICINE: Do not mention any drug names, dosages, or supplements.
+    4. Conciseness: Keep each tip under 10 words.
+    5. Formatting: Provide exactly 3 actionable tips.
+    `;
 
     try {
-        console.log("AI started");
-
-        const result = await model.generateContent({
-            contents: [
-                {
-                    role: "user",
-                    parts: [{ text: prompt }]
-                }
-            ],
-            generationConfig: {
-                responseMimeType: "application/json"
-            }
-        });
-
+        const result = await model.generateContent(prompt);
         const response = await result.response;
         let text = response.text().trim();
 
-        text = text
-            .replace(/```json/g, "")
-            .replace(/```/g, "")
-            .trim();
-
-        console.log("AI RAW RESPONSE:", text);
-
-        let parsed;
-
-        try {
-            parsed = JSON.parse(text);
-        } catch (e) {
-            return { error: "Invalid JSON from AI", raw: text };
+        // FIX: Remove markdown backticks if the AI added them
+        if (text.startsWith("```")) {
+            text = text.replace(/^```json/, "").replace(/```$/, "").trim();
         }
 
-        if (!parsed.patientName || !parsed.findings) {
-            return { error: "Incomplete AI response", raw: parsed };
-        }
-
-        return parsed;
-
-    } catch (error) {
-        return {
-            error: "AI processing failed",
-            details: error.message
-        };
+        return JSON.parse(text);
+    } catch (parseError) {
+        console.error("JSON Parse Error:", parseError);
+        // Fallback so the server doesn't 500
+        return { error: "Failed to parse AI response", raw: rawText.substring(0, 100) };
     }
 }
