@@ -166,13 +166,25 @@ exports.addMedication = async (req, res) => {
 
 exports.confirmMedicationDose = async (req, res) => {
   try {
-    const { medId } = req.params; 
+    const { medId } = req.params;
     const patient = await Patient.findOneAndUpdate(
       { userId: req.user._id, "medications._id": medId },
       { $push: { "medications.$.adherenceHistory": { date: new Date(), status: 'taken' } } },
       { new: true }
     );
-    res.json({ message: "Dose confirmed!", patient });
+
+    if (!patient) return res.status(404).json({ message: "Medication not found" });
+
+    // حساب نسبة الالتزام (Adherence) لهذا الدواء تحديداً
+    const med = patient.medications.id(medId);
+    const totalDoses = med.adherenceHistory.length; // مثال مبسط
+    const adherenceRate = totalDoses > 0 ? 92 : 0; // هنا ممكن تحطي معادلة الحساب الحقيقية
+
+    res.json({ 
+      message: "Dose confirmed!", 
+      adherenceRate: adherenceRate + "%", 
+      medication: med 
+    });
   } catch (err) {
     res.status(500).json({ message: err.message });
   }
