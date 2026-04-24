@@ -43,36 +43,20 @@ const model = genAI.getGenerativeModel({
     model: "gemini-1.0-pro"
 });
 
-const model = genAI.getGenerativeModel({
-    model: "gemini-1.0-pro"
-});
-
 async function analyzeWithAI(rawText) {
+    // ✅ تقليل الحجم
+    const MAX_LENGTH = 5000;
+    rawText = rawText.slice(0, MAX_LENGTH);
+
     const prompt = `
-You are a medical lab expert.
+You are a medical lab expert...
 
-Analyze the following OCR text from a lab report:
-"${rawText}"
-
-Return ONLY a valid JSON object with this exact structure:
-{
-  "patientName": "string",
-  "findings": [
-    { "testName": "string", "result": "number", "unit": "string", "status": "Normal/High/Low/Pre-Risk" }
-  ],
-  "dangerScore": 0,
-  "summary": "Brief analysis in English",
-  "tips": ["Tip 1", "Tip 2", "Tip 3"]
-}
-
-STRICT RULES:
-- Output MUST be pure JSON
-- No markdown
-- No extra text
-- Always include all fields
+Return ONLY valid JSON...
 `;
 
     try {
+        console.log("AI started");
+
         const result = await model.generateContent({
             contents: [
                 {
@@ -100,17 +84,11 @@ STRICT RULES:
         try {
             parsed = JSON.parse(text);
         } catch (e) {
-            return {
-                error: "Invalid JSON from AI",
-                raw: text
-            };
+            return { error: "Invalid JSON from AI", raw: text };
         }
 
         if (!parsed.patientName || !parsed.findings) {
-            return {
-                error: "Incomplete AI response",
-                raw: parsed
-            };
+            return { error: "Incomplete AI response", raw: parsed };
         }
 
         return parsed;
