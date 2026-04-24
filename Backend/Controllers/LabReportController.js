@@ -40,10 +40,31 @@ const { GoogleGenerativeAI } = require("@google/generative-ai");
 
 const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
 
-// ✅ استخدم موديل مستقر
-const model = genAI.getGenerativeModel({
-    model: "gemini-pro"
-});
+async function getAvailableModel(genAI) {
+    try {
+        const models = await genAI.listModels();
+
+        // فلترة الموديلات اللي تدعم generateContent
+        const supportedModels = models.filter(m =>
+            m.supportedGenerationMethods?.includes("generateContent")
+        );
+
+        if (!supportedModels.length) {
+            throw new Error("No supported models found for generateContent");
+        }
+
+        // اختار أول موديل متاح
+        const selectedModel = supportedModels[0].name;
+
+        console.log("Using model:", selectedModel);
+
+        return genAI.getGenerativeModel({ model: selectedModel });
+
+    } catch (err) {
+        console.error("Model selection error:", err);
+        throw err;
+    }
+}
 
 async function analyzeWithAI(rawText) {
     const prompt = `
@@ -64,21 +85,16 @@ Return ONLY a valid JSON object with this exact structure:
 }
 
 STRICT RULES:
-- Output MUST be pure JSON (no text, no explanation)
+- Output MUST be pure JSON
 - No markdown
-- No backticks
-- No extra text before or after JSON
+- No extra text
 - Always include all fields
-
-GUIDELINES FOR TIPS:
-1. Lifestyle only
-2. No medicines
-3. Max 10 words per tip
-4. Exactly 3 tips
 `;
 
     try {
-        // ✅ إجبار الموديل يرجع JSON
+        // ✅ اختر موديل ديناميك
+        const model = await getAvailableModel(genAI);
+
         const result = await model.generateContent({
             contents: [
                 {
@@ -94,23 +110,22 @@ GUIDELINES FOR TIPS:
         const response = await result.response;
         let text = response.text().trim();
 
-        // ✅ تنظيف أي markdown لو ظهر
+        // تنظيف
         text = text
             .replace(/```json/g, "")
             .replace(/```/g, "")
             .trim();
 
-        // ✅ debugging
         console.log("AI RAW RESPONSE:", text);
 
         return JSON.parse(text);
 
     } catch (error) {
-        console.error("JSON Parse Error:", error);
+        console.error("AI Error:", error);
 
         return {
-            error: "AI returned invalid JSON",
-            aiRaw: error.message
+            error: "AI processing failed",
+            details: error.message
         };
     }
 }
