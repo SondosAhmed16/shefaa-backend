@@ -39,43 +39,13 @@ exports.analyzeReport = async (req, res) => {
 const { GoogleGenerativeAI } = require("@google/generative-ai");
 
 const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
-let cachedModel = null;
-async function getAvailableModel(genAI) {
-    if (cachedModel) {
-        return cachedModel; // ✅ reuse
-    }
+const model = genAI.getGenerativeModel({
+    model: "gemini-1.0-pro"
+});
 
-    try {
-        const models = await genAI.listModels();
-
-        const supportedModels = models.filter(m =>
-            m.supportedGenerationMethods?.includes("generateContent")
-        );
-
-        if (!supportedModels.length) {
-            throw new Error("No supported models found for generateContent");
-        }
-
-        // 🎯 اختار الأفضل مش أول واحد
-        const preferred = supportedModels.find(m =>
-            m.name.includes("flash") || m.name.includes("pro")
-        );
-
-        const selectedModel = preferred
-            ? preferred.name
-            : supportedModels[0].name;
-
-        console.log("Using model:", selectedModel);
-
-        cachedModel = genAI.getGenerativeModel({ model: selectedModel });
-
-        return cachedModel;
-
-    } catch (err) {
-        console.error("Model selection error:", err);
-        throw err;
-    }
-}
+const model = genAI.getGenerativeModel({
+    model: "gemini-1.0-pro"
+});
 
 async function analyzeWithAI(rawText) {
     const prompt = `
@@ -103,9 +73,6 @@ STRICT RULES:
 `;
 
     try {
-        // ✅ اختر موديل ديناميك
-        const model = await getAvailableModel(genAI);
-
         const result = await model.generateContent({
             contents: [
                 {
@@ -121,7 +88,6 @@ STRICT RULES:
         const response = await result.response;
         let text = response.text().trim();
 
-        // تنظيف
         text = text
             .replace(/```json/g, "")
             .replace(/```/g, "")
@@ -134,15 +100,12 @@ STRICT RULES:
         try {
             parsed = JSON.parse(text);
         } catch (e) {
-            console.error("Invalid JSON:", text);
-
             return {
                 error: "Invalid JSON from AI",
                 raw: text
             };
         }
 
-        // ✅ validation بسيط
         if (!parsed.patientName || !parsed.findings) {
             return {
                 error: "Incomplete AI response",
@@ -153,8 +116,6 @@ STRICT RULES:
         return parsed;
 
     } catch (error) {
-        console.error("AI Error:", error);
-
         return {
             error: "AI processing failed",
             details: error.message
