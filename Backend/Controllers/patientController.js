@@ -163,3 +163,36 @@ exports.addMedication = async (req, res) => {
     res.status(500).json({ message: err.message });
   }
 };
+
+exports.confirmMedicationDose = async (req, res) => {
+  try {
+    const { medId } = req.params;
+    const patient = await Patient.findOneAndUpdate(
+      { userId: req.user._id, "medications._id": medId },
+      { $push: { "medications.$.adherenceHistory": { date: new Date(), status: 'taken' } } },
+      { new: true }
+    );
+
+    if (!patient) return res.status(404).json({ message: "Medication not found" });
+
+    const med = patient.medications.id(medId);
+
+
+    const takenDoses = med.adherenceHistory.length; 
+
+
+    const totalExpectedDoses = 10; 
+    
+    let adherenceRate = Math.round((takenDoses / totalExpectedDoses) * 100);
+    
+    if (adherenceRate > 100) adherenceRate = 100;
+
+    res.json({ 
+      message: "Dose confirmed!", 
+      adherenceRate: `${adherenceRate}%`, // دلوقتى الرقم هيتغير كل ما المريض يدوس Confirm
+      medication: med 
+    });
+  } catch (err) {
+    res.status(500).json({ message: err.message });
+  }
+};
