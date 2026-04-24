@@ -11,8 +11,8 @@ exports.analyzeReport = async (req, res) => {
         const poller = await client.beginAnalyzeDocument("prebuilt-layout", req.file.buffer, { contentType: req.file.mimetype });
         const { content } = await poller.pollUntilDone();
 
-        // 2. Send text to Gemini for Medical Reasoning
-        const aiAnalysis = await analyzeWithAI(content);
+        const cleanedText = cleanText(content);
+        const aiAnalysis = await analyzeWithAI(cleanedText);
         //helping
         // 3. Send final structured JSON to Flutter
         res.status(200).json({
@@ -24,38 +24,54 @@ exports.analyzeReport = async (req, res) => {
         res.status(500).json({ message: "AI Analysis failed ya albi", error: err.message });
     }
 };
-
+function cleanText(text) {
+    return text
+        .replace(/\n+/g, "\n")
+        .replace(/[^\x00-\x7F\u0600-\u06FF0-9.%/ \n]/g, "") // remove noise
+        .trim();
+}
+function extractJSON(text) {
+    const match = text.match(/\{[\s\S]*\}/);
+    return match ? match[0] : null;
+}
 const { GoogleGenerativeAI } = require("@google/generative-ai");
 
 const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
 // Change your model initialization to this:
-const model = genAI.getGenerativeModel({ 
+const model = genAI.getGenerativeModel({
     model: "gemini-3-flash-preview" // The 2026 stable workhorse
 });
 
 async function analyzeWithAI(rawText) {
     const prompt = `
-    You are a medical lab expert. Analyze the following OCR text from a lab report:
-    "${rawText}"
+Analyze the following medical lab report text and extract data into a STRICT JSON format.
+Follow these logic rules:
+1. "findings": Include ALL tests where a result is present, especially "Microscopic Examination" items like Mucus, Epithelial Cells, and Crystals, even if they aren't numeric.
+2. "status": Determine based on the "Reference Range" provided in the text. For non-numeric results (e.g., "Some", "Slightly Turbid"), mark status as "Abnormal" or "Attention" if they deviate from "Nil/Clear".
+3. "summary": Provide a concise explanation for a non-medical user. If Pus Cells or RBCs are elevated, explain what this might indicate (e.g., irritation or infection).
+4. "tips": Provide specific, actionable advice based on the findings (e.g., if specific gravity is high, suggest hydration; if pH is low, suggest reducing acidic foods).
+5. "dangerScore": Scale 0-10 (0: Perfectly normal, 10: Critical emergency).
 
-    Return ONLY a JSON object with this exact structure:
-    {
-      "patientName": "string",
-      "findings": [
-        { "testName": "string", "result": "number", "unit": "string", "status": "Normal/High/Low/Pre-Risk" }
-      ],
-      "dangerScore": 0,
-      "summary": "Brief analysis in English",
-      "tips": ["Tip 1", "Tip 2", "Tip 3"]
+Lab Report Text:
+"${rawText}"
+
+STRICT JSON OUTPUT ONLY:
+{
+  "patientName": "string",
+  "findings": [
+    { 
+      "testName": "string", 
+      "result": "string or number", 
+      "unit": "string", 
+      "status": "Normal/High/Low/Abnormal",
+      "interpretation": "Briefly explain what this specific result means"
     }
-
-    GUIDELINES FOR TIPS:
-    1. Focus on lifestyle: Suggest habits like hydration, dietary changes (e.g., "reduce salt"), or activity levels.
-    2. Referrals: Suggest consulting a specialist generally (e.g., "Consult a cardiologist") without naming specific doctors.
-    3. NO MEDICINE: Do not mention any drug names, dosages, or supplements.
-    4. Conciseness: Keep each tip under 10 words.
-    5. Formatting: Provide exactly 3 actionable tips.
-    `;
+  ],
+  "dangerScore": number,
+  "summary": "string (in simple terms)",
+  "tips": ["string", "string", "string"]
+}
+`;
 
     try {
         const result = await model.generateContent(prompt);
@@ -67,7 +83,14 @@ async function analyzeWithAI(rawText) {
             text = text.replace(/^```json/, "").replace(/```$/, "").trim();
         }
 
-        return JSON.parse(text);
+
+        let jsonText = extractJSON(text);
+
+        if (!jsonText) {
+            return { error: "No JSON found", raw: text.substring(0, 200) };
+        }
+
+        return JSON.parse(jsonText);
     } catch (parseError) {
         console.error("JSON Parse Error:", parseError);
         // Fallback so the server doesn't 500
