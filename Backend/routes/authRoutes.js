@@ -39,52 +39,7 @@ const upload = multer({ storage: storage });
 /************************************* */
 
 
-router.post("/google/mobile", async (req, res) => {
-  const { idToken } = req.body; 
-
-  try {
-
-    const ticket = await client.verifyIdToken({
-        idToken,
-       audience: [
-        process.env.GOOGLE_CLIENT_ID, 
-   
-    ],
-    });
-    const payload = ticket.getPayload();
-    const { email, name, sub: googleId } = payload;
-
-    let user = await User.findOne({ email });
-
-    if (!user) {
-      return res.status(404).json({ success: false, message: "Account not found. Please register first." });
-    }
-
-    if (!user.isVerified) {
-      return res.status(403).json({ success: false, message: "Account pending review" });
-    }
-
-    const accessToken = generateAccessToken(user);
-    const refreshToken = generateRefreshToken(user);
-
-    await RefreshToken.create({
-      token: refreshToken,
-      user: user._id,
-      expiresAt: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000),
-    });
-
-
-    res.json({
-      success: true,
-      accessToken,
-      refreshToken,
-      user: { id: user._id, name: user.name, role: user.role }
-    });
-
-  } catch (error) {
-    res.status(401).json({ success: false, message: error.message });
-  }
-});
+router.post("/google/mobile", authController.googleLoginMobile);
 
 /*************************************** */
 
@@ -161,5 +116,6 @@ router.post("/refresh", authController.refreshToken);
 
 // Logout
 router.post("/logout", authController.logout);
+
 
 module.exports = router;
