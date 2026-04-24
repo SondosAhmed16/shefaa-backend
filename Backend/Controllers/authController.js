@@ -309,7 +309,7 @@ exports.googleLoginMobile = async (req, res) => {
   try {
     const ticket = await client.verifyIdToken({
       idToken,
-     // audience: process.env.GOOGLE_CLIENT_ID,
+      audience: process.env.GOOGLE_CLIENT_ID,
     });
     const payload = ticket.getPayload();
     const { email, sub: googleId } = payload;
