@@ -41,10 +41,13 @@ const { GoogleGenerativeAI } = require("@google/generative-ai");
 const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
 
 async function getAvailableModel(genAI) {
+    if (cachedModel) {
+        return cachedModel; // ✅ reuse
+    }
+
     try {
         const models = await genAI.listModels();
 
-        // فلترة الموديلات اللي تدعم generateContent
         const supportedModels = models.filter(m =>
             m.supportedGenerationMethods?.includes("generateContent")
         );
@@ -53,12 +56,20 @@ async function getAvailableModel(genAI) {
             throw new Error("No supported models found for generateContent");
         }
 
-        // اختار أول موديل متاح
-        const selectedModel = supportedModels[0].name;
+        // 🎯 اختار الأفضل مش أول واحد
+        const preferred = supportedModels.find(m =>
+            m.name.includes("flash") || m.name.includes("pro")
+        );
+
+        const selectedModel = preferred
+            ? preferred.name
+            : supportedModels[0].name;
 
         console.log("Using model:", selectedModel);
 
-        return genAI.getGenerativeModel({ model: selectedModel });
+        cachedModel = genAI.getGenerativeModel({ model: selectedModel });
+
+        return cachedModel;
 
     } catch (err) {
         console.error("Model selection error:", err);
@@ -118,7 +129,28 @@ STRICT RULES:
 
         console.log("AI RAW RESPONSE:", text);
 
-        return JSON.parse(text);
+        let parsed;
+
+        try {
+            parsed = JSON.parse(text);
+        } catch (e) {
+            console.error("Invalid JSON:", text);
+
+            return {
+                error: "Invalid JSON from AI",
+                raw: text
+            };
+        }
+
+        // ✅ validation بسيط
+        if (!parsed.patientName || !parsed.findings) {
+            return {
+                error: "Incomplete AI response",
+                raw: parsed
+            };
+        }
+
+        return parsed;
 
     } catch (error) {
         console.error("AI Error:", error);
