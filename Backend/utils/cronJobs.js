@@ -5,39 +5,30 @@ const moment = require('moment');
 
 // وظيفة تعمل كل دقيقة
 cron.schedule('* * * * *', async () => {
-    // التأكد من جلب الوقت بصيغة مطابقة تماماً لما هو مخزن في الأطلس
     const currentTime = moment().format('hh:mm A'); 
-    console.log(`[Cron Job] System Time: ${currentTime}`); 
+    console.log(`[Cron Job] Checking at: ${currentTime}`); 
 
     try {
-        // البحث باستخدام $in للتأكد من وجود الوقت الحالي داخل مصفوفة الـ schedule
+        // استخدمنا $in للتأكد من البحث داخل المصفوفة بشكل صحيح
         const patients = await Patient.find({ 
-            "medications.schedule": currentTime,
+            "medications.schedule": { $in: [currentTime] },
             "medications.isActive": true 
         });
 
-        if (patients.length > 0) {
-            for (const patient of patients) {
-                // تصفية الأدوية التي تطابق هذا الوقت
-                const meds = patient.medications.filter(m => m.schedule.includes(currentTime));
-                
-                for (const med of meds) {
-                    const exists = await Notification.findOne({
-                        recipient: patient.userId,
-                        message: new RegExp(med.name, 'i'),
-                        createdAt: { $gte: moment().startOf('minute').toDate() }
-                    });
+        console.log(`Matching patients found: ${patients.length}`); // سطر مهم للتأكد
 
-                    if (!exists) {
-                        await Notification.create({
-                            recipient: patient.userId,
-                            title: "Medication Reminder 💊",
-                            message: `It's time for your ${med.name} dose (${med.dosage}).`,
-                            type: 'medication'
-                        });
-                        console.log(`Notification sent for ${med.name} to user ${patient.userId}`);
-                    }
-                }
+        for (const patient of patients) {
+            // تصفية الدواء اللي وقته "دلوقتي"
+            const meds = patient.medications.filter(m => m.schedule.includes(currentTime));
+            
+            for (const med of meds) {
+                await Notification.create({
+                    recipient: patient.userId,
+                    title: "Medication Reminder 💊",
+                    message: `It's time for your ${med.name} dose (${med.dosage}).`,
+                    type: 'medication'
+                });
+                console.log(`✅ Notification created for: ${med.name}`);
             }
         }
     } catch (err) {
