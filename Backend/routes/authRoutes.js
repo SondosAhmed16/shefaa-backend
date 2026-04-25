@@ -117,9 +117,6 @@ router.post("/refresh", authController.refreshToken);
 // Logout
 router.post("/logout", authController.logout);
 
-<<<<<<< HEAD
 router.get("/me", protect, getCurrentUser);
-=======
->>>>>>> c0480b44c1be031a8044df30368932ceeef41a37
 
 module.exports = router;
