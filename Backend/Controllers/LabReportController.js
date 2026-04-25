@@ -1,16 +1,14 @@
 const { DocumentAnalysisClient, AzureKeyCredential } = require("@azure/ai-form-recognizer");
-const { key, endpoint } = require("../config/azureConfig");
-const { GoogleGenerativeAI } = require("@google/generative-ai");
+const { AzureOpenAI } = require("openai");
+const { key, endpoint, openAIKey, openAIEndpoint } = require("../config/azureConfig");
 
 const client = new DocumentAnalysisClient(endpoint, new AzureKeyCredential(key));
 
-const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
-const model = genAI.getGenerativeModel({
-    model: "gemini-2.0-flash",
-    generationConfig: {
-        temperature: 0.1,
-        responseMimeType: "application/json"
-    }
+const openaiClient = new AzureOpenAI({
+    endpoint: openAIEndpoint,
+    apiKey: openAIKey,
+    apiVersion: "2024-02-01",
+    deployment: "gpt-4o"
 });
 
 // ===== Helper Functions =====
@@ -32,11 +30,17 @@ function isValidAnalysis(obj) {
 // ===== AI Analysis =====
 
 async function analyzeWithAI(rawText, retries = 3) {
-    const prompt = `
-Analyze the following medical lab report text and extract data into a STRICT JSON format.
-
-Return ONLY valid JSON in this structure:
-
+    for (let attempt = 1; attempt <= retries; attempt++) {
+        try {
+            const result = await openaiClient.chat.completions.create({
+                model: "gpt-4o-mini",
+                temperature: 0.1,
+                response_format: { type: "json_object" },
+                messages: [
+                    {
+                        role: "system",
+                        content: `You are a medical lab report analyzer. 
+Always respond with valid JSON only in this structure:
 {
   "patientName": "string",
   "findings": [
@@ -51,23 +55,18 @@ Return ONLY valid JSON in this structure:
   "dangerScore": number,
   "summary": "simple explanation",
   "tips": ["string", "string", "string"]
-}
+}`
+                    },
+                    {
+                        role: "user",
+                        content: `Analyze this lab report:\n"""\n${rawText}\n"""`
+                    }
+                ]
+            });
 
-Lab Report Text:
-"""
-${rawText}
-"""
-`;
+            console.log(`AI RAW RESPONSE (attempt ${attempt}):`, result.choices[0].message.content);
 
-    for (let attempt = 1; attempt <= retries; attempt++) {
-        try {
-            const result = await model.generateContent(prompt);
-            const response = await result.response;
-
-            let text = response.text().trim();
-            console.log(`AI RAW RESPONSE (attempt ${attempt}):`, text);
-
-            const parsed = JSON.parse(text);
+            const parsed = JSON.parse(result.choices[0].message.content);
 
             if (!isValidAnalysis(parsed)) {
                 throw new Error("Invalid response structure");
@@ -79,10 +78,7 @@ ${rawText}
             console.warn(`Attempt ${attempt} failed:`, err.message);
 
             if (attempt === retries) {
-                return {
-                    error: "AI failed after retries",
-                    details: err.message
-                };
+                return { error: "AI failed after retries", details: err.message };
             }
 
             await new Promise(r => setTimeout(r, 1000 * attempt));
@@ -96,7 +92,6 @@ exports.analyzeReport = async (req, res) => {
     try {
         if (!req.file) return res.status(400).json({ message: "No file uploaded" });
 
-        // 1. Extract text from document via Azure
         const poller = await client.beginAnalyzeDocument(
             "prebuilt-layout",
             req.file.buffer,
@@ -104,11 +99,9 @@ exports.analyzeReport = async (req, res) => {
         );
         const { content } = await poller.pollUntilDone();
 
-        // 2. Clean text and analyze with AI
         const cleanedText = cleanText(content);
         const aiAnalysis = await analyzeWithAI(cleanedText);
 
-        // 3. Return structured response
         res.status(200).json({
             success: true,
             data: aiAnalysis
