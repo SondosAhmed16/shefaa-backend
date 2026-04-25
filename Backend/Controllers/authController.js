@@ -9,6 +9,9 @@ const Pharmacy = require('../Models/Pharmaces');
 const Lab = require('../Models/Labs');
 const RefreshToken = require("../Models/RefreshToken");
 const PasswordReset = require("../Models/PasswordReset");
+const { OAuth2Client } = require('google-auth-library');
+const client = new OAuth2Client(process.env.GOOGLE_CLIENT_ID);
+
 
 const {
   generateAccessToken,
@@ -322,4 +325,49 @@ exports.getCurrentUser = async (req, res) => {
   }
 };
 
+exports.googleLoginMobile = async (req, res) => {
+  const { idToken } = req.body;
 
+  try {
+    const ticket = await client.verifyIdToken({
+      idToken,
+      audience: process.env.GOOGLE_CLIENT_ID,
+    });
+    const payload = ticket.getPayload();
+    const { email, sub: googleId } = payload;
+
+    const user = await User.findOne({ email });
+
+    if (!user) {
+      return res.status(404).json({ success: false, message: "Account not found. Please register first." });
+    }
+
+    if (!user.isVerified) {
+      return res.status(403).json({ success: false, message: "Account pending review by admin." });
+    }
+
+    if (!user.googleId) {
+      user.googleId = googleId;
+      await user.save();
+    }
+
+    const accessToken = generateAccessToken(user._id);
+    const refreshToken = generateRefreshToken(user._id);
+
+    await RefreshToken.create({
+      token: refreshToken,
+      user: user._id,
+      expiresAt: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000),
+    });
+
+    res.json({
+      success: true,
+      accessToken,
+      refreshToken,
+      user: { id: user._id, name: user.name, role: user.role }
+    });
+
+  } catch (error) {
+    res.status(401).json({ success: false, message: "Invalid Google Token" });
+  }
+};
