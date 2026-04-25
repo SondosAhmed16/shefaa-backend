@@ -1,102 +1,76 @@
 const { DocumentAnalysisClient, AzureKeyCredential } = require("@azure/ai-form-recognizer");
-const { GoogleGenerativeAI } = require("@google/generative-ai");
 const { key, endpoint } = require("../config/azureConfig");
 
-const client = new DocumentAnalysisClient(
-    endpoint,
-    new AzureKeyCredential(key)
-);
-
-const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
-
-const model = genAI.getGenerativeModel({
-    model: "gemini-1.5-flash",
-    generationConfig: {
-        responseMimeType: "application/json"
-    }
-});
+const client = new DocumentAnalysisClient(endpoint, new AzureKeyCredential(key));
 
 exports.analyzeReport = async (req, res) => {
     try {
-        if (!req.file) {
-            return res.status(400).json({
-                success: false,
-                message: "No file uploaded"
-            });
-        }
+        if (!req.file) return res.status(400).json({ message: "No file uploaded" });
 
-        // 1. Extract text from Azure OCR
-        const poller = await client.beginAnalyzeDocument(
-            "prebuilt-layout",
-            req.file.buffer,
-            {
-                contentType: req.file.mimetype
-            }
-        );
-
+        // 1. Get text from Azure
+        const poller = await client.beginAnalyzeDocument("prebuilt-layout", req.file.buffer, { contentType: req.file.mimetype });
         const { content } = await poller.pollUntilDone();
 
-        // 2. Clean OCR text
         const cleanedText = cleanText(content);
-
-        // 3. Analyze with Gemini
         const aiAnalysis = await analyzeWithAI(cleanedText);
-
-        // 4. Return response
-        return res.status(200).json({
+        //helping
+        // 3. Send final structured JSON to Flutter
+        res.status(200).json({
             success: true,
             data: aiAnalysis
         });
-
     } catch (err) {
         console.error("Pipeline Error:", err);
-
-        return res.status(500).json({
-            success: false,
-            message: "AI analysis failed",
-            error: err.message
-        });
+        res.status(500).json({ message: "AI Analysis failed ya albi", error: err.message });
     }
 };
-
 function cleanText(text) {
     return text
         .replace(/\n+/g, "\n")
-        .replace(/[^\x00-\x7F\u0600-\u06FF0-9.%/ \n:-]/g, "")
+        .replace(/[^\x00-\x7F\u0600-\u06FF0-9.%/ \n]/g, "") // remove noise
         .trim();
 }
+function extractJSON(text) {
+    const match = text.match(/\{[\s\S]*\}/);
+    return match ? match[0] : null;
+}
+const { GoogleGenerativeAI } = require("@google/generative-ai");
+
+const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
+// Change your model initialization to this:
+const model = genAI.getGenerativeModel({
+    model: "gemini-3-flash-preview" // The 2026 stable workhorse
+});
 
 async function analyzeWithAI(rawText) {
     const prompt = `
-Analyze the following medical lab report text.
+Analyze the following medical lab report text and extract data into a STRICT JSON format.
+Follow these logic rules:
+1. "findings": Include ALL tests where a result is present, especially "Microscopic Examination" items like Mucus, Epithelial Cells, and Crystals, even if they aren't numeric.
+2. "status": Determine based on the "Reference Range" provided in the text. For non-numeric results (e.g., "Some", "Slightly Turbid"), mark status as "Abnormal" or "Attention" if they deviate from "Nil/Clear".
+3. "summary": Provide a concise explanation for a non-medical user. If Pus Cells or RBCs are elevated, explain what this might indicate (e.g., irritation or infection).
+4. "tips": Provide specific, actionable advice based on the findings (e.g., if specific gravity is high, suggest hydration; if pH is low, suggest reducing acidic foods).
+5. "dangerScore": Scale 0-10 (0: Perfectly normal, 10: Critical emergency).
 
-Return ONLY valid JSON in this exact structure:
+Lab Report Text:
+"${rawText}"
 
+STRICT JSON OUTPUT ONLY:
 {
   "patientName": "string",
   "findings": [
-    {
-      "testName": "string",
-      "result": "string or number",
-      "unit": "string",
+    { 
+      "testName": "string", 
+      "result": "string or number", 
+      "unit": "string", 
       "status": "Normal/High/Low/Abnormal",
-      "interpretation": "brief explanation"
+      "interpretation": "Briefly explain what this specific result means"
     }
   ],
   "dangerScore": number,
-  "summary": "simple explanation",
-  "tips": ["tip1", "tip2", "tip3"]
+  "summary": "string (in simple terms)",
+  "tips": ["string", "string", "string"]
 }
-
-Rules:
-- Include all test results.
-- Use reference ranges to determine status.
-- Non numeric abnormal values should be "Abnormal".
-- dangerScore from 0 to 10.
-- Return JSON only.
-
-Lab Report Text:
-${rawText}
 `;
 
     try {
@@ -104,31 +78,22 @@ ${rawText}
         const response = await result.response;
         let text = response.text().trim();
 
-        // remove accidental markdown
-        text = text
-            .replace(/```json/g, "")
-            .replace(/```/g, "")
-            .trim();
-
-        console.log("AI RAW RESPONSE:", text);
-
-        try {
-            return JSON.parse(text);
-        } catch (parseErr) {
-            console.error("JSON Parse Error:", parseErr);
-
-            return {
-                error: "Invalid JSON returned from AI",
-                raw: text.substring(0, 500)
-            };
+        // FIX: Remove markdown backticks if the AI added them
+        if (text.startsWith("```")) {
+            text = text.replace(/^```json/, "").replace(/```$/, "").trim();
         }
 
-    } catch (err) {
-        console.error("Gemini Error:", err);
 
-        return {
-            error: "AI processing failed",
-            details: err.message
-        };
+        let jsonText = extractJSON(text);
+
+        if (!jsonText) {
+            return { error: "No JSON found", raw: text.substring(0, 200) };
+        }
+
+        return JSON.parse(jsonText);
+    } catch (parseError) {
+        console.error("JSON Parse Error:", parseError);
+        // Fallback so the server doesn't 500
+        return { error: "Failed to parse AI response", raw: rawText.substring(0, 100) };
     }
 }
