@@ -6,7 +6,9 @@ const cloudinary = require("cloudinary").v2;
 const { CloudinaryStorage } = require("multer-storage-cloudinary");
 const path = require("path");
 const User = require("../Models/Users");
-
+const authController = require("../Controllers/authController");
+const { getCurrentUser } = require("../Controllers/authController");
+const protect = require("../middleware/auth")
 const passport = require('passport');
 const { generateAccessToken, generateRefreshToken } = require("../utils/tokens");
 const RefreshToken = require("../Models/RefreshToken");
