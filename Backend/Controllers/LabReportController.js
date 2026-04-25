@@ -1,61 +1,42 @@
 const { DocumentAnalysisClient, AzureKeyCredential } = require("@azure/ai-form-recognizer");
 const { key, endpoint } = require("../config/azureConfig");
+const { GoogleGenerativeAI } = require("@google/generative-ai");
 
 const client = new DocumentAnalysisClient(endpoint, new AzureKeyCredential(key));
 
-exports.analyzeReport = async (req, res) => {
-    try {
-        if (!req.file) return res.status(400).json({ message: "No file uploaded" });
-
-        // 1. Get text from Azure
-        const poller = await client.beginAnalyzeDocument("prebuilt-layout", req.file.buffer, { contentType: req.file.mimetype });
-        const { content } = await poller.pollUntilDone();
-
-        const cleanedText = cleanText(content);
-        const aiAnalysis = await analyzeWithAI(cleanedText);
-        //helping
-        // 3. Send final structured JSON to Flutter
-        res.status(200).json({
-            success: true,
-            data: aiAnalysis
-        });
-    } catch (err) {
-        console.error("Pipeline Error:", err);
-        res.status(500).json({ message: "AI Analysis failed ya albi", error: err.message });
+const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
+const model = genAI.getGenerativeModel({
+    model: "gemini-2.0-flash",
+    generationConfig: {
+        temperature: 0.1,
+        responseMimeType: "application/json"
     }
-};
+});
+
+// ===== Helper Functions =====
+
 function cleanText(text) {
     return text
         .replace(/\n+/g, "\n")
-        .replace(/[^\x00-\x7F\u0600-\u06FF0-9.%/ \n]/g, "") // remove noise
+        .replace(/[^\x00-\x7F\u0600-\u06FF0-9.%/ \n]/g, "")
         .trim();
 }
-function extractJSON(text) {
-    const match = text.match(/\{[\s\S]*\}/);
-    return match ? match[0] : null;
+
+function isValidAnalysis(obj) {
+    return obj &&
+        Array.isArray(obj.findings) &&
+        obj.findings.length > 0 &&
+        typeof obj.dangerScore === "number";
 }
-const { GoogleGenerativeAI } = require("@google/generative-ai");
 
-const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
-// Change your model initialization to this:
-const model = genAI.getGenerativeModel({
-    model: "gemini-3-flash-preview" // The 2026 stable workhorse
-});
+// ===== AI Analysis =====
 
-async function analyzeWithAI(rawText) {
+async function analyzeWithAI(rawText, retries = 3) {
     const prompt = `
 Analyze the following medical lab report text and extract data into a STRICT JSON format.
-Follow these logic rules:
-1. "findings": Include ALL tests where a result is present, especially "Microscopic Examination" items like Mucus, Epithelial Cells, and Crystals, even if they aren't numeric.
-2. "status": Determine based on the "Reference Range" provided in the text. For non-numeric results (e.g., "Some", "Slightly Turbid"), mark status as "Abnormal" or "Attention" if they deviate from "Nil/Clear".
-3. "summary": Provide a concise explanation for a non-medical user. If Pus Cells or RBCs are elevated, explain what this might indicate (e.g., irritation or infection).
-4. "tips": Provide specific, actionable advice based on the findings (e.g., if specific gravity is high, suggest hydration; if pH is low, suggest reducing acidic foods).
-5. "dangerScore": Scale 0-10 (0: Perfectly normal, 10: Critical emergency).
 
-Lab Report Text:
-"${rawText}"
+Return ONLY valid JSON in this structure:
 
-STRICT JSON OUTPUT ONLY:
 {
   "patientName": "string",
   "findings": [
@@ -64,36 +45,77 @@ STRICT JSON OUTPUT ONLY:
       "result": "string or number", 
       "unit": "string", 
       "status": "Normal/High/Low/Abnormal",
-      "interpretation": "Briefly explain what this specific result means"
+      "interpretation": "Brief explanation"
     }
   ],
   "dangerScore": number,
-  "summary": "string (in simple terms)",
+  "summary": "simple explanation",
   "tips": ["string", "string", "string"]
 }
+
+Lab Report Text:
+"""
+${rawText}
+"""
 `;
 
-    try {
-        const result = await model.generateContent(prompt);
-        const response = await result.response;
-        let text = response.text().trim();
+    for (let attempt = 1; attempt <= retries; attempt++) {
+        try {
+            const result = await model.generateContent(prompt);
+            const response = await result.response;
 
-        // FIX: Remove markdown backticks if the AI added them
-        if (text.startsWith("```")) {
-            text = text.replace(/^```json/, "").replace(/```$/, "").trim();
+            let text = response.text().trim();
+            console.log(`AI RAW RESPONSE (attempt ${attempt}):`, text);
+
+            const parsed = JSON.parse(text);
+
+            if (!isValidAnalysis(parsed)) {
+                throw new Error("Invalid response structure");
+            }
+
+            return parsed;
+
+        } catch (err) {
+            console.warn(`Attempt ${attempt} failed:`, err.message);
+
+            if (attempt === retries) {
+                return {
+                    error: "AI failed after retries",
+                    details: err.message
+                };
+            }
+
+            await new Promise(r => setTimeout(r, 1000 * attempt));
         }
-
-
-        let jsonText = extractJSON(text);
-
-        if (!jsonText) {
-            return { error: "No JSON found", raw: text.substring(0, 200) };
-        }
-
-        return JSON.parse(jsonText);
-    } catch (parseError) {
-        console.error("JSON Parse Error:", parseError);
-        // Fallback so the server doesn't 500
-        return { error: "Failed to parse AI response", raw: rawText.substring(0, 100) };
     }
 }
+
+// ===== Main Controller =====
+
+exports.analyzeReport = async (req, res) => {
+    try {
+        if (!req.file) return res.status(400).json({ message: "No file uploaded" });
+
+        // 1. Extract text from document via Azure
+        const poller = await client.beginAnalyzeDocument(
+            "prebuilt-layout",
+            req.file.buffer,
+            { contentType: req.file.mimetype }
+        );
+        const { content } = await poller.pollUntilDone();
+
+        // 2. Clean text and analyze with AI
+        const cleanedText = cleanText(content);
+        const aiAnalysis = await analyzeWithAI(cleanedText);
+
+        // 3. Return structured response
+        res.status(200).json({
+            success: true,
+            data: aiAnalysis
+        });
+
+    } catch (err) {
+        console.error("Pipeline Error:", err);
+        res.status(500).json({ message: "AI Analysis failed", error: err.message });
+    }
+};
