@@ -8,7 +8,7 @@ const path = require("path");
 const User = require("../Models/Users");
 const authController = require("../Controllers/authController");
 const { getCurrentUser } = require("../Controllers/authController");
-const protect = require("../middleware/auth")
+const { protect } = require("../middleware/auth")
 const passport = require('passport');
 const { generateAccessToken, generateRefreshToken } = require("../utils/tokens");
 const RefreshToken = require("../Models/RefreshToken");
@@ -16,7 +16,6 @@ const RefreshToken = require("../Models/RefreshToken");
 const { OAuth2Client } = require('google-auth-library');
 const client = new OAuth2Client(process.env.GOOGLE_CLIENT_ID);
 
-const authController = require("../Controllers/authController");
 const { runValidation } = require("../middleware/validate");
 
 cloudinary.config({
