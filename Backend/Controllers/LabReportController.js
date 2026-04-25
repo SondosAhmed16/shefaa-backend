@@ -2,13 +2,11 @@ const { DocumentAnalysisClient, AzureKeyCredential } = require("@azure/ai-form-r
 const { GoogleGenerativeAI } = require("@google/generative-ai");
 const { key, endpoint } = require("../config/azureConfig");
 
-// Azure client
 const client = new DocumentAnalysisClient(
     endpoint,
     new AzureKeyCredential(key)
 );
 
-// Gemini client
 const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
 
 const model = genAI.getGenerativeModel({
@@ -18,7 +16,6 @@ const model = genAI.getGenerativeModel({
     }
 });
 
-// Main controller
 exports.analyzeReport = async (req, res) => {
     try {
         if (!req.file) {
@@ -28,7 +25,7 @@ exports.analyzeReport = async (req, res) => {
             });
         }
 
-        // 1) Extract text from image/pdf using Azure
+        // 1. Extract text from Azure OCR
         const poller = await client.beginAnalyzeDocument(
             "prebuilt-layout",
             req.file.buffer,
@@ -37,37 +34,31 @@ exports.analyzeReport = async (req, res) => {
             }
         );
 
-        const result = await poller.pollUntilDone();
-        const extractedText = result.content;
+        const { content } = await poller.pollUntilDone();
 
-        console.log("AZURE RAW TEXT:", extractedText);
+        // 2. Clean OCR text
+        const cleanedText = cleanText(content);
 
-        // 2) Clean extracted text
-        const cleanedText = cleanText(extractedText);
-
-        console.log("CLEANED TEXT:", cleanedText);
-
-        // 3) Send to Gemini
+        // 3. Analyze with Gemini
         const aiAnalysis = await analyzeWithAI(cleanedText);
 
-        // 4) Return final response
+        // 4. Return response
         return res.status(200).json({
             success: true,
             data: aiAnalysis
         });
 
     } catch (err) {
-        console.error("PIPELINE ERROR:", err);
+        console.error("Pipeline Error:", err);
 
         return res.status(500).json({
             success: false,
-            message: "AI Analysis failed",
+            message: "AI analysis failed",
             error: err.message
         });
     }
 };
 
-// Clean OCR text
 function cleanText(text) {
     return text
         .replace(/\n+/g, "\n")
@@ -75,23 +66,12 @@ function cleanText(text) {
         .trim();
 }
 
-// Gemini analysis
 async function analyzeWithAI(rawText) {
     const prompt = `
-Analyze the following medical lab report text and return ONLY valid JSON.
+Analyze the following medical lab report text.
 
-Rules:
-1. Include all findings with available values.
-2. Determine status based on reference range.
-3. For abnormal urine findings like pus cells or RBC, explain possible causes.
-4. Give a simple summary for the patient.
-5. Give actionable health tips.
-6. dangerScore from 0 to 10.
+Return ONLY valid JSON in this exact structure:
 
-Lab Report Text:
-${rawText}
-
-Expected JSON format:
 {
   "patientName": "string",
   "findings": [
@@ -100,38 +80,55 @@ Expected JSON format:
       "result": "string or number",
       "unit": "string",
       "status": "Normal/High/Low/Abnormal",
-      "interpretation": "string"
+      "interpretation": "brief explanation"
     }
   ],
-  "dangerScore": 0,
-  "summary": "string",
-  "tips": ["string", "string", "string"]
+  "dangerScore": number,
+  "summary": "simple explanation",
+  "tips": ["tip1", "tip2", "tip3"]
 }
+
+Rules:
+- Include all test results.
+- Use reference ranges to determine status.
+- Non numeric abnormal values should be "Abnormal".
+- dangerScore from 0 to 10.
+- Return JSON only.
+
+Lab Report Text:
+${rawText}
 `;
 
     try {
         const result = await model.generateContent(prompt);
         const response = await result.response;
-
         let text = response.text().trim();
 
-        console.log("AI RAW RESPONSE:", text);
-
-        // Remove markdown if exists
+        // remove accidental markdown
         text = text
             .replace(/```json/g, "")
             .replace(/```/g, "")
             .trim();
 
-        // Parse JSON directly
-        return JSON.parse(text);
+        console.log("AI RAW RESPONSE:", text);
 
-    } catch (error) {
-        console.error("AI PARSE ERROR:", error);
+        try {
+            return JSON.parse(text);
+        } catch (parseErr) {
+            console.error("JSON Parse Error:", parseErr);
+
+            return {
+                error: "Invalid JSON returned from AI",
+                raw: text.substring(0, 500)
+            };
+        }
+
+    } catch (err) {
+        console.error("Gemini Error:", err);
 
         return {
-            error: "Failed to parse AI response",
-            raw: rawText.substring(0, 300)
+            error: "AI processing failed",
+            details: err.message
         };
     }
 }
