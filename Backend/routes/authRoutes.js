@@ -162,4 +162,6 @@ router.post("/refresh", authController.refreshToken);
 // Logout
 router.post("/logout", authController.logout);
 
+router.get("/me", protect, getCurrentUser);
+
 module.exports = router;
