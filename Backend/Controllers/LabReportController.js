@@ -39,7 +39,10 @@ const { GoogleGenerativeAI } = require("@google/generative-ai");
 const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
 // Change your model initialization to this:
 const model = genAI.getGenerativeModel({
-    model: "gemini-3-flash-preview" // The 2026 stable workhorse
+    model: "gemini-1.5-flash",
+    generationConfig: {
+        responseMimeType: "application/json"
+    }
 });
 
 async function analyzeWithAI(rawText) {
@@ -79,9 +82,10 @@ STRICT JSON OUTPUT ONLY:
         let text = response.text().trim();
 
         // FIX: Remove markdown backticks if the AI added them
-        if (text.startsWith("```")) {
-            text = text.replace(/^```json/, "").replace(/```$/, "").trim();
-        }
+        text = text
+            .replace(/```json/g, "")
+            .replace(/```/g, "")
+            .trim();
 
 
         let jsonText = extractJSON(text);
@@ -89,7 +93,7 @@ STRICT JSON OUTPUT ONLY:
         if (!jsonText) {
             return { error: "No JSON found", raw: text.substring(0, 200) };
         }
-
+        console.log("AI RAW RESPONSE:", text);
         return JSON.parse(jsonText);
     } catch (parseError) {
         console.error("JSON Parse Error:", parseError);
