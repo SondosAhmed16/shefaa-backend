@@ -1,43 +1,16 @@
 const { DocumentAnalysisClient, AzureKeyCredential } = require("@azure/ai-form-recognizer");
+const { GoogleGenerativeAI } = require("@google/generative-ai");
 const { key, endpoint } = require("../config/azureConfig");
 
-const client = new DocumentAnalysisClient(endpoint, new AzureKeyCredential(key));
+// Azure client
+const client = new DocumentAnalysisClient(
+    endpoint,
+    new AzureKeyCredential(key)
+);
 
-exports.analyzeReport = async (req, res) => {
-    try {
-        if (!req.file) return res.status(400).json({ message: "No file uploaded" });
-
-        // 1. Get text from Azure
-        const poller = await client.beginAnalyzeDocument("prebuilt-layout", req.file.buffer, { contentType: req.file.mimetype });
-        const { content } = await poller.pollUntilDone();
-
-        const cleanedText = cleanText(content);
-        const aiAnalysis = await analyzeWithAI(cleanedText);
-        //helping
-        // 3. Send final structured JSON to Flutter
-        res.status(200).json({
-            success: true,
-            data: aiAnalysis
-        });
-    } catch (err) {
-        console.error("Pipeline Error:", err);
-        res.status(500).json({ message: "AI Analysis failed ya albi", error: err.message });
-    }
-};
-function cleanText(text) {
-    return text
-        .replace(/\n+/g, "\n")
-        .replace(/[^\x00-\x7F\u0600-\u06FF0-9.%/ \n]/g, "") // remove noise
-        .trim();
-}
-function extractJSON(text) {
-    const match = text.match(/\{[\s\S]*\}/);
-    return match ? match[0] : null;
-}
-const { GoogleGenerativeAI } = require("@google/generative-ai");
-
+// Gemini client
 const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
-// Change your model initialization to this:
+
 const model = genAI.getGenerativeModel({
     model: "gemini-1.5-flash",
     generationConfig: {
@@ -45,33 +18,93 @@ const model = genAI.getGenerativeModel({
     }
 });
 
+// Main controller
+exports.analyzeReport = async (req, res) => {
+    try {
+        if (!req.file) {
+            return res.status(400).json({
+                success: false,
+                message: "No file uploaded"
+            });
+        }
+
+        // 1) Extract text from image/pdf using Azure
+        const poller = await client.beginAnalyzeDocument(
+            "prebuilt-layout",
+            req.file.buffer,
+            {
+                contentType: req.file.mimetype
+            }
+        );
+
+        const result = await poller.pollUntilDone();
+        const extractedText = result.content;
+
+        console.log("AZURE RAW TEXT:", extractedText);
+
+        // 2) Clean extracted text
+        const cleanedText = cleanText(extractedText);
+
+        console.log("CLEANED TEXT:", cleanedText);
+
+        // 3) Send to Gemini
+        const aiAnalysis = await analyzeWithAI(cleanedText);
+
+        // 4) Return final response
+        return res.status(200).json({
+            success: true,
+            data: aiAnalysis
+        });
+
+    } catch (err) {
+        console.error("PIPELINE ERROR:", err);
+
+        return res.status(500).json({
+            success: false,
+            message: "AI Analysis failed",
+            error: err.message
+        });
+    }
+};
+
+// Clean OCR text
+function cleanText(text) {
+    return text
+        .replace(/\n+/g, "\n")
+        .replace(/[^\x00-\x7F\u0600-\u06FF0-9.%/ \n:-]/g, "")
+        .trim();
+}
+
+// Gemini analysis
 async function analyzeWithAI(rawText) {
     const prompt = `
-Analyze the following medical lab report text and extract data into a STRICT JSON format.
-Follow these logic rules:
-1. "findings": Include ALL tests where a result is present, especially "Microscopic Examination" items like Mucus, Epithelial Cells, and Crystals, even if they aren't numeric.
-2. "status": Determine based on the "Reference Range" provided in the text. For non-numeric results (e.g., "Some", "Slightly Turbid"), mark status as "Abnormal" or "Attention" if they deviate from "Nil/Clear".
-3. "summary": Provide a concise explanation for a non-medical user. If Pus Cells or RBCs are elevated, explain what this might indicate (e.g., irritation or infection).
-4. "tips": Provide specific, actionable advice based on the findings (e.g., if specific gravity is high, suggest hydration; if pH is low, suggest reducing acidic foods).
-5. "dangerScore": Scale 0-10 (0: Perfectly normal, 10: Critical emergency).
+Analyze the following medical lab report text and return ONLY valid JSON.
+
+Rules:
+1. Include all findings with available values.
+2. Determine status based on reference range.
+3. For abnormal urine findings like pus cells or RBC, explain possible causes.
+4. Give a simple summary for the patient.
+5. Give actionable health tips.
+6. dangerScore from 0 to 10.
 
 Lab Report Text:
-"${rawText}"
+${rawText}
 
-STRICT JSON OUTPUT ONLY:
+Expected JSON format:
 {
   "patientName": "string",
   "findings": [
-    { 
-      "testName": "string", 
-      "result": "string or number", 
-      "unit": "string", 
+    {
+      "testName": "string",
+      "result": "string or number",
+      "unit": "string",
       "status": "Normal/High/Low/Abnormal",
-      "interpretation": "Briefly explain what this specific result means"
+      "interpretation": "string"
     }
   ],
-  "dangerScore": number,
-  "summary": "string (in simple terms)",
+  "dangerScore": 0,
+  "summary": "string",
   "tips": ["string", "string", "string"]
 }
 `;
@@ -79,25 +112,26 @@ STRICT JSON OUTPUT ONLY:
     try {
         const result = await model.generateContent(prompt);
         const response = await result.response;
+
         let text = response.text().trim();
 
-        // FIX: Remove markdown backticks if the AI added them
+        console.log("AI RAW RESPONSE:", text);
+
+        // Remove markdown if exists
         text = text
             .replace(/```json/g, "")
             .replace(/```/g, "")
             .trim();
 
+        // Parse JSON directly
+        return JSON.parse(text);
 
-        let jsonText = extractJSON(text);
+    } catch (error) {
+        console.error("AI PARSE ERROR:", error);
 
-        if (!jsonText) {
-            return { error: "No JSON found", raw: text.substring(0, 200) };
-        }
-        console.log("AI RAW RESPONSE:", text);
-        return JSON.parse(jsonText);
-    } catch (parseError) {
-        console.error("JSON Parse Error:", parseError);
-        // Fallback so the server doesn't 500
-        return { error: "Failed to parse AI response", raw: rawText.substring(0, 100) };
+        return {
+            error: "Failed to parse AI response",
+            raw: rawText.substring(0, 300)
+        };
     }
 }
