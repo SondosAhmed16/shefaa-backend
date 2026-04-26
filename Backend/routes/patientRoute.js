@@ -32,4 +32,6 @@ router.get('/medical-history', auth, authorizeRoles('patient'), patientControlle
 
 router.post('/medications/:medId/confirm', auth, patientController.confirmMedicationDose);
 
+router.put('/medications/:medId', auth, authorizeRoles('patient'), patientController.updateMedication);
+
 module.exports = router;

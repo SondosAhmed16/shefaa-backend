@@ -189,9 +189,39 @@ exports.confirmMedicationDose = async (req, res) => {
 
     res.json({ 
       message: "Dose confirmed!", 
-      adherenceRate: `${adherenceRate}%`, // دلوقتى الرقم هيتغير كل ما المريض يدوس Confirm
+      adherenceRate: `${adherenceRate}%`, 
       medication: med 
     });
+  } catch (err) {
+    res.status(500).json({ message: err.message });
+  }
+};
+
+// update patient medication
+exports.updateMedication = async (req, res) => {
+  try {
+    const { medId } = req.params;
+    
+    const patient = await Patient.findOneAndUpdate(
+      { userId: req.user._id, "medications._id": medId },
+      { 
+        $set: { 
+          "medications.$": { ...req.body, _id: medId } 
+        } 
+      },
+      { new: true, runValidators: true }
+    );
+
+    if (!patient) return res.status(404).json({ message: "Medication or Patient not found" });
+
+    await Notification.create({
+      recipient: req.user._id,
+      title: "Medication Updated",
+      message: `You updated ${req.body.name || 'a medication'} in your list successfully.`,
+      type: 'medication'
+    });
+
+    res.json({ message: "Medication updated successfully", medications: patient.medications });
   } catch (err) {
     res.status(500).json({ message: err.message });
   }
