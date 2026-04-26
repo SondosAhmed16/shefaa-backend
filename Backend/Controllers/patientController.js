@@ -219,14 +219,19 @@ exports.updateMedication = async (req, res) => {
 
     if (!patient) return res.status(404).json({ message: "Medication or Patient not found" });
 
+    const updatedMedication = patient.medications.id(medId);
+
     await Notification.create({
       recipient: req.user._id,
       title: "Medication Updated",
-      message: `You updated ${req.body.name || 'a medication'} in your list successfully.`,
+      message: `You updated ${req.body.name || 'a medication'} successfully.`,
       type: 'medication'
     });
 
-    res.json({ message: "Medication updated successfully", medications: patient.medications });
+    res.json({ 
+      message: "Medication updated successfully", 
+      medication: updatedMedication 
+    });
   } catch (err) {
     res.status(500).json({ message: err.message });
   }
@@ -239,20 +244,25 @@ exports.deleteMedication = async (req, res) => {
 
     const patient = await Patient.findOneAndUpdate(
       { userId: req.user._id },
-      { $pull: { medications: { _id: medId } } }, 
-      { new: true }
+      { $pull: { medications: { _id: medId } } },
+      { new: false } 
     );
 
     if (!patient) return res.status(404).json({ message: "Patient not found" });
 
+    const deletedMedication = patient.medications.id(medId);
+
     await Notification.create({
       recipient: req.user._id,
       title: "Medication Removed",
-      message: "A medication has been removed from your list.",
+      message: `A medication has been removed from your list.`,
       type: 'medication'
     });
 
-    res.json({ message: "Medication deleted successfully", medications: patient.medications });
+    res.json({ 
+      message: "Medication deleted successfully", 
+      medication: deletedMedication 
+    });
   } catch (err) {
     res.status(500).json({ message: err.message });
   }
