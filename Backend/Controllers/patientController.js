@@ -145,10 +145,18 @@ exports.getMedications = async (req, res) => {
 // add his medication
 exports.addMedication = async (req, res) => {
   try {
+    const { startDate } = req.body;
+    const today = new Date();
+    today.setHours(0, 0, 0, 0); 
+
+    if (startDate && new Date(startDate) < today) {
+      return res.status(400).json({ message: "Start date cannot be in the past." });
+    }
+
     const patient = await Patient.findOneAndUpdate(
       { userId: req.user._id },
       { $push: { medications: req.body } },
-      { new: true } 
+      { new: true }
     );
 
     const addedMedication = patient.medications[patient.medications.length - 1];
@@ -172,9 +180,18 @@ exports.addMedication = async (req, res) => {
 exports.confirmMedicationDose = async (req, res) => {
   try {
     const { medId } = req.params;
+    const now = new Date(); 
+
     const patient = await Patient.findOneAndUpdate(
       { userId: req.user._id, "medications._id": medId },
-      { $push: { "medications.$.adherenceHistory": { date: new Date(), status: 'taken' } } },
+      { 
+        $push: { 
+          "medications.$.adherenceHistory": { 
+            date: now, 
+            status: 'taken' 
+          } 
+        } 
+      },
       { new: true }
     );
 
