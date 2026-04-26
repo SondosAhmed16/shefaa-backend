@@ -148,17 +148,22 @@ exports.addMedication = async (req, res) => {
     const patient = await Patient.findOneAndUpdate(
       { userId: req.user._id },
       { $push: { medications: req.body } },
-      { new: true }
+      { new: true } 
     );
+
+    const addedMedication = patient.medications[patient.medications.length - 1];
 
     await Notification.create({
       recipient: req.user._id,
       title: "new medication",
-      message: `you added  ${req.body.name} to your medication list successfully `,
+      message: `you added ${req.body.name} to your medication list successfully`,
       type: 'medication'
     });
     
-    res.json({ message: "Medication added", medications: patient.medications });
+    res.json({ 
+      message: "Medication added", 
+      medication: addedMedication 
+    });
   } catch (err) {
     res.status(500).json({ message: err.message });
   }
