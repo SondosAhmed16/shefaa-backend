@@ -167,7 +167,6 @@ exports.searchDoctors = async (req, res) => {
     }
 
     const results = await Promise.all(doctors.map(async (doc) => {
-      
       const doctorClinics = await Clinic.find({
         doctorId: doc._id,
         ...(city && { city: { $regex: new RegExp(city, "i") } })
@@ -183,10 +182,10 @@ exports.searchDoctors = async (req, res) => {
           address: clinic.address,
           location: clinic.location,
           price: clinic.price,
-          workingHours: clinic.availableDays.map(slot => ({
+          daysOfWeek: clinic.availableDays.map(slot => ({
             day: slot.day,
-            from: slot.from,
-            to: slot.to
+            open: slot.from, 
+            close: slot.to   
           }))
         }))
       };
@@ -202,7 +201,6 @@ exports.searchDoctors = async (req, res) => {
     res.status(500).json({ message: err.message });
   }
 };
-
 
 exports.getDoctorDashboard = async (req, res) => {
   try {
