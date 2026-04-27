@@ -137,7 +137,7 @@ exports.addMedicalRecord = async (req, res) => {
 //search doctor {name , city , specialization , gender}
 exports.searchDoctors = async (req, res) => {
   try {
-    const { specialization, gender, city, name } = req.query; 
+    const { specialization, gender, city, name } = req.query;
 
     let doctorQuery = {};
 
@@ -155,7 +155,7 @@ exports.searchDoctors = async (req, res) => {
       doctorQuery._id = { $in: doctorIds };
     }
 
-    let userMatch = { path: 'userId', select: 'name email phoneNumber' };
+    let userMatch = { path: 'userId', select: 'name' }; 
     if (name) {
       userMatch.match = { name: { $regex: new RegExp(name, "i") } };
     }
@@ -170,11 +170,13 @@ exports.searchDoctors = async (req, res) => {
       const doctorClinics = await Clinic.find({
         doctorId: doc._id,
         ...(city && { city: { $regex: new RegExp(city, "i") } })
-      });
+      }, 'name city address location price'); 
 
       return {
-        ...doc._doc,
-        clinics: doctorClinics
+        _id: doc._id,
+        name: doc.userId ? doc.userId.name : "Unknown", 
+        specialization: doc.specialization,
+        clinics: doctorClinics 
       };
     }));
 
