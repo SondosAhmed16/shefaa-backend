@@ -144,7 +144,7 @@ exports.searchDoctors = async (req, res) => {
     if (specialization) {
       doctorQuery.specialization = { $regex: new RegExp(specialization, "i") };
     }
-    
+
     if (gender && gender.trim() !== "") {
       doctorQuery.gender = gender.toLowerCase();
     }
@@ -155,7 +155,7 @@ exports.searchDoctors = async (req, res) => {
       doctorQuery._id = { $in: doctorIds };
     }
 
-    let userMatch = { path: 'userId', select: 'name' }; 
+    let userMatch = { path: 'userId', select: 'name' };
     if (name) {
       userMatch.match = { name: { $regex: new RegExp(name, "i") } };
     }
@@ -170,7 +170,7 @@ exports.searchDoctors = async (req, res) => {
       const doctorClinics = await Clinic.find({
         doctorId: doc._id,
         ...(city && { city: { $regex: new RegExp(city, "i") } })
-      }, 'name city address location price availableDays'); 
+      }, 'name city address location price daysOfWeek');
 
       return {
         _id: doc._id,
@@ -182,11 +182,7 @@ exports.searchDoctors = async (req, res) => {
           address: clinic.address,
           location: clinic.location,
           price: clinic.price,
-          daysOfWeek: clinic.availableDays.map(slot => ({
-            day: slot.day,
-            open: slot.from, 
-            close: slot.to   
-          }))
+          daysOfWeek: clinic.daysOfWeek || []
         }))
       };
     }));
@@ -213,12 +209,12 @@ exports.getDoctorDashboard = async (req, res) => {
     const appointments = await Appointment.find({ doctor: doctorProfile._id })
       .populate({
         path: 'patient',
-        populate: { path: 'userId', select: 'name image' } 
+        populate: { path: 'userId', select: 'name image' }
       })
       .populate('clinic', 'name')
-      .sort({ date: 1, slotStart: 1 }); 
+      .sort({ date: 1, slotStart: 1 });
 
-   
+
     const todayApps = appointments.filter(a => new Date(a.date).getTime() === today.getTime());
     const stats = {
       totalToday: todayApps.length,
