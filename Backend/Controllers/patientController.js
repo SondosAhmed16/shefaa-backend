@@ -70,13 +70,21 @@ exports.updateBasicInfo = async (req, res) => {
       { userId: req.user._id },
       { address, phoneNumber, age, gender, height, weight },
       { new: true, runValidators: true }
-    ).populate('userId', 'name email');
+    );
 
     if (!patient) return res.status(404).json({ message: 'Patient profile not found' });
 
-    res.json({
-      message: 'Basic info updated successfully',
-      patient
+    res.json({ 
+      message: 'Basic info updated successfully', 
+      updatedData: {
+        name,
+        address,
+        phoneNumber,
+        age,
+        gender,
+        height,
+        weight
+      }
     });
   } catch (err) {
     res.status(500).json({ message: err.message });
