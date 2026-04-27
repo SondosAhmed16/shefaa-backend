@@ -134,36 +134,37 @@ exports.addMedicalRecord = async (req, res) => {
   }
 };
 
-
+//search doctor {name , city , specialization , gender}
 exports.searchDoctors = async (req, res) => {
   try {
-    const { specialization, gender, city } = req.query;
-
-    let clinicQuery = {};
-    if (city) {
-      clinicQuery.city = { $regex: new RegExp(city, "i") };
-    }
-
-    const clinics = await Clinic.find(clinicQuery);
-    const doctorIdsFromClinics = clinics.map(c => c.doctorId.toString());
-
+    const { specialization, gender, city, name } = req.query; 
 
     let doctorQuery = {};
-
 
     if (specialization) {
       doctorQuery.specialization = { $regex: new RegExp(specialization, "i") };
     }
+    
     if (gender && gender.trim() !== "") {
       doctorQuery.gender = gender.toLowerCase();
     }
 
-
     if (city) {
-      doctorQuery._id = { $in: doctorIdsFromClinics };
+      const clinicsInCity = await Clinic.find({ city: { $regex: new RegExp(city, "i") } });
+      const doctorIds = clinicsInCity.map(c => c.doctorId.toString());
+      doctorQuery._id = { $in: doctorIds };
     }
 
-    const doctors = await Doctor.find(doctorQuery).populate('userId', 'name email phoneNumber');
+    let userMatch = { path: 'userId', select: 'name email phoneNumber' };
+    if (name) {
+      userMatch.match = { name: { $regex: new RegExp(name, "i") } };
+    }
+
+    let doctors = await Doctor.find(doctorQuery).populate(userMatch);
+
+    if (name) {
+      doctors = doctors.filter(doc => doc.userId !== null);
+    }
 
     const results = await Promise.all(doctors.map(async (doc) => {
       const doctorClinics = await Clinic.find({
