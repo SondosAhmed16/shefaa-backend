@@ -60,16 +60,24 @@ exports.updateProfile = async (req, res) => {
 
 exports.updateBasicInfo = async (req, res) => {
   try {
-    const { address, phoneNumber, age, gender, height, weight } = req.body;
+    const { name, address, phoneNumber, age, gender, height, weight } = req.body;
+
+    if (name) {
+      await User.findByIdAndUpdate(req.user._id, { name });
+    }
 
     const patient = await Patient.findOneAndUpdate(
       { userId: req.user._id },
       { address, phoneNumber, age, gender, height, weight },
       { new: true, runValidators: true }
-    );
+    ).populate('userId', 'name email'); 
 
     if (!patient) return res.status(404).json({ message: 'Patient profile not found' });
-    res.json({ message: 'Basic info updated', patient });
+
+    res.json({ 
+      message: 'Basic info updated successfully', 
+      patient 
+    });
   } catch (err) {
     res.status(500).json({ message: err.message });
   }
