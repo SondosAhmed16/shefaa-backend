@@ -170,11 +170,11 @@ exports.searchDoctors = async (req, res) => {
       const doctorClinics = await Clinic.find({
         doctorId: doc._id,
         ...(city && { city: { $regex: new RegExp(city, "i") } })
-      }, 'name city address location price'); 
+      }, 'name city address location price availableDays'); 
 
       return {
         _id: doc._id,
-        name: doc.userId ? doc.userId.name : "Unknown", 
+        name: doc.userId ? doc.userId.name : "Unknown",
         specialization: doc.specialization,
         clinics: doctorClinics 
       };
