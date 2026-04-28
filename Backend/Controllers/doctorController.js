@@ -4,16 +4,42 @@ const Appointment = require('../Models/Appointment');
 const MedicalRecord = require('../Models/MedicalRecord');
 const User = require('../Models/Users');
 
-// 1. Get Doctor Profile with populated User and Clinic data
 exports.getDoctorProfile = async (req, res) => {
   try {
-    // Search using userId as defined in Doctors.js Schema
     const doctor = await Doctor.findOne({ userId: req.user._id })
-      .populate('userId', 'name email')
-      .populate('clinics');
+      .populate('userId', 'name email phone')   // User fields
+      .populate('clinics')                        // full Clinic docs
+      .populate('reviews');                       // optional
 
     if (!doctor) return res.status(404).json({ message: 'Doctor profile not found' });
-    res.json(doctor);
+
+    // Flatten بشكل واضح للـ frontend
+    const profile = {
+      // من Doctor model
+      _id: doctor._id,
+      specialization: doctor.specialization,
+      age: doctor.age,
+      yearsOfExperience: doctor.yearsOfExperience,
+      image: doctor.image,
+      about: doctor.about,
+      degrees: doctor.degrees,
+      gender: doctor.gender,
+      rating: doctor.rating,
+      paymentOption: doctor.paymentOption,
+      prePaymentNumbers: doctor.prePaymentNumbers,
+      preOnlineConsultation: doctor.preOnlineConsultation,
+      videoConsultationPrice: doctor.videoConsultationPrice,
+      clinicConsultationPrice: doctor.clinicConsultationPrice,
+      clinics: doctor.clinics,
+      reviews: doctor.reviews,
+
+      // من User model (بعد populate)
+      name: doctor.userId?.name,
+      email: doctor.userId?.email,
+      phone: doctor.userId?.phone,
+    };
+
+    res.json(profile);
   } catch (err) {
     res.status(500).json({ message: err.message });
   }
