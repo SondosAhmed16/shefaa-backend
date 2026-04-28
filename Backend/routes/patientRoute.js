@@ -40,4 +40,6 @@ router.put('/medications/:medId', auth, authorizeRoles('patient'), patientContro
 
 router.delete('/medications/:medId', auth, authorizeRoles('patient'), patientController.deleteMedication);
 
+router.get('/my-medications', auth, patientController.getMyMedications);
+
 module.exports = router;

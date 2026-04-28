@@ -74,8 +74,8 @@ exports.updateBasicInfo = async (req, res) => {
 
     if (!patient) return res.status(404).json({ message: 'Patient profile not found' });
 
-    res.json({ 
-      message: 'Basic info updated successfully', 
+    res.json({
+      message: 'Basic info updated successfully',
       updatedData: {
         name,
         address,
@@ -161,7 +161,7 @@ exports.getMedications = async (req, res) => {
 // add his medication
 exports.addMedication = async (req, res) => {
   try {
-    const { startDate } = req.body;
+    const { name, startDate, endDate } = req.body;
     const today = new Date();
     today.setHours(0, 0, 0, 0);
 
@@ -169,9 +169,13 @@ exports.addMedication = async (req, res) => {
       return res.status(400).json({ message: "Start date cannot be in the past." });
     }
 
+    if (startDate && endDate && new Date(endDate) < new Date(startDate)) {
+      return res.status(400).json({ message: "End date cannot be before start date." });
+    }
+
     const patient = await Patient.findOneAndUpdate(
       { userId: req.user._id },
-      { $push: { medications: req.body } },
+      { $push: { medications: req.body } }, 
       { new: true }
     );
 
@@ -180,7 +184,7 @@ exports.addMedication = async (req, res) => {
     await Notification.create({
       recipient: req.user._id,
       title: "new medication",
-      message: `you added ${req.body.name} to your medication list successfully`,
+      message: `you added ${name} to your medication list successfully`,
       type: 'medication'
     });
 
@@ -192,6 +196,7 @@ exports.addMedication = async (req, res) => {
     res.status(500).json({ message: err.message });
   }
 };
+
 
 exports.confirmMedicationDose = async (req, res) => {
   try {
@@ -296,6 +301,54 @@ exports.deleteMedication = async (req, res) => {
       message: "Medication deleted successfully",
       medication: deletedMedication
     });
+  } catch (err) {
+    res.status(500).json({ message: err.message });
+  }
+};
+
+exports.getMyMedications = async (req, res) => {
+  try {
+    const patient = await Patient.findOne({ userId: req.user._id });
+    if (!patient) return res.status(404).json({ message: "Patient not found" });
+
+    const now = new Date();
+
+    const activeMedications = patient.medications.filter(med => {
+      if (!med.endDate) return true;
+      return new Date(med.endDate) >= now;
+    });
+
+    let totalAdherenceSum = 0;
+
+    const medicationsWithStats = activeMedications.map(med => {
+      const takenDoses = med.adherenceHistory.filter(h => h.status === 'taken').length;
+      const totalDosesRecorded = med.adherenceHistory.length;
+
+      const medAdherence = totalDosesRecorded > 0
+        ? Math.round((takenDoses / totalDosesRecorded) * 100)
+        : 0;
+
+      totalAdherenceSum += medAdherence;
+
+      return {
+        ...med._doc,
+        adherencePercentage: medAdherence
+      };
+    });
+
+    const activeCount = medicationsWithStats.length;
+    const avgAdherence = activeCount > 0
+      ? Math.round(totalAdherenceSum / activeCount)
+      : 0;
+
+    res.json({
+      stats: {
+        avgAdherence: `${avgAdherence}%`,
+        activeMedications: activeCount
+      },
+      medications: medicationsWithStats
+    });
+
   } catch (err) {
     res.status(500).json({ message: err.message });
   }
