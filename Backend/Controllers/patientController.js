@@ -312,7 +312,6 @@ exports.getMyMedications = async (req, res) => {
     if (!patient) return res.status(404).json({ message: "Patient not found" });
 
     const now = new Date();
-
     const activeMedications = patient.medications.filter(med => {
       if (!med.endDate) return true;
       return new Date(med.endDate) >= now;
@@ -321,24 +320,35 @@ exports.getMyMedications = async (req, res) => {
     let totalAdherenceSum = 0;
 
     const medicationsWithStats = activeMedications.map(med => {
-      const takenDoses = med.adherenceHistory.filter(h => h.status === 'taken').length;
-      const totalDosesRecorded = med.adherenceHistory.length;
+      const start = new Date(med.startDate);
+      const endForCalc = med.endDate && new Date(med.endDate) < now ? new Date(med.endDate) : now;
 
-      const medAdherence = totalDosesRecorded > 0
-        ? Math.round((takenDoses / totalDosesRecorded) * 100)
+      const diffTime = Math.abs(endForCalc - start);
+      const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24)) || 1;
+
+      const expectedDoses = diffDays * med.timesPerDay;
+
+      const takenDoses = med.adherenceHistory.filter(h => h.status === 'taken').length;
+
+      const medAdherence = expectedDoses > 0 
+        ? Math.round((takenDoses / expectedDoses) * 100) 
         : 0;
 
-      totalAdherenceSum += medAdherence;
+      const finalMedAdherence = medAdherence > 100 ? 100 : medAdherence;
+      
+      totalAdherenceSum += finalMedAdherence;
 
       return {
         ...med._doc,
-        adherencePercentage: medAdherence
+        adherencePercentage: finalMedAdherence,
+        expectedDoses, 
+        takenDoses
       };
     });
 
     const activeCount = medicationsWithStats.length;
-    const avgAdherence = activeCount > 0
-      ? Math.round(totalAdherenceSum / activeCount)
+    const avgAdherence = activeCount > 0 
+      ? Math.round(totalAdherenceSum / activeCount) 
       : 0;
 
     res.json({
