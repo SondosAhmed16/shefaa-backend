@@ -89,8 +89,6 @@ const doctorSchema = new mongoose.Schema(
       enum: ["male", "female"],
       required: false,
     },
-
-    videoConsultationPrice: { type: Number, default: 0 },
     clinicConsultationPrice: { type: Number, default: 0 },
 
     reviews: [

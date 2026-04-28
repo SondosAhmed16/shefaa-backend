@@ -113,40 +113,7 @@ exports.updateDoctorProfile = async (req, res) => {
   }
 };
 
-/*
-// 3. Add a new Clinic
-exports.addClinic = async (req, res) => {
-  try {
-    // التعديل هنا: لازم تضيفي capacityPerSlot جوه القوسين دول
-    const { 
-      name, city, address, location, availableDays, 
-      dailyCapacity, slotDuration, capacityPerSlot, price 
-    } = req.body;
 
-    const doctor = await Doctor.findOne({ userId: req.user._id });
-    if (!doctor) return res.status(404).json({ message: 'Doctor profile not found' });
-
-    const newClinic = await Clinic.create({
-      doctorId: doctor._id,
-      name,
-      city,
-      address,
-      location,
-      availableDays,
-      dailyCapacity,
-      slotDuration,
-      capacityPerSlot, 
-      price
-    });
-
-    doctor.clinics.push(newClinic._id);
-    await doctor.save();
-
-    res.status(201).json({ message: 'Clinic added successfully', clinic: newClinic });
-  } catch (err) {
-    res.status(500).json({ message: err.message });
-  }
-};*/
 
 /*
 

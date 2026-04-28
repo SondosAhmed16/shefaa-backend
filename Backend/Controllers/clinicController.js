@@ -1,100 +1,158 @@
-const Clinic = require('../Models/Clinic');
-const Doctor = require('../Models/Doctors');
+// controllers/clinicController.js
+const Clinic = require("../models/Clinic");
+const Doctor = require("../models/Doctors");
+const timeToMins = (t) => {
+  const [h, m] = t.split(":").map(Number);
+  return h * 60 + m;
+};
 
-const getDoctorId = async (userId) => {
-    const doctor = await Doctor.findOne({ userId });
-    return doctor ? doctor._id : null;
+const buildDaySlots = (open, close, breaks = [], slotDuration) => {
+  const slots = [];
+  const sortedBreaks = [...breaks].sort((a, b) => a.start - b.start);
+  const windows = [];
+  let cursor = open;
+  for (const br of sortedBreaks) {
+    if (br.start > cursor) windows.push({ from: cursor, to: br.start });
+    cursor = br.end;
+  }
+  if (cursor < close) windows.push({ from: cursor, to: close });
+  for (const win of windows) {
+    let t = win.from;
+    while (t + slotDuration <= win.to) {
+      slots.push({ start: t, end: t + slotDuration });
+      t += slotDuration;
+    }
+  }
+  return slots;
+};
+
+const resolveScheduleSlots = (resolvedWeek) => {
+  const { days, slotDuration } = resolvedWeek;
+  const result = {};
+  for (const day of days) {
+    // ✅ لو اليوم مقفول أو مش active، مش بنرجع slots خالص
+    if (!day.isActive || day.isDayLocked) continue;
+    const dur = day.slotDuration ?? slotDuration;
+    result[day.day] = buildDaySlots(day.open, day.close, day.breaks, dur);
+  }
+  return result;
+};
+
+const rangesOverlap = (a1, a2, b1, b2) => a1 < b2 && b1 < a2;
+
+const checkNoOverlapForDoctor = async (doctorId, newDays, excludeClinicId = null) => {
+  const query = { doctorId, status: { $ne: "rejected" } };
+  if (excludeClinicId) query._id = { $ne: excludeClinicId };
+
+  const existingClinics = await Clinic.find(query).lean();
+
+  for (const existing of existingClinics) {
+    for (const existDay of existing.defaultSchedule.days) {
+      if (!existDay.isActive) continue;
+      const newDay = newDays.find((d) => d.day === existDay.day);
+      if (!newDay || !newDay.isActive) continue;
+      if (rangesOverlap(newDay.open, newDay.close, existDay.open, existDay.close)) {
+        return {
+          conflict: true,
+          message: `Schedule conflict on ${existDay.day}: clinic "${existing.name}" runs ${existDay.open}–${existDay.close} mins, overlaps with ${newDay.open}–${newDay.close} mins.`,
+        };
+      }
+    }
+  }
+  return { conflict: false };
 };
 
 exports.createClinic = async (req, res) => {
-    try {
-        const doctorId = await getDoctorId(req.user._id);
-        if (!doctorId) return res.status(404).json({ message: 'Doctor profile not found' });
-
-        const {
-            name, city, address, location,
-            availableDays, daysOfWeek, dailyCapacity,
-            slotDuration, capacityPerSlot, price
-        } = req.body;
-
-        const clinic = new Clinic({
-            doctorId: doctorId,
-            name,
-            city,
-            address,
-            location,
-            availableDays,
-            daysOfWeek,
-            dailyCapacity,
-            slotDuration,
-            capacityPerSlot,
-            price
-        });
-
-        await clinic.save();
-        await Doctor.findByIdAndUpdate(doctorId, {
-            $push: { clinics: clinic._id }
-        });
-
-        res.status(201).json({ message: 'Clinic created successfully', clinic });
-    } catch (err) {
-        res.status(500).json({ message: err.message });
+  try {
+    const doctor = await Doctor.findOne({ userId: req.user.id });
+    if (!doctor) return res.status(403).json({ message: "Doctor profile not found." });
+    
+    const doctorId = doctor._id;
+    if (!doctorId) {
+      return res.status(401).json({ message: "Unauthorized: doctor identity not found." });
     }
-};
 
-exports.updateClinic = async (req, res) => {
-    try {
-        const doctorId = await getDoctorId(req.user._id);
+    const { name, city, address, location, price, operatingLicense, schedule } = req.body;
 
-        const clinic = await Clinic.findOneAndUpdate(
-            { _id: req.params.id, doctorId: doctorId },
-            req.body,
-            { new: true, runValidators: true }
-        );
-
-        if (!clinic) return res.status(404).json({ message: 'Clinic not found or not yours' });
-        res.json({ message: 'Clinic updated successfully', clinic });
-    } catch (err) {
-        res.status(500).json({ message: err.message });
+    if (!name || !city || !address || !location?.coordinates || price == null || !schedule) {
+      return res.status(400).json({ message: "Missing required fields." });
     }
-};
 
-exports.deleteClinic = async (req, res) => {
-    try {
-        const doctorId = await getDoctorId(req.user._id);
-        const clinic = await Clinic.findOneAndDelete({ _id: req.params.id, doctorId: doctorId });
+    const { slotDuration, dailyCapacity, patientsPerSlot = 1, days = [] } = schedule;
 
-        if (!clinic) return res.status(404).json({ message: 'Clinic not found' });
-        res.json({ message: 'Clinic deleted successfully' });
-    } catch (err) {
-        res.status(500).json({ message: err.message });
-    }
-};
+    if (!slotDuration || slotDuration < 5)  return res.status(400).json({ message: "slotDuration must be ≥ 5 minutes." });
+    if (!dailyCapacity || dailyCapacity < 1) return res.status(400).json({ message: "dailyCapacity must be ≥ 1." });
+    if (!days.length) return res.status(400).json({ message: "At least one working day is required." });
 
-exports.getDoctorClinics = async (req, res) => {
-    try {
-        const doctorId = await getDoctorId(req.user._id);
-        const clinics = await Clinic.find({ doctorId: doctorId });
-        res.json(clinics);
-    } catch (err) {
-        res.status(500).json({ message: err.message });
-    }
-};
-exports.getAllClinics = async (req, res) => {
-    try {
-        const clinics = await Clinic.find().populate('doctorId', 'specialization about');
-        res.json(clinics);
-    } catch (err) {
-        res.status(500).json({ message: err.message });
-    }
-};
+    const VALID_DAYS = ["Saturday","Sunday","Monday","Tuesday","Wednesday","Thursday","Friday"];
 
-exports.getClinicById = async (req, res) => {
-    try {
-        const clinic = await Clinic.findById(req.params.id).populate('doctorId');
-        if (!clinic) return res.status(404).json({ message: 'Clinic not found' });
-        res.json(clinic);
-    } catch (err) {
-        res.status(500).json({ message: err.message });
+    const normalisedDays = days.map((d, i) => {
+      if (!VALID_DAYS.includes(d.day)) {
+        throw { status: 400, message: `Invalid day "${d.day}" at index ${i}.` };
+      }
+      const open  = typeof d.open  === "string" ? timeToMins(d.open)  : d.open;
+      const close = typeof d.close === "string" ? timeToMins(d.close) : d.close;
+
+      if (open >= close) {
+        throw { status: 400, message: `${d.day}: open time must be before close time.` };
+      }
+
+      const breaks = (d.breaks || []).map((br) => {
+        const bStart = typeof br.start === "string" ? timeToMins(br.start) : br.start;
+        const bEnd   = typeof br.end   === "string" ? timeToMins(br.end)   : br.end;
+        if (bStart < open || bEnd > close || bStart >= bEnd) {
+          throw { status: 400, message: `${d.day}: break ${bStart}–${bEnd} is invalid.` };
+        }
+        return { start: bStart, end: bEnd, label: br.label || "" };
+      });
+
+      return {
+        day:             d.day,
+        isActive:        d.isActive !== false,
+        open,
+        close,
+        breaks,
+        slotDuration:    d.slotDuration    ?? null,
+        dailyCapacity:   d.dailyCapacity   ?? null,
+        patientsPerSlot: d.patientsPerSlot ?? null,
+        isDayLocked:     d.isDayLocked     ?? false,   // ✅ على مستوى اليوم
+        isBookingLocked: d.isBookingLocked ?? false,   // ✅ على مستوى اليوم
+      };
+    });
+
+    const dayNames = normalisedDays.map((d) => d.day);
+    if (new Set(dayNames).size !== dayNames.length) {
+      return res.status(400).json({ message: "Duplicate days found in schedule." });
     }
+
+    const activeDays = normalisedDays.filter((d) => d.isActive);
+    const { conflict, message: conflictMsg } = await checkNoOverlapForDoctor(doctorId, activeDays);
+    if (conflict) return res.status(409).json({ message: conflictMsg });
+
+    const clinic = await Clinic.create({
+      doctorId,
+      name:     name.trim(),
+      city:     city.trim(),
+      address:  address.trim(),
+      location: { type: "Point", coordinates: location.coordinates },
+      price,
+      operatingLicense: operatingLicense || "",
+      defaultSchedule: {
+        days: normalisedDays,
+        slotDuration,
+        dailyCapacity,
+        patientsPerSlot,
+      },
+    });
+
+    const resolvedWeek  = clinic.resolveWeek(new Date());
+    const slotsPreview  = resolveScheduleSlots({ ...resolvedWeek, slotDuration });
+
+    return res.status(201).json({ message: "Clinic created successfully.", clinic, slotsPreview });
+
+  } catch (err) {
+    if (err.status) return res.status(err.status).json({ message: err.message });
+    console.error("createClinic error:", err);
+    return res.status(500).json({ message: "Internal server error." });
+  }
 };
