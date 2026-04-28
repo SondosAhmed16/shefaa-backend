@@ -101,4 +101,5 @@ clinicSchema.methods.resolveWeek = function (weekStart) {
   };
 };
 
-module.exports = mongoose.model("Clinic", clinicSchema);
+// ✅ كده لو الموديل اتعمل قبل كده، بياخده بدل ما يعمله تاني
+module.exports = mongoose.models.Clinic || mongoose.model("Clinic", clinicSchema);
