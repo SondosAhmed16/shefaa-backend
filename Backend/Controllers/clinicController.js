@@ -166,3 +166,116 @@ exports.createClinic = async (req, res) => {
     return res.status(500).json({ message: "Internal server error." });
   }
 };
+
+// ─── ADD THIS to controllers/clinicController.js ───────────────────────────
+
+exports.editClinic = async (req, res) => {
+  try {
+    // ── 1. Get doctor from token ──────────────────────────────────────────────
+    const doctor = await Doctor.findOne({ userId: req.user.id });
+    if (!doctor) return res.status(403).json({ message: "Doctor profile not found." });
+    const doctorId = doctor._id;
+
+    // ── 2. Find clinic & verify ownership ────────────────────────────────────
+    const clinic = await Clinic.findById(req.params.id);
+    if (!clinic) return res.status(404).json({ message: "Clinic not found." });
+    if (clinic.doctorId.toString() !== doctorId.toString()) {
+      return res.status(403).json({ message: "You are not authorized to edit this clinic." });
+    }
+
+    // ── 3. Extract fields from body (all optional) ────────────────────────────
+    const { name, city, address, location, price, operatingLicense, schedule, status } = req.body;
+
+    // ── 4. If schedule is being updated → validate it ─────────────────────────
+    if (schedule) {
+      const {
+        slotDuration = clinic.defaultSchedule.slotDuration,
+        dailyCapacity = clinic.defaultSchedule.dailyCapacity,
+        patientsPerSlot = clinic.defaultSchedule.patientsPerSlot,
+        days = [],
+      } = schedule;
+
+      if (slotDuration < 5)   return res.status(400).json({ message: "slotDuration must be ≥ 5 minutes." });
+      if (dailyCapacity < 1)  return res.status(400).json({ message: "dailyCapacity must be ≥ 1." });
+      if (!days.length)       return res.status(400).json({ message: "At least one working day is required." });
+
+      const VALID_DAYS = ["Saturday","Sunday","Monday","Tuesday","Wednesday","Thursday","Friday"];
+
+      const normalisedDays = days.map((d, i) => {
+        if (!VALID_DAYS.includes(d.day)) {
+          throw { status: 400, message: `Invalid day "${d.day}" at index ${i}.` };
+        }
+        const open  = typeof d.open  === "string" ? timeToMins(d.open)  : d.open;
+        const close = typeof d.close === "string" ? timeToMins(d.close) : d.close;
+
+        if (open >= close) {
+          throw { status: 400, message: `${d.day}: open time must be before close time.` };
+        }
+
+        const breaks = (d.breaks || []).map((br) => {
+          const bStart = typeof br.start === "string" ? timeToMins(br.start) : br.start;
+          const bEnd   = typeof br.end   === "string" ? timeToMins(br.end)   : br.end;
+          if (bStart < open || bEnd > close || bStart >= bEnd) {
+            throw { status: 400, message: `${d.day}: break ${bStart}–${bEnd} is invalid.` };
+          }
+          return { start: bStart, end: bEnd, label: br.label || "" };
+        });
+
+        return {
+          day:             d.day,
+          isActive:        d.isActive !== false,
+          open,
+          close,
+          breaks,
+          slotDuration:    d.slotDuration    ?? null,
+          dailyCapacity:   d.dailyCapacity   ?? null,
+          patientsPerSlot: d.patientsPerSlot ?? null,
+          isDayLocked:     d.isDayLocked     ?? false,
+          isBookingLocked: d.isBookingLocked ?? false,
+        };
+      });
+
+      // No duplicate days
+      const dayNames = normalisedDays.map((d) => d.day);
+      if (new Set(dayNames).size !== dayNames.length) {
+        return res.status(400).json({ message: "Duplicate days found in schedule." });
+      }
+
+      // Overlap check — exclude THIS clinic from the check
+      const activeDays = normalisedDays.filter((d) => d.isActive);
+      const { conflict, message: conflictMsg } = await checkNoOverlapForDoctor(
+        doctorId,
+        activeDays,
+        clinic._id   // ← excludeClinicId: skip comparing against itself
+      );
+      if (conflict) return res.status(409).json({ message: conflictMsg });
+
+      // Apply schedule updates
+      clinic.defaultSchedule.days           = normalisedDays;
+      clinic.defaultSchedule.slotDuration   = slotDuration;
+      clinic.defaultSchedule.dailyCapacity  = dailyCapacity;
+      clinic.defaultSchedule.patientsPerSlot = patientsPerSlot;
+    }
+
+    // ── 5. Apply non-schedule field updates ───────────────────────────────────
+    if (name)             clinic.name             = name.trim();
+    if (city)             clinic.city             = city.trim();
+    if (address)          clinic.address          = address.trim();
+    if (price != null)    clinic.price            = price;
+    if (operatingLicense !== undefined) clinic.operatingLicense = operatingLicense;
+    if (status)           clinic.status           = status;
+    if (location?.coordinates) {
+      clinic.location = { type: "Point", coordinates: location.coordinates };
+    }
+
+    // ── 6. Save ───────────────────────────────────────────────────────────────
+    await clinic.save();
+
+    return res.status(200).json({ message: "Clinic updated successfully.", clinic });
+
+  } catch (err) {
+    if (err.status) return res.status(err.status).json({ message: err.message });
+    console.error("editClinic error:", err);
+    return res.status(500).json({ message: "Internal server error." });
+  }
+};
