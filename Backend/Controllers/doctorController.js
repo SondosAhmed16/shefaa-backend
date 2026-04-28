@@ -46,7 +46,6 @@ exports.getDoctorProfile = async (req, res) => {
 };
 
 
-const User = require("../models/User"); // make sure this is imported
 
 exports.updateDoctorProfile = async (req, res) => {
   try {
