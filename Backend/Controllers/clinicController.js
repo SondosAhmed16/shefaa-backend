@@ -279,3 +279,62 @@ exports.editClinic = async (req, res) => {
     return res.status(500).json({ message: "Internal server error." });
   }
 };
+
+// ─── ADD THIS to controllers/clinicController.js ───────────────────────────
+
+exports.getClinic = async (req, res) => {
+  try {
+    // ── 1. Get doctor from token ──────────────────────────────────────────────
+    const doctor = await Doctor.findOne({ userId: req.user.id });
+    if (!doctor) return res.status(403).json({ message: "Doctor profile not found." });
+
+    // ── 2. Find clinic ────────────────────────────────────────────────────────
+    const clinic = await Clinic.findById(req.params.id).lean();
+    if (!clinic) return res.status(404).json({ message: "Clinic not found." });
+
+    // ── 3. Verify ownership ───────────────────────────────────────────────────
+    if (clinic.doctorId.toString() !== doctor._id.toString()) {
+      return res.status(403).json({ message: "You are not authorized to view this clinic." });
+    }
+
+    return res.status(200).json({ message: "Clinic fetched successfully.", clinic });
+
+  } catch (err) {
+    console.error("getClinic error:", err);
+    return res.status(500).json({ message: "Internal server error." });
+  }
+};
+
+
+// ─── ADD THIS to controllers/clinicController.js ───────────────────────────
+
+exports.deleteClinic = async (req, res) => {
+  try {
+    // ── 1. Get doctor from token ──────────────────────────────────────────────
+    const doctor = await Doctor.findOne({ userId: req.user.id });
+    if (!doctor) return res.status(403).json({ message: "Doctor profile not found." });
+
+    // ── 2. Find clinic ────────────────────────────────────────────────────────
+    const clinic = await Clinic.findById(req.params.id);
+    if (!clinic) return res.status(404).json({ message: "Clinic not found." });
+
+    // ── 3. Verify ownership ───────────────────────────────────────────────────
+    if (clinic.doctorId.toString() !== doctor._id.toString()) {
+      return res.status(403).json({ message: "You are not authorized to delete this clinic." });
+    }
+
+    // ── 4. Delete clinic ──────────────────────────────────────────────────────
+    await clinic.deleteOne();
+
+    // ── 5. Remove clinic ID from Doctor document ──────────────────────────────
+    await Doctor.findByIdAndUpdate(doctor._id, {
+      $pull: { clinics: clinic._id },
+    });
+
+    return res.status(200).json({ message: "Clinic deleted successfully." });
+
+  } catch (err) {
+    console.error("deleteClinic error:", err);
+    return res.status(500).json({ message: "Internal server error." });
+  }
+};

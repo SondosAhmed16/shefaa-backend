@@ -11,11 +11,13 @@ const { runValidation } = require('../middleware/validate');
 // 3. add new clinic
 router.post('/', auth, authorizeRoles('doctor'), clinicController.createClinic);
 
+//get clinic by id
+router.get('/:id', auth, authorizeRoles('doctor'),  clinicController.getClinic);
 
 // 5. update clinic
 router.put('/:id', auth, authorizeRoles('doctor'), clinicController.editClinic);
 
-// // 6. delete clinic
-// router.delete('/:id', auth, authorizeRoles('doctor'), clinicController.deleteClinic);
+// 6. delete clinic
+router.delete('/:id', auth, authorizeRoles('doctor'), clinicController.deleteClinic);
 
 module.exports = router;
