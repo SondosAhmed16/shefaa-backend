@@ -161,7 +161,7 @@ exports.getMedications = async (req, res) => {
 // add his medication
 exports.addMedication = async (req, res) => {
   try {
-    const { startDate } = req.body;
+    const { name, startDate, endDate } = req.body;
     const today = new Date();
     today.setHours(0, 0, 0, 0);
 
@@ -169,9 +169,13 @@ exports.addMedication = async (req, res) => {
       return res.status(400).json({ message: "Start date cannot be in the past." });
     }
 
+    if (startDate && endDate && new Date(endDate) < new Date(startDate)) {
+      return res.status(400).json({ message: "End date cannot be before start date." });
+    }
+
     const patient = await Patient.findOneAndUpdate(
       { userId: req.user._id },
-      { $push: { medications: req.body } },
+      { $push: { medications: req.body } }, 
       { new: true }
     );
 
@@ -180,7 +184,7 @@ exports.addMedication = async (req, res) => {
     await Notification.create({
       recipient: req.user._id,
       title: "new medication",
-      message: `you added ${req.body.name} to your medication list successfully`,
+      message: `you added ${name} to your medication list successfully`,
       type: 'medication'
     });
 
@@ -192,6 +196,7 @@ exports.addMedication = async (req, res) => {
     res.status(500).json({ message: err.message });
   }
 };
+
 
 exports.confirmMedicationDose = async (req, res) => {
   try {
