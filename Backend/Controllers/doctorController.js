@@ -4,24 +4,47 @@ const Appointment = require('../Models/Appointment');
 const MedicalRecord = require('../Models/MedicalRecord');
 const User = require('../Models/Users');
 
-// 1. Get Doctor Profile with populated User and Clinic data
 exports.getDoctorProfile = async (req, res) => {
   try {
-    // Search using userId as defined in Doctors.js Schema
     const doctor = await Doctor.findOne({ userId: req.user._id })
-      .populate('userId', 'name email')
-      .populate('clinics');
+      .populate('userId', 'name email phone')   // User fields
+      .populate('clinics')                        // full Clinic docs
+      .populate('reviews');                       // optional
 
     if (!doctor) return res.status(404).json({ message: 'Doctor profile not found' });
-    res.json(doctor);
+
+    // Flatten بشكل واضح للـ frontend
+    const profile = {
+      // من Doctor model
+      _id: doctor._id,
+      specialization: doctor.specialization,
+      age: doctor.age,
+      yearsOfExperience: doctor.yearsOfExperience,
+      image: doctor.image,
+      about: doctor.about,
+      degrees: doctor.degrees,
+      gender: doctor.gender,
+      rating: doctor.rating,
+      paymentOption: doctor.paymentOption,
+      prePaymentNumbers: doctor.prePaymentNumbers,
+      preOnlineConsultation: doctor.preOnlineConsultation,
+      videoConsultationPrice: doctor.videoConsultationPrice,
+      clinicConsultationPrice: doctor.clinicConsultationPrice,
+      clinics: doctor.clinics,
+      reviews: doctor.reviews,
+      contactNumber:doctor.contactNumber,
+      // من User model (بعد populate)
+      name: doctor.userId?.name,
+      email: doctor.userId?.email,
+      phone: doctor.userId?.phone,
+    };
+
+    res.json(profile);
   } catch (err) {
     res.status(500).json({ message: err.message });
   }
 };
 
-
-// 2. Update Doctor Profile information
-// Controllers/doctorController.js
 
 exports.updateDoctorProfile = async (req, res) => {
   try {
@@ -32,25 +55,43 @@ exports.updateDoctorProfile = async (req, res) => {
       about,
       age,
       paymentOption,
-      gender
+      gender,
+      contactNumber,
+      degrees,
+      prePaymentNumbers,
+      videoConsultationPrice,
+      clinicConsultationPrice,
     } = req.body;
+
+    const updateData = {
+      specialization,
+      yearsOfExperience,
+      preOnlineConsultation,
+      about,
+      age,
+      paymentOption,
+      contactNumber,
+      degrees,
+      prePaymentNumbers,
+      videoConsultationPrice,
+      clinicConsultationPrice,
+      ...(gender && { gender: gender.toLowerCase() }),
+    };
+
+    // Remove undefined fields so they don't overwrite existing data
+    Object.keys(updateData).forEach(
+      (key) => updateData[key] === undefined && delete updateData[key]
+    );
 
     const doctor = await Doctor.findOneAndUpdate(
       { userId: req.user._id },
-      {
-        specialization,
-        yearsOfExperience,
-        preOnlineConsultation,
-        about,
-        age,
-        paymentOption,
-        gender: gender ? gender.toLowerCase() : undefined
-      },
+      updateData,
       { new: true, runValidators: true }
     );
 
-    if (!doctor) return res.status(404).json({ message: 'Doctor profile not found' });
-    res.json({ message: 'Doctor profile updated successfully', doctor });
+    if (!doctor) return res.status(404).json({ message: "Doctor profile not found" });
+
+    res.json({ message: "Doctor profile updated successfully", doctor });
   } catch (err) {
     res.status(500).json({ message: err.message });
   }
