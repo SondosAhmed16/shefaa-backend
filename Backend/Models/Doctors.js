@@ -26,6 +26,11 @@ const doctorSchema = new mongoose.Schema(
       required: false,
       min: 0,
     },
+    contactNumber: {
+      type: String,
+      required: false, // خليها false عشان الداتا القديمة
+      default: "",
+    },
 
     image: {
       type: String,
