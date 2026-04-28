@@ -1,6 +1,6 @@
 // controllers/clinicController.js
-const Clinic = require("../models/Clinic");
-const Doctor = require("../models/Doctors");
+const Clinic = require("../Models/Clinic");
+const Doctor = require("../Models/Doctors");
 const timeToMins = (t) => {
   const [h, m] = t.split(":").map(Number);
   return h * 60 + m;
