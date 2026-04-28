@@ -33,7 +33,7 @@ exports.getDoctorProfile = async (req, res) => {
       clinics: doctor.clinics,
       reviews: doctor.reviews,
       contactNumber:doctor.contactNumber,
-      // من User model (بعد populate)
+      membershipPdf:doctor.membershipPdf,
       name: doctor.userId?.name,
       email: doctor.userId?.email,
       phone: doctor.userId?.phone,
