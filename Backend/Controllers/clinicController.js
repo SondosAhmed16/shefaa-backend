@@ -47,6 +47,9 @@ const checkNoOverlapForDoctor = async (doctorId, newDays, excludeClinicId = null
   const existingClinics = await Clinic.find(query).lean();
 
   for (const existing of existingClinics) {
+    // ✅ skip if old/malformed document has no defaultSchedule
+    if (!existing.defaultSchedule?.days?.length) continue;
+
     for (const existDay of existing.defaultSchedule.days) {
       if (!existDay.isActive) continue;
       const newDay = newDays.find((d) => d.day === existDay.day);
