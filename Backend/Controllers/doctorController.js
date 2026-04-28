@@ -28,7 +28,6 @@ exports.getDoctorProfile = async (req, res) => {
       paymentOption: doctor.paymentOption,
       prePaymentNumbers: doctor.prePaymentNumbers,
       preOnlineConsultation: doctor.preOnlineConsultation,
-      videoConsultationPrice: doctor.videoConsultationPrice,
       clinicConsultationPrice: doctor.clinicConsultationPrice,
       clinics: doctor.clinics,
       reviews: doctor.reviews,
@@ -60,7 +59,6 @@ exports.updateDoctorProfile = async (req, res) => {
       contactNumber,
       degrees,
       prePaymentNumbers,
-      videoConsultationPrice,
       clinicConsultationPrice,
       name, // from User model
     } = req.body;
@@ -79,7 +77,6 @@ exports.updateDoctorProfile = async (req, res) => {
       contactNumber,
       degrees,
       prePaymentNumbers,
-      videoConsultationPrice,
       clinicConsultationPrice,
       ...(gender && { gender: gender.toLowerCase() }),
       ...(image && { image }),

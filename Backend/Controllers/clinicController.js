@@ -1,6 +1,7 @@
 // controllers/clinicController.js
 const Clinic = require("../Models/Clinic");
 const Doctor = require("../Models/Doctors");
+
 const timeToMins = (t) => {
   const [h, m] = t.split(":").map(Number);
   return h * 60 + m;
@@ -30,7 +31,6 @@ const resolveScheduleSlots = (resolvedWeek) => {
   const { days, slotDuration } = resolvedWeek;
   const result = {};
   for (const day of days) {
-    // ✅ لو اليوم مقفول أو مش active، مش بنرجع slots خالص
     if (!day.isActive || day.isDayLocked) continue;
     const dur = day.slotDuration ?? slotDuration;
     result[day.day] = buildDaySlots(day.open, day.close, day.breaks, dur);
@@ -47,7 +47,6 @@ const checkNoOverlapForDoctor = async (doctorId, newDays, excludeClinicId = null
   const existingClinics = await Clinic.find(query).lean();
 
   for (const existing of existingClinics) {
-    // ✅ skip if old/malformed document has no defaultSchedule
     if (!existing.defaultSchedule?.days?.length) continue;
 
     for (const existDay of existing.defaultSchedule.days) {
@@ -67,14 +66,12 @@ const checkNoOverlapForDoctor = async (doctorId, newDays, excludeClinicId = null
 
 exports.createClinic = async (req, res) => {
   try {
+    // ── 1. Get doctor from token ──────────────────────────────────────────────
     const doctor = await Doctor.findOne({ userId: req.user.id });
     if (!doctor) return res.status(403).json({ message: "Doctor profile not found." });
-    
     const doctorId = doctor._id;
-    if (!doctorId) {
-      return res.status(401).json({ message: "Unauthorized: doctor identity not found." });
-    }
 
+    // ── 2. Validate body ──────────────────────────────────────────────────────
     const { name, city, address, location, price, operatingLicense, schedule } = req.body;
 
     if (!name || !city || !address || !location?.coordinates || price == null || !schedule) {
@@ -83,10 +80,11 @@ exports.createClinic = async (req, res) => {
 
     const { slotDuration, dailyCapacity, patientsPerSlot = 1, days = [] } = schedule;
 
-    if (!slotDuration || slotDuration < 5)  return res.status(400).json({ message: "slotDuration must be ≥ 5 minutes." });
+    if (!slotDuration || slotDuration < 5)   return res.status(400).json({ message: "slotDuration must be ≥ 5 minutes." });
     if (!dailyCapacity || dailyCapacity < 1) return res.status(400).json({ message: "dailyCapacity must be ≥ 1." });
-    if (!days.length) return res.status(400).json({ message: "At least one working day is required." });
+    if (!days.length)                        return res.status(400).json({ message: "At least one working day is required." });
 
+    // ── 3. Normalise & validate each day ─────────────────────────────────────
     const VALID_DAYS = ["Saturday","Sunday","Monday","Tuesday","Wednesday","Thursday","Friday"];
 
     const normalisedDays = days.map((d, i) => {
@@ -118,20 +116,23 @@ exports.createClinic = async (req, res) => {
         slotDuration:    d.slotDuration    ?? null,
         dailyCapacity:   d.dailyCapacity   ?? null,
         patientsPerSlot: d.patientsPerSlot ?? null,
-        isDayLocked:     d.isDayLocked     ?? false,   // ✅ على مستوى اليوم
-        isBookingLocked: d.isBookingLocked ?? false,   // ✅ على مستوى اليوم
+        isDayLocked:     d.isDayLocked     ?? false,
+        isBookingLocked: d.isBookingLocked ?? false,
       };
     });
 
+    // ── 4. No duplicate days ──────────────────────────────────────────────────
     const dayNames = normalisedDays.map((d) => d.day);
     if (new Set(dayNames).size !== dayNames.length) {
       return res.status(400).json({ message: "Duplicate days found in schedule." });
     }
 
+    // ── 5. Overlap check across doctor's clinics ──────────────────────────────
     const activeDays = normalisedDays.filter((d) => d.isActive);
     const { conflict, message: conflictMsg } = await checkNoOverlapForDoctor(doctorId, activeDays);
     if (conflict) return res.status(409).json({ message: conflictMsg });
 
+    // ── 6. Create clinic ──────────────────────────────────────────────────────
     const clinic = await Clinic.create({
       doctorId,
       name:     name.trim(),
@@ -148,8 +149,14 @@ exports.createClinic = async (req, res) => {
       },
     });
 
-    const resolvedWeek  = clinic.resolveWeek(new Date());
-    const slotsPreview  = resolveScheduleSlots({ ...resolvedWeek, slotDuration });
+    // ── 7. Push clinic ID into Doctor document ────────────────────────────────
+    await Doctor.findByIdAndUpdate(doctorId, {
+      $push: { clinics: clinic._id },
+    });
+
+    // ── 8. Build slots preview ────────────────────────────────────────────────
+    const resolvedWeek = clinic.resolveWeek(new Date());
+    const slotsPreview = resolveScheduleSlots({ ...resolvedWeek, slotDuration });
 
     return res.status(201).json({ message: "Clinic created successfully.", clinic, slotsPreview });
 
