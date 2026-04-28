@@ -160,46 +160,56 @@ exports.addMedicalRecord = async (req, res) => {
   }
 };
 
-
+//search doctor {name , city , specialization , gender}
 exports.searchDoctors = async (req, res) => {
   try {
-    const { specialization, gender, city } = req.query;
-
-    let clinicQuery = {};
-    if (city) {
-      clinicQuery.city = { $regex: new RegExp(city, "i") };
-    }
-
-    const clinics = await Clinic.find(clinicQuery);
-    const doctorIdsFromClinics = clinics.map(c => c.doctorId.toString());
-
+    const { specialization, gender, city, name } = req.query;
 
     let doctorQuery = {};
-
 
     if (specialization) {
       doctorQuery.specialization = { $regex: new RegExp(specialization, "i") };
     }
+
     if (gender && gender.trim() !== "") {
       doctorQuery.gender = gender.toLowerCase();
     }
 
-
     if (city) {
-      doctorQuery._id = { $in: doctorIdsFromClinics };
+      const clinicsInCity = await Clinic.find({ city: { $regex: new RegExp(city, "i") } });
+      const doctorIds = clinicsInCity.map(c => c.doctorId.toString());
+      doctorQuery._id = { $in: doctorIds };
     }
 
-    const doctors = await Doctor.find(doctorQuery).populate('userId', 'name email phoneNumber');
+    let userMatch = { path: 'userId', select: 'name' };
+    if (name) {
+      userMatch.match = { name: { $regex: new RegExp(name, "i") } };
+    }
+
+    let doctors = await Doctor.find(doctorQuery).populate(userMatch);
+
+    if (name) {
+      doctors = doctors.filter(doc => doc.userId !== null);
+    }
 
     const results = await Promise.all(doctors.map(async (doc) => {
       const doctorClinics = await Clinic.find({
         doctorId: doc._id,
         ...(city && { city: { $regex: new RegExp(city, "i") } })
-      });
+      }, 'name city address location price daysOfWeek');
 
       return {
-        ...doc._doc,
-        clinics: doctorClinics
+        _id: doc._id,
+        name: doc.userId ? doc.userId.name : "Unknown",
+        specialization: doc.specialization,
+        clinics: doctorClinics.map(clinic => ({
+          name: clinic.name,
+          city: clinic.city,
+          address: clinic.address,
+          location: clinic.location,
+          price: clinic.price,
+          daysOfWeek: clinic.daysOfWeek || []
+        }))
       };
     }));
 
@@ -225,12 +235,12 @@ exports.getDoctorDashboard = async (req, res) => {
     const appointments = await Appointment.find({ doctor: doctorProfile._id })
       .populate({
         path: 'patient',
-        populate: { path: 'userId', select: 'name image' } 
+        populate: { path: 'userId', select: 'name image' }
       })
       .populate('clinic', 'name')
-      .sort({ date: 1, slotStart: 1 }); 
+      .sort({ date: 1, slotStart: 1 });
 
-   
+
     const todayApps = appointments.filter(a => new Date(a.date).getTime() === today.getTime());
     const stats = {
       totalToday: todayApps.length,

@@ -1,8 +1,8 @@
 const Patient = require('../Models/Patients');
 const Appointment = require('../Models/Appointment');
 const MedicalRecord = require('../Models/MedicalRecord');
-    const Notification = require('../Models/Notification');
-
+const Notification = require('../Models/Notification');
+const User = require('../Models/Users');
 const getPatientByUserId = async (userId) => {
   return await Patient.findOne({ userId: userId });
 };
@@ -60,7 +60,11 @@ exports.updateProfile = async (req, res) => {
 
 exports.updateBasicInfo = async (req, res) => {
   try {
-    const { address, phoneNumber, age, gender, height, weight } = req.body;
+    const { name, address, phoneNumber, age, gender, height, weight } = req.body;
+
+    if (name) {
+      await User.findByIdAndUpdate(req.user._id, { name });
+    }
 
     const patient = await Patient.findOneAndUpdate(
       { userId: req.user._id },
@@ -69,7 +73,19 @@ exports.updateBasicInfo = async (req, res) => {
     );
 
     if (!patient) return res.status(404).json({ message: 'Patient profile not found' });
-    res.json({ message: 'Basic info updated', patient });
+
+    res.json({ 
+      message: 'Basic info updated successfully', 
+      updatedData: {
+        name,
+        address,
+        phoneNumber,
+        age,
+        gender,
+        height,
+        weight
+      }
+    });
   } catch (err) {
     res.status(500).json({ message: err.message });
   }
@@ -106,7 +122,7 @@ exports.uploadAttachment = async (req, res) => {
       diagnosis: req.body.diagnosis || 'Self-uploaded attachment',
       attachments: [{
         fileName: req.file.originalname,
-        fileUrl: req.file.path 
+        fileUrl: req.file.path
       }],
       visitDate: new Date(),
       notes: req.body.notes || 'Uploaded by patient'
@@ -145,20 +161,33 @@ exports.getMedications = async (req, res) => {
 // add his medication
 exports.addMedication = async (req, res) => {
   try {
+    const { startDate } = req.body;
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+
+    if (startDate && new Date(startDate) < today) {
+      return res.status(400).json({ message: "Start date cannot be in the past." });
+    }
+
     const patient = await Patient.findOneAndUpdate(
       { userId: req.user._id },
       { $push: { medications: req.body } },
       { new: true }
     );
 
+    const addedMedication = patient.medications[patient.medications.length - 1];
+
     await Notification.create({
       recipient: req.user._id,
       title: "new medication",
-      message: `you added  ${req.body.name} to your medication list successfully `,
+      message: `you added ${req.body.name} to your medication list successfully`,
       type: 'medication'
     });
-    
-    res.json({ message: "Medication added", medications: patient.medications });
+
+    res.json({
+      message: "Medication added",
+      medication: addedMedication
+    });
   } catch (err) {
     res.status(500).json({ message: err.message });
   }
@@ -167,9 +196,18 @@ exports.addMedication = async (req, res) => {
 exports.confirmMedicationDose = async (req, res) => {
   try {
     const { medId } = req.params;
+    const now = new Date();
+
     const patient = await Patient.findOneAndUpdate(
       { userId: req.user._id, "medications._id": medId },
-      { $push: { "medications.$.adherenceHistory": { date: new Date(), status: 'taken' } } },
+      {
+        $push: {
+          "medications.$.adherenceHistory": {
+            date: now,
+            status: 'taken'
+          }
+        }
+      },
       { new: true }
     );
 
@@ -178,19 +216,85 @@ exports.confirmMedicationDose = async (req, res) => {
     const med = patient.medications.id(medId);
 
 
-    const takenDoses = med.adherenceHistory.length; 
+    const takenDoses = med.adherenceHistory.length;
 
 
-    const totalExpectedDoses = 10; 
-    
+    const totalExpectedDoses = 10;
+
     let adherenceRate = Math.round((takenDoses / totalExpectedDoses) * 100);
-    
+
     if (adherenceRate > 100) adherenceRate = 100;
 
-    res.json({ 
-      message: "Dose confirmed!", 
-      adherenceRate: `${adherenceRate}%`, // دلوقتى الرقم هيتغير كل ما المريض يدوس Confirm
-      medication: med 
+    res.json({
+      message: "Dose confirmed!",
+      adherenceRate: `${adherenceRate}%`,
+      medication: med
+    });
+  } catch (err) {
+    res.status(500).json({ message: err.message });
+  }
+};
+
+// update patient medication
+exports.updateMedication = async (req, res) => {
+  try {
+    const { medId } = req.params;
+
+    const patient = await Patient.findOneAndUpdate(
+      { userId: req.user._id, "medications._id": medId },
+      {
+        $set: {
+          "medications.$": { ...req.body, _id: medId }
+        }
+      },
+      { new: true, runValidators: true }
+    );
+
+    if (!patient) return res.status(404).json({ message: "Medication or Patient not found" });
+
+    const updatedMedication = patient.medications.id(medId);
+
+    await Notification.create({
+      recipient: req.user._id,
+      title: "Medication Updated",
+      message: `You updated ${req.body.name || 'a medication'} successfully.`,
+      type: 'medication'
+    });
+
+    res.json({
+      message: "Medication updated successfully",
+      medication: updatedMedication
+    });
+  } catch (err) {
+    res.status(500).json({ message: err.message });
+  }
+};
+
+// delete patient medication
+exports.deleteMedication = async (req, res) => {
+  try {
+    const { medId } = req.params;
+
+    const patient = await Patient.findOneAndUpdate(
+      { userId: req.user._id },
+      { $pull: { medications: { _id: medId } } },
+      { new: false }
+    );
+
+    if (!patient) return res.status(404).json({ message: "Patient not found" });
+
+    const deletedMedication = patient.medications.id(medId);
+
+    await Notification.create({
+      recipient: req.user._id,
+      title: "Medication Removed",
+      message: `A medication has been removed from your list.`,
+      type: 'medication'
+    });
+
+    res.json({
+      message: "Medication deleted successfully",
+      medication: deletedMedication
     });
   } catch (err) {
     res.status(500).json({ message: err.message });
