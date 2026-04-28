@@ -46,6 +46,8 @@ exports.getDoctorProfile = async (req, res) => {
 };
 
 
+const User = require("../models/User"); // make sure this is imported
+
 exports.updateDoctorProfile = async (req, res) => {
   try {
     const {
@@ -61,9 +63,14 @@ exports.updateDoctorProfile = async (req, res) => {
       prePaymentNumbers,
       videoConsultationPrice,
       clinicConsultationPrice,
+      name, // from User model
     } = req.body;
 
-    const updateData = {
+    // Handle image upload if a file was sent (assumes multer middleware)
+    const image = req.file ? req.file.path : undefined;
+
+    // --- Update Doctor document ---
+    const doctorUpdateData = {
       specialization,
       yearsOfExperience,
       preOnlineConsultation,
@@ -76,20 +83,30 @@ exports.updateDoctorProfile = async (req, res) => {
       videoConsultationPrice,
       clinicConsultationPrice,
       ...(gender && { gender: gender.toLowerCase() }),
+      ...(image && { image }),
     };
 
     // Remove undefined fields so they don't overwrite existing data
-    Object.keys(updateData).forEach(
-      (key) => updateData[key] === undefined && delete updateData[key]
+    Object.keys(doctorUpdateData).forEach(
+      (key) => doctorUpdateData[key] === undefined && delete doctorUpdateData[key]
     );
 
     const doctor = await Doctor.findOneAndUpdate(
       { userId: req.user._id },
-      updateData,
+      doctorUpdateData,
       { new: true, runValidators: true }
     );
 
     if (!doctor) return res.status(404).json({ message: "Doctor profile not found" });
+
+    // --- Update User document (name) ---
+    if (name) {
+      await User.findByIdAndUpdate(
+        req.user._id,
+        { name },
+        { new: true, runValidators: true }
+      );
+    }
 
     res.json({ message: "Doctor profile updated successfully", doctor });
   } catch (err) {
