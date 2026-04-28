@@ -74,8 +74,8 @@ exports.updateBasicInfo = async (req, res) => {
 
     if (!patient) return res.status(404).json({ message: 'Patient profile not found' });
 
-    res.json({ 
-      message: 'Basic info updated successfully', 
+    res.json({
+      message: 'Basic info updated successfully',
       updatedData: {
         name,
         address,
@@ -296,6 +296,54 @@ exports.deleteMedication = async (req, res) => {
       message: "Medication deleted successfully",
       medication: deletedMedication
     });
+  } catch (err) {
+    res.status(500).json({ message: err.message });
+  }
+};
+
+exports.getMyMedications = async (req, res) => {
+  try {
+    const patient = await Patient.findOne({ userId: req.user._id });
+    if (!patient) return res.status(404).json({ message: "Patient not found" });
+
+    const now = new Date();
+
+    const activeMedications = patient.medications.filter(med => {
+      if (!med.endDate) return true;
+      return new Date(med.endDate) >= now;
+    });
+
+    let totalAdherenceSum = 0;
+
+    const medicationsWithStats = activeMedications.map(med => {
+      const takenDoses = med.adherenceHistory.filter(h => h.status === 'taken').length;
+      const totalDosesRecorded = med.adherenceHistory.length;
+
+      const medAdherence = totalDosesRecorded > 0
+        ? Math.round((takenDoses / totalDosesRecorded) * 100)
+        : 0;
+
+      totalAdherenceSum += medAdherence;
+
+      return {
+        ...med._doc,
+        adherencePercentage: medAdherence
+      };
+    });
+
+    const activeCount = medicationsWithStats.length;
+    const avgAdherence = activeCount > 0
+      ? Math.round(totalAdherenceSum / activeCount)
+      : 0;
+
+    res.json({
+      stats: {
+        avgAdherence: `${avgAdherence}%`,
+        activeMedications: activeCount
+      },
+      medications: medicationsWithStats
+    });
+
   } catch (err) {
     res.status(500).json({ message: err.message });
   }
