@@ -32,7 +32,7 @@ exports.getDoctorProfile = async (req, res) => {
       clinicConsultationPrice: doctor.clinicConsultationPrice,
       clinics: doctor.clinics,
       reviews: doctor.reviews,
-
+      contactNumber:doctor.contactNumber,
       // من User model (بعد populate)
       name: doctor.userId?.name,
       email: doctor.userId?.email,
@@ -46,9 +46,6 @@ exports.getDoctorProfile = async (req, res) => {
 };
 
 
-// 2. Update Doctor Profile information
-// Controllers/doctorController.js
-
 exports.updateDoctorProfile = async (req, res) => {
   try {
     const {
@@ -58,25 +55,43 @@ exports.updateDoctorProfile = async (req, res) => {
       about,
       age,
       paymentOption,
-      gender
+      gender,
+      contactNumber,
+      degrees,
+      prePaymentNumbers,
+      videoConsultationPrice,
+      clinicConsultationPrice,
     } = req.body;
+
+    const updateData = {
+      specialization,
+      yearsOfExperience,
+      preOnlineConsultation,
+      about,
+      age,
+      paymentOption,
+      contactNumber,
+      degrees,
+      prePaymentNumbers,
+      videoConsultationPrice,
+      clinicConsultationPrice,
+      ...(gender && { gender: gender.toLowerCase() }),
+    };
+
+    // Remove undefined fields so they don't overwrite existing data
+    Object.keys(updateData).forEach(
+      (key) => updateData[key] === undefined && delete updateData[key]
+    );
 
     const doctor = await Doctor.findOneAndUpdate(
       { userId: req.user._id },
-      {
-        specialization,
-        yearsOfExperience,
-        preOnlineConsultation,
-        about,
-        age,
-        paymentOption,
-        gender: gender ? gender.toLowerCase() : undefined
-      },
+      updateData,
       { new: true, runValidators: true }
     );
 
-    if (!doctor) return res.status(404).json({ message: 'Doctor profile not found' });
-    res.json({ message: 'Doctor profile updated successfully', doctor });
+    if (!doctor) return res.status(404).json({ message: "Doctor profile not found" });
+
+    res.json({ message: "Doctor profile updated successfully", doctor });
   } catch (err) {
     res.status(500).json({ message: err.message });
   }
