@@ -319,7 +319,7 @@ exports.getMyMedications = async (req, res) => {
 
     let totalAdherenceSum = 0;
 
-    const medicationsWithStats = activeMedications.map(med => {
+    const medicationsList = activeMedications.map(med => {
       const start = new Date(med.startDate);
       const endForCalc = med.endDate && new Date(med.endDate) < now ? new Date(med.endDate) : now;
 
@@ -327,7 +327,6 @@ exports.getMyMedications = async (req, res) => {
       const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24)) || 1;
 
       const expectedDoses = diffDays * med.timesPerDay;
-
       const takenDoses = med.adherenceHistory.filter(h => h.status === 'taken').length;
 
       const medAdherence = expectedDoses > 0 
@@ -339,14 +338,21 @@ exports.getMyMedications = async (req, res) => {
       totalAdherenceSum += finalMedAdherence;
 
       return {
-        ...med._doc,
+        _id: med._id,
+        name: med.name,
+        dosage: med.dosage,
+        form: med.form,
+        timesPerDay: med.timesPerDay,
+        schedule: med.schedule,
+        startDate: med.startDate,
+        endDate: med.endDate,
+        isActive: med.isActive,
         adherencePercentage: finalMedAdherence,
-        expectedDoses, 
-        takenDoses
+        adherenceHistory: med.adherenceHistory
       };
     });
 
-    const activeCount = medicationsWithStats.length;
+    const activeCount = medicationsList.length;
     const avgAdherence = activeCount > 0 
       ? Math.round(totalAdherenceSum / activeCount) 
       : 0;
@@ -356,7 +362,7 @@ exports.getMyMedications = async (req, res) => {
         avgAdherence: `${avgAdherence}%`,
         activeMedications: activeCount
       },
-      medications: medicationsWithStats
+      medications: medicationsList 
     });
 
   } catch (err) {
