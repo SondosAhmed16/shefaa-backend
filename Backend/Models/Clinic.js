@@ -13,21 +13,26 @@ const dayScheduleSchema = new mongoose.Schema({
     enum: ["Saturday","Sunday","Monday","Tuesday","Wednesday","Thursday","Friday"],
     required: true,
   },
-  isActive:        { type: Boolean, default: true },
-  open:            { type: Number, required: true },
-  close:           { type: Number, required: true },
-  breaks:          { type: [breakSchema], default: [] },
-  slotDuration:    { type: Number, default: null },
-  dailyCapacity:   { type: Number, default: null },
-  patientsPerSlot: { type: Number, default: null },
-  // ✅ انتقلوا هنا — على مستوى كل يوم
-  isDayLocked:     { type: Boolean, default: false },
-  isBookingLocked: { type: Boolean, default: false },
+  isActive:         { type: Boolean, default: true },
+  open:             { type: Number, required: true },
+  close:            { type: Number, required: true },
+  breaks:           { type: [breakSchema], default: [] },
+  slotDuration:     { type: Number, default: null },
+  dailyCapacity:    { type: Number, default: null },
+  patientsPerSlot:  { type: Number, default: null },
+  isDayLocked:      { type: Boolean, default: false },
+  isBookingLocked:  { type: Boolean, default: false },
+  // ─── Appointment tracking ───────────────────────────────────────────────────
+  // Set to true when the first appointment is booked on this day (for this week).
+  // Until you wire up a real Appointments collection, you can toggle this manually
+  // via PATCH /clinics/:id/schedule/override  (include hasAppointments: true in the day object)
+  // or via the dedicated endpoint:  PATCH /clinics/:id/day-appointments
+  hasAppointments:  { type: Boolean, default: false },
 }, { _id: false });
 
 const weeklyOverrideSchema = new mongoose.Schema({
   weekStart:       { type: Date, required: true },
-  days:            { type: [dayScheduleSchema], default: [] }, // ✅ بيورث isDayLocked/isBookingLocked
+  days:            { type: [dayScheduleSchema], default: [] },
   slotDuration:    { type: Number, default: null },
   dailyCapacity:   { type: Number, default: null },
   patientsPerSlot: { type: Number, default: null },
@@ -56,7 +61,7 @@ const clinicSchema = new mongoose.Schema({
   },
 
   weeklyOverrides: { type: [weeklyOverrideSchema], default: [] },
-  price:           { type: Number, required: true },
+  price:            { type: Number, required: true },
   operatingLicense: { type: String, default: "" },
 
   status: {
@@ -87,11 +92,18 @@ clinicSchema.methods.resolveWeek = function (weekStart) {
     patientsPerSlot: defaults.patientsPerSlot,
   };
 
+  // Merge: default days + any override days (override wins field-by-field)
   const mergedDays = defaults.days.map(defDay => {
     const ovDay = override.days.find(d => d.day === defDay.day);
-    // ✅ override بيكسب على كل field حتى isDayLocked/isBookingLocked
     return ovDay ? { ...defDay.toObject(), ...ovDay.toObject() } : defDay;
   });
+
+  // Also include override-only days (days not in default schedule — e.g. doctor opened
+  // an extra day just for this week via the "open closed day" feature)
+  for (const ovDay of override.days) {
+    const alreadyMerged = mergedDays.some(d => d.day === ovDay.day);
+    if (!alreadyMerged) mergedDays.push(ovDay.toObject ? ovDay.toObject() : ovDay);
+  }
 
   return {
     days:            mergedDays,
@@ -101,5 +113,4 @@ clinicSchema.methods.resolveWeek = function (weekStart) {
   };
 };
 
-// ✅ كده لو الموديل اتعمل قبل كده، بياخده بدل ما يعمله تاني
 module.exports = mongoose.models.Clinic || mongoose.model("Clinic", clinicSchema);
