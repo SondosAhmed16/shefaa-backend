@@ -20,4 +20,8 @@ router.put('/:id', auth, authorizeRoles('doctor'), clinicController.editClinic);
 // 6. delete clinic
 router.delete('/:id', auth, authorizeRoles('doctor'), clinicController.deleteClinic);
 
+// routes/clinicRoutes.js
+router.patch("/:id/schedule/override", auth, authorizeRoles('doctor'), clinicController.overrideWeekSchedule);
+router.delete("/:id/schedule/override", auth, authorizeRoles('doctor'), clinicController.deleteWeekOverride);
+
 module.exports = router;
