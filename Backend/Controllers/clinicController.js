@@ -685,7 +685,7 @@ exports.getDaySlots = async (req, res) => {
       patientsPerSlot,
       totalBookedToday,
       totalSlots:      slots.length,
-      hasAppointments: dayEntry.hasAppointments ?? false,
+      hasAppointments: totalBookedToday > 0,
       breaks: (dayEntry.breaks ?? []).map((b) => ({
         start: b.start, end: b.end, label: b.label ?? "",
       })),
