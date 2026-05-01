@@ -16,13 +16,13 @@ const minsToTime = (mins) => {
   return `${h}:${m}`;
 };
 
-/** Return the Saturday that starts the week containing `date`. */
 const getWeekStart = (date) => {
   const d = new Date(date);
-  d.setHours(0, 0, 0, 0);
-  const day = d.getDay(); // 0 Sun … 6 Sat
+  // اشتغل بـ UTC عشان يتطابق مع اللي المخزن في الـ DB
+  const day = d.getUTCDay(); // 0 Sun … 6 Sat
   const diff = day === 6 ? 0 : day + 1;
-  d.setDate(d.getDate() - diff);
+  d.setUTCDate(d.getUTCDate() - diff);
+  d.setUTCHours(0, 0, 0, 0);
   return d;
 };
 
