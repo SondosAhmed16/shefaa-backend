@@ -98,7 +98,6 @@ exports.bookAppointment = async (req, res) => {
     // ── 2. Load clinic ──────────────────────────────────────────────────────
     const clinic = await Clinic.findById(clinicId);
     if (!clinic) return res.status(404).json({ message: "Clinic not found." });
-    if (clinic.status !== "active") return res.status(403).json({ message: "This clinic is not currently active." });
 
     // ── 3. Load patient ─────────────────────────────────────────────────────
     const patientProfile = await Patient.findOne({ userId: req.user.id });
