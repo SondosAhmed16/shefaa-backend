@@ -384,6 +384,12 @@ exports.deleteWeekOverride = async (req, res) => {
  *   - On first booking for the day  → hasAppointments: true
  *   - On last cancellation for day → hasAppointments: false  (optional — safe to leave true)
  */
+const minsToTime = (mins) => {
+  const h = String(Math.floor(mins / 60)).padStart(2, "0");
+  const m = String(mins % 60).padStart(2, "0");
+  return `${h}:${m}`;
+};
+
 exports.setDayAppointmentFlag = async (req, res) => {
   try {
     const doctor = await Doctor.findOne({ userId: req.user.id });
@@ -391,26 +397,27 @@ exports.setDayAppointmentFlag = async (req, res) => {
 
     const clinic = await Clinic.findById(req.params.id);
     if (!clinic) return res.status(404).json({ message: "Clinic not found." });
-    if (clinic.doctorId.toString() !== doctor._id.toString()) return res.status(403).json({ message: "Not authorized." });
+    if (clinic.doctorId.toString() !== doctor._id.toString())
+      return res.status(403).json({ message: "Not authorized." });
 
     const { weekStart, day, hasAppointments } = req.body;
     if (!weekStart || !day || hasAppointments === undefined) {
       return res.status(400).json({ message: "weekStart, day, and hasAppointments are required." });
     }
 
-    const VALID_DAYS = ["Saturday","Sunday","Monday","Tuesday","Wednesday","Thursday","Friday"];
-    if (!VALID_DAYS.includes(day)) return res.status(400).json({ message: `Invalid day "${day}".` });
+    const VALID_DAYS = ["Saturday", "Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday"];
+    if (!VALID_DAYS.includes(day))
+      return res.status(400).json({ message: `Invalid day "${day}".` });
 
     const weekStartDate = new Date(weekStart);
-    if (isNaN(weekStartDate.getTime())) return res.status(400).json({ message: "Invalid weekStart date." });
+    if (isNaN(weekStartDate.getTime()))
+      return res.status(400).json({ message: "Invalid weekStart date." });
 
-    // Find or create the weekly override
     let overrideIdx = clinic.weeklyOverrides.findIndex(
       (o) => o.weekStart.toISOString() === weekStartDate.toISOString()
     );
 
     if (overrideIdx === -1) {
-      // No override yet — create a minimal one just to store the flag
       clinic.weeklyOverrides.push({ weekStart: weekStartDate, days: [] });
       overrideIdx = clinic.weeklyOverrides.length - 1;
     }
@@ -419,9 +426,9 @@ exports.setDayAppointmentFlag = async (req, res) => {
     const dayIdx = override.days.findIndex((d) => d.day === day);
 
     if (dayIdx === -1) {
-      // Day not in override yet — find its default settings to fill required fields
       const defDay = clinic.defaultSchedule.days.find((d) => d.day === day);
-      if (!defDay) return res.status(404).json({ message: `Day "${day}" not found in default schedule.` });
+      if (!defDay)
+        return res.status(404).json({ message: `Day "${day}" not found in default schedule.` });
 
       override.days.push({
         ...defDay.toObject(),
@@ -438,18 +445,10 @@ exports.setDayAppointmentFlag = async (req, res) => {
       day,
       hasAppointments: Boolean(hasAppointments),
     });
-
   } catch (err) {
     console.error("setDayAppointmentFlag error:", err);
     return res.status(500).json({ message: "Internal server error." });
   }
-};
-// Add these alongside your existing timeToMins helper in clinicController.js
-
-const minsToTime = (mins) => {
-  const h = String(Math.floor(mins / 60)).padStart(2, "0");
-  const m = String(mins % 60).padStart(2, "0");
-  return `${h}:${m}`;
 };
 
 exports.getAvailableSlots = async (req, res) => {
@@ -462,65 +461,52 @@ exports.getAvailableSlots = async (req, res) => {
       return res.status(400).json({ message: "Query param 'date' is required (YYYY-MM-DD)." });
     }
 
-    const requestedDate = new Date(`${date}T00:00:00.000Z`);
+    // ✅ FIX: بنبني التاريخ بتوقيت القاهرة (UTC+3) مش UTC
+    const requestedDate = new Date(`${date}T00:00:00.000+03:00`);
     if (isNaN(requestedDate.getTime())) {
       return res.status(400).json({ message: "Invalid date format. Use YYYY-MM-DD." });
     }
 
-    const todayUTC = new Date();
-    todayUTC.setUTCHours(0, 0, 0, 0);
-    if (requestedDate < todayUTC) {
+    // ✅ FIX: today بتوقيت القاهرة كمان
+    const nowCairo = new Date();
+    const todayStr = nowCairo.toLocaleDateString("en-CA", { timeZone: "Africa/Cairo" });
+    const todayCairo = new Date(`${todayStr}T00:00:00.000+03:00`);
+
+    if (requestedDate < todayCairo) {
       return res.status(400).json({ message: "Cannot fetch slots for a past date." });
     }
 
-    const isToday = requestedDate.getTime() === todayUTC.getTime();
+    const isToday = requestedDate.getTime() === todayCairo.getTime();
 
     // ── 2. Load clinic ──────────────────────────────────────────────────────
     const clinic = await Clinic.findById(clinicId).lean();
     if (!clinic) return res.status(404).json({ message: "Clinic not found." });
 
     // ── 3. Find the week start (Saturday on or before requested date) ───────
-    //
-    // getUTCDay(): Sun=0, Mon=1, Tue=2, Wed=3, Thu=4, Fri=5, Sat=6
-    // We want Saturday as day-0 of the week.
-    // daysSinceSaturday: Sat→0, Sun→1, Mon→2, Tue→3, Wed→4, Thu→5, Fri→6
-    //
-    const DAY_ORDER = ["Sunday","Monday","Tuesday","Wednesday","Thursday","Friday","Saturday"];
+    const DAY_ORDER = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];
     const requestedDayName = DAY_ORDER[requestedDate.getUTCDay()];
 
     const daysSinceSaturday = (requestedDate.getUTCDay() + 1) % 7;
     const weekStartDate = new Date(requestedDate);
     weekStartDate.setUTCDate(requestedDate.getUTCDate() - daysSinceSaturday);
-    // ✅ KEY FIX: Normalize to midnight UTC so the ISO string comparison works
-    // regardless of what timezone offset was used when the override was saved.
     weekStartDate.setUTCHours(0, 0, 0, 0);
 
     // ── 4. Find override for this week ──────────────────────────────────────
-    //
-    // ✅ KEY FIX: Compare only the date portion (first 10 chars of ISO string)
-    // so a stored "2026-05-01T21:00:00.000Z" matches our "2026-05-02T00:00:00.000Z"
-    // when they refer to the same calendar Saturday in different timezones.
-    //
-    const weekStartDateStr = weekStartDate.toISOString().slice(0, 10); // "2026-05-02"
+    const weekStartDateStr = weekStartDate.toISOString().slice(0, 10);
 
     const override = clinic.weeklyOverrides?.find((o) => {
       const storedStr = new Date(o.weekStart).toISOString().slice(0, 10);
-      // Same UTC date → exact match
       if (storedStr === weekStartDateStr) return true;
-      // Stored date is 1 day behind (timezone offset shifted it back by a few hours)
-      // e.g. stored "2026-05-01T21:00:00.000Z" → storedStr "2026-05-01"
-      //      weekStartDateStr "2026-05-02" → difference = exactly 1 day
       const diffMs = weekStartDate - new Date(o.weekStart);
       return diffMs > 0 && diffMs < 24 * 60 * 60 * 1000;
     });
 
     const defaults = clinic.defaultSchedule;
 
-    // ── 5. Find default day + override day separately ───────────────────────
+    // ── 5. Find default day + override day ──────────────────────────────────
     const defDay = defaults.days?.find((d) => d.day === requestedDayName);
     const ovDay  = override?.days?.find((d) => d.day === requestedDayName);
 
-    // Not configured anywhere → no slots
     if (!defDay && !ovDay) {
       return res.status(200).json({
         date,
@@ -531,13 +517,7 @@ exports.getAvailableSlots = async (req, res) => {
       });
     }
 
-    // ── 6. Merge day fields (override wins, field-by-field) ─────────────────
-    //
-    // breaks special rule:
-    //   ovDay.breaks = [...]      → doctor explicitly set breaks for this week → use them
-    //   ovDay.breaks = []         → doctor explicitly removed all breaks → use []
-    //   ovDay.breaks = undefined  → override didn't touch breaks → fall back to default
-    //
+    // ── 6. Merge day fields (override wins) ─────────────────────────────────
     const mergedDay = {
       day:             requestedDayName,
       isActive:        ovDay?.isActive        ?? defDay?.isActive        ?? true,
@@ -548,7 +528,6 @@ exports.getAvailableSlots = async (req, res) => {
       breaks: (ovDay !== undefined && ovDay.breaks !== undefined)
         ? ovDay.breaks
         : (defDay?.breaks ?? []),
-      // Priority: day-level override → week-level override → global default
       slotDuration:    ovDay?.slotDuration    ?? override?.slotDuration    ?? defaults.slotDuration,
       dailyCapacity:   ovDay?.dailyCapacity   ?? override?.dailyCapacity   ?? defaults.dailyCapacity,
       patientsPerSlot: ovDay?.patientsPerSlot ?? override?.patientsPerSlot ?? defaults.patientsPerSlot,
@@ -576,7 +555,6 @@ exports.getAvailableSlots = async (req, res) => {
         slots: [],
       });
     }
-
     if (mergedDay.open == null || mergedDay.close == null) {
       return res.status(200).json({
         date, day: requestedDayName, available: false,
@@ -627,9 +605,16 @@ exports.getAvailableSlots = async (req, res) => {
       totalBookedToday += entry.count;
     }
 
-    // ── 10. Current time in minutes (today filter) ──────────────────────────
+    // ── 10. Current time in minutes — Cairo time ────────────────────────────
+    // ✅ FIX: بنحسب الوقت الحالي بتوقيت القاهرة مش UTC
     const nowMins = isToday
-      ? new Date().getUTCHours() * 60 + new Date().getUTCMinutes()
+      ? (() => {
+          const now = new Date();
+          const cairoTimeStr = now.toLocaleTimeString("en-GB", { timeZone: "Africa/Cairo" });
+          // cairoTimeStr = "HH:MM:SS"
+          const [h, m] = cairoTimeStr.split(":").map(Number);
+          return h * 60 + m;
+        })()
       : -1;
 
     // ── 11. Annotate slots ──────────────────────────────────────────────────
