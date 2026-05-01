@@ -30,5 +30,5 @@ router.delete("/:id/schedule/override", auth, authorizeRoles('doctor'), clinicCo
 // Body: { weekStart: "ISO date string", day: "Monday", hasAppointments: true }
 router.patch("/:id/day-appointments", auth, authorizeRoles('doctor'), clinicController.setDayAppointmentFlag);
 
-router.get("/:id/available-slots", getAvailableSlots);
+router.get("/:id/available-slots", clinicController.getAvailableSlots);
 module.exports = router;
