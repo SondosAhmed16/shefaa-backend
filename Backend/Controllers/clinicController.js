@@ -475,10 +475,7 @@ exports.getAvailableSlots = async (req, res) => {
     const clinic = await Clinic.findById(clinicId).lean();
     if (!clinic) return res.status(404).json({ message: "Clinic not found." });
 
-    // Only patients should be able to book active clinics
-    if (clinic.status !== "active") {
-      return res.status(403).json({ message: "This clinic is not currently active." });
-    }
+  
 
     // ── 3. Resolve schedule for the week containing the requested date ──────
     //
