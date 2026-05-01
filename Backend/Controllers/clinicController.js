@@ -372,18 +372,6 @@ exports.deleteWeekOverride = async (req, res) => {
   }
 };
 
-// ─── NEW: Set hasAppointments flag ───────────────────────────────────────────
-/**
- * PATCH /clinics/:id/day-appointments
- * Body: { weekStart: "ISO date", day: "Monday", hasAppointments: true }
- *
- * Manually marks a specific day in a weekly override as having (or not having)
- * appointments. Use this until you wire up real appointment booking logic.
- *
- * When real appointments exist, call this endpoint from your booking controller:
- *   - On first booking for the day  → hasAppointments: true
- *   - On last cancellation for day → hasAppointments: false  (optional — safe to leave true)
- */
 const minsToTime = (mins) => {
   const h = String(Math.floor(mins / 60)).padStart(2, "0");
   const m = String(mins % 60).padStart(2, "0");
@@ -460,18 +448,17 @@ exports.getAvailableSlots = async (req, res) => {
     if (!date) {
       return res.status(400).json({ message: "Query param 'date' is required (YYYY-MM-DD)." });
     }
-    // ✅ تحقق من الفورمات الأول
+
     if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) {
       return res.status(400).json({ message: "Invalid date format. Use YYYY-MM-DD." });
     }
 
-
-    // ✅ استخرج اسم اليوم من الـ date string مباشرة بتوقيت القاهرة
-    // بدل getUTCDay() اللي بيرجع UTC day
+    // ✅ اسم اليوم من الـ date string مباشرة بتوقيت القاهرة
+    // بنستخدم T12:00 عشان نضمن ان مفيش timezone shift يغير اليوم
     const requestedDayName = new Date(`${date}T12:00:00.000+03:00`)
       .toLocaleDateString("en-US", { timeZone: "Africa/Cairo", weekday: "long" });
-    // "2026-05-02" → "Saturday" ✅
 
+    // ✅ requestedDate بتوقيت القاهرة
     const requestedDate = new Date(`${date}T00:00:00.000+03:00`);
 
     // ✅ today بتوقيت القاهرة
@@ -482,26 +469,38 @@ exports.getAvailableSlots = async (req, res) => {
       return res.status(400).json({ message: "Cannot fetch slots for a past date." });
     }
 
-  
-
     const isToday = requestedDate.getTime() === todayCairo.getTime();
 
     // ── 2. Load clinic ──────────────────────────────────────────────────────
     const clinic = await Clinic.findById(clinicId).lean();
     if (!clinic) return res.status(404).json({ message: "Clinic not found." });
 
-    const daysSinceSaturday = (requestedDate.getUTCDay() + 1) % 7;
-    const weekStartDate = new Date(requestedDate);
-    weekStartDate.setUTCDate(requestedDate.getUTCDate() - daysSinceSaturday);
-    weekStartDate.setUTCHours(0, 0, 0, 0);
+    // ── 3. Find the week start (Saturday on or before requested date) ────────
+    // ✅ بنحسب weekStartDate من الـ date string مباشرة بدل getUTCDay()
+    // عشان requestedDate دلوقتي +03:00 وgetUTCDay() بيشوفه UTC فبيغلط
+    //
+    // DAY_INDEX: Sat=0, Sun=1, Mon=2, Tue=3, Wed=4, Thu=5, Fri=6
+    const DAY_TO_INDEX = {
+      Saturday: 0, Sunday: 1, Monday: 2, Tuesday: 3,
+      Wednesday: 4, Thursday: 5, Friday: 6,
+    };
+    const daysSinceSaturday = DAY_TO_INDEX[requestedDayName]; // مثلاً Saturday → 0, Sunday → 1
+
+    // نحسب تاريخ السبت اللي قبله أو نفس اليوم
+    const [year, month, day2] = date.split("-").map(Number);
+    const weekStartLocal = new Date(Date.UTC(year, month - 1, day2 - daysSinceSaturday));
+    // weekStartLocal = بداية الأسبوع (السبت) بـ UTC midnight
 
     // ── 4. Find override for this week ──────────────────────────────────────
-    const weekStartDateStr = weekStartDate.toISOString().slice(0, 10);
+    // بنقارن بالـ date portion بس (أول 10 حروف) عشان نتجاهل الـ timezone offset
+    const weekStartDateStr = weekStartLocal.toISOString().slice(0, 10); // "2026-05-02"
 
     const override = clinic.weeklyOverrides?.find((o) => {
       const storedStr = new Date(o.weekStart).toISOString().slice(0, 10);
+      // exact match
       if (storedStr === weekStartDateStr) return true;
-      const diffMs = weekStartDate - new Date(o.weekStart);
+      // stored 1 day behind بسبب timezone offset (مثلاً "2026-05-01T21:00Z" → "2026-05-01")
+      const diffMs = weekStartLocal - new Date(o.weekStart);
       return diffMs > 0 && diffMs < 24 * 60 * 60 * 1000;
     });
 
@@ -509,7 +508,7 @@ exports.getAvailableSlots = async (req, res) => {
 
     // ── 5. Find default day + override day ──────────────────────────────────
     const defDay = defaults.days?.find((d) => d.day === requestedDayName);
-    const ovDay = override?.days?.find((d) => d.day === requestedDayName);
+    const ovDay  = override?.days?.find((d) => d.day === requestedDayName);
 
     if (!defDay && !ovDay) {
       return res.status(200).json({
@@ -523,17 +522,17 @@ exports.getAvailableSlots = async (req, res) => {
 
     // ── 6. Merge day fields (override wins) ─────────────────────────────────
     const mergedDay = {
-      day: requestedDayName,
-      isActive: ovDay?.isActive ?? defDay?.isActive ?? true,
-      open: ovDay?.open ?? defDay?.open,
-      close: ovDay?.close ?? defDay?.close,
-      isDayLocked: ovDay?.isDayLocked ?? defDay?.isDayLocked ?? false,
-      isBookingLocked: ovDay?.isBookingLocked ?? defDay?.isBookingLocked ?? false,
+      day:             requestedDayName,
+      isActive:        ovDay?.isActive        ?? defDay?.isActive        ?? true,
+      open:            ovDay?.open             ?? defDay?.open,
+      close:           ovDay?.close            ?? defDay?.close,
+      isDayLocked:     ovDay?.isDayLocked      ?? defDay?.isDayLocked     ?? false,
+      isBookingLocked: ovDay?.isBookingLocked  ?? defDay?.isBookingLocked ?? false,
       breaks: (ovDay !== undefined && ovDay.breaks !== undefined)
         ? ovDay.breaks
         : (defDay?.breaks ?? []),
-      slotDuration: ovDay?.slotDuration ?? override?.slotDuration ?? defaults.slotDuration,
-      dailyCapacity: ovDay?.dailyCapacity ?? override?.dailyCapacity ?? defaults.dailyCapacity,
+      slotDuration:    ovDay?.slotDuration    ?? override?.slotDuration    ?? defaults.slotDuration,
+      dailyCapacity:   ovDay?.dailyCapacity   ?? override?.dailyCapacity   ?? defaults.dailyCapacity,
       patientsPerSlot: ovDay?.patientsPerSlot ?? override?.patientsPerSlot ?? defaults.patientsPerSlot,
     };
 
@@ -610,38 +609,35 @@ exports.getAvailableSlots = async (req, res) => {
     }
 
     // ── 10. Current time in minutes — Cairo time ────────────────────────────
-    // ✅ FIX: بنحسب الوقت الحالي بتوقيت القاهرة مش UTC
     const nowMins = isToday
       ? (() => {
-        const now = new Date();
-        const cairoTimeStr = now.toLocaleTimeString("en-GB", { timeZone: "Africa/Cairo" });
-        // cairoTimeStr = "HH:MM:SS"
-        const [h, m] = cairoTimeStr.split(":").map(Number);
-        return h * 60 + m;
-      })()
+          const now = new Date();
+          const cairoTimeStr = now.toLocaleTimeString("en-GB", { timeZone: "Africa/Cairo" });
+          const [h, m] = cairoTimeStr.split(":").map(Number);
+          return h * 60 + m;
+        })()
       : -1;
 
     // ── 11. Annotate slots ──────────────────────────────────────────────────
     const slots = rawSlots.map((slot) => {
       const startStr = minsToTime(slot.start);
-      const endStr = minsToTime(slot.end);
+      const endStr   = minsToTime(slot.end);
 
-      // Drop past slots (today only)
       if (isToday && slot.end <= nowMins) return null;
 
       const bookedOnThisSlot = bookedPerSlot[startStr] ?? 0;
-      const slotFull = bookedOnThisSlot >= mergedDay.patientsPerSlot;
-      const dayFull = totalBookedToday >= mergedDay.dailyCapacity;
+      const slotFull    = bookedOnThisSlot >= mergedDay.patientsPerSlot;
+      const dayFull     = totalBookedToday  >= mergedDay.dailyCapacity;
       const isAvailable = !slotFull && !dayFull;
 
       return {
-        slotStart: startStr,
-        slotEnd: endStr,
+        slotStart:       startStr,
+        slotEnd:         endStr,
         isAvailable,
-        bookedCount: bookedOnThisSlot,
+        bookedCount:     bookedOnThisSlot,
         patientsPerSlot: mergedDay.patientsPerSlot,
         remainingInSlot: Math.max(0, mergedDay.patientsPerSlot - bookedOnThisSlot),
-        remainingInDay: Math.max(0, mergedDay.dailyCapacity - totalBookedToday),
+        remainingInDay:  Math.max(0, mergedDay.dailyCapacity   - totalBookedToday),
         ...(isAvailable ? {} : {
           reason: slotFull ? "Slot is fully booked." : "Daily capacity reached.",
         }),
@@ -651,12 +647,12 @@ exports.getAvailableSlots = async (req, res) => {
     // ── 12. Response ────────────────────────────────────────────────────────
     return res.status(200).json({
       date,
-      day: requestedDayName,
-      clinicId: clinic._id,
-      clinicName: clinic.name,
-      available: slots.some((s) => s.isAvailable),
-      slotDuration: mergedDay.slotDuration,
-      dailyCapacity: mergedDay.dailyCapacity,
+      day:             requestedDayName,
+      clinicId:        clinic._id,
+      clinicName:      clinic.name,
+      available:       slots.some((s) => s.isAvailable),
+      slotDuration:    mergedDay.slotDuration,
+      dailyCapacity:   mergedDay.dailyCapacity,
       patientsPerSlot: mergedDay.patientsPerSlot,
       totalBookedToday,
       slots,
