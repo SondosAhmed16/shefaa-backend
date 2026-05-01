@@ -444,7 +444,13 @@ exports.setDayAppointmentFlag = async (req, res) => {
     return res.status(500).json({ message: "Internal server error." });
   }
 };
+// Add these alongside your existing timeToMins helper in clinicController.js
 
+const minsToTime = (mins) => {
+  const h = String(Math.floor(mins / 60)).padStart(2, "0");
+  const m = String(mins % 60).padStart(2, "0");
+  return `${h}:${m}`;
+};
 
 exports.getAvailableSlots = async (req, res) => {
   try {
