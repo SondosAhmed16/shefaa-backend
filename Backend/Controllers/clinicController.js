@@ -2,7 +2,7 @@
 const Clinic = require("../Models/Clinic");
 const Doctor = require("../Models/Doctors");
 const Appointment = require("../Models/Appointment");
-const Patient = require("../Models/Patient");
+const Patient = require("../Models/Patients");
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
 const timeToMins = (t) => {
