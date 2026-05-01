@@ -560,84 +560,118 @@ exports.getDaySlots = async (req, res) => {
     if (!date)
       return res.status(400).json({ message: "Query param 'date' is required (YYYY-MM-DD)." });
 
-    const requestedDate = new Date(date);
+    const requestedDate = new Date(`${date}T00:00:00.000Z`); // ✅ UTC midnight دايماً
     if (isNaN(requestedDate.getTime()))
       return res.status(400).json({ message: "Invalid date format. Use YYYY-MM-DD." });
-    requestedDate.setHours(0, 0, 0, 0);
 
     const DAYS    = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];
-    const dayName = DAYS[requestedDate.getDay()];
+    const dayName = DAYS[requestedDate.getUTCDay()]; // ✅ UTC
 
-    // ── 4. Resolve the week (default + weekly override merged) ─────────────────
+    // ── 4. Resolve the week ───────────────────────────────────────────────────
     const weekStart = getWeekStart(requestedDate);
-    const resolved  = clinic.resolveWeek(weekStart); // { days, slotDuration, dailyCapacity, patientsPerSlot }
+    const resolved  = clinic.resolveWeek(weekStart);
 
-    // ── 5. Find the day entry ──────────────────────────────────────────────────
+    // ── 5. Find the day entry ─────────────────────────────────────────────────
     const dayEntry = resolved.days.find((d) => d.day === dayName);
 
     const base = {
-      date:      requestedDate.toISOString().slice(0, 10),
+      date:      date,
       day:       dayName,
       weekStart: weekStart.toISOString(),
     };
 
-    // Day not in schedule at all
     if (!dayEntry) {
       return res.status(200).json({
-        ...base,
-        status: "closed",
+        ...base, status: "closed",
         reason: "Day not found in clinic schedule.",
         open: null, close: null,
         slotDuration: resolved.slotDuration,
-        totalSlots: 0,
-        breaks: [],
-        slots:  [],
+        totalSlots: 0, breaks: [], slots: [],
       });
     }
 
-    // Day explicitly inactive
     if (!dayEntry.isActive) {
       return res.status(200).json({
-        ...base,
-        status: "closed",
+        ...base, status: "closed",
         reason: "Clinic is closed on this day.",
         open: null, close: null,
         slotDuration: resolved.slotDuration,
-        totalSlots: 0,
-        breaks: [],
-        slots:  [],
+        totalSlots: 0, breaks: [], slots: [],
       });
     }
 
-    // Day fully locked — visible hours but no slots
     if (dayEntry.isDayLocked) {
       return res.status(200).json({
-        ...base,
-        status: "day_locked",
+        ...base, status: "day_locked",
         reason: "This day is fully locked.",
-        open:  dayEntry.open,
-        close: dayEntry.close,
+        open: dayEntry.open, close: dayEntry.close,
         slotDuration: dayEntry.slotDuration ?? resolved.slotDuration,
-        totalSlots: 0,
-        breaks: dayEntry.breaks ?? [],
-        slots:  [],
+        totalSlots: 0, breaks: dayEntry.breaks ?? [], slots: [],
       });
     }
 
     // ── 6. Resolve per-day slot settings ──────────────────────────────────────
-    const slotDuration  = dayEntry.slotDuration  ?? resolved.slotDuration;
-    const dailyCapacity = dayEntry.dailyCapacity ?? resolved.dailyCapacity;
+    const slotDuration    = dayEntry.slotDuration    ?? resolved.slotDuration;
+    const dailyCapacity   = dayEntry.dailyCapacity   ?? resolved.dailyCapacity;
+    const patientsPerSlot = dayEntry.patientsPerSlot ?? resolved.patientsPerSlot;
 
-    // ── 7. Generate slots ──────────────────────────────────────────────────────
-    const slots = buildSlots({
-      open:  dayEntry.open,
+    // ── 7. Generate raw slots ─────────────────────────────────────────────────
+    const rawSlots = buildSlots({
+      open: dayEntry.open,
       close: dayEntry.close,
       slotDuration,
       dailyCapacity,
       breaks: dayEntry.breaks ?? [],
     });
 
-    // ── 8. Respond ─────────────────────────────────────────────────────────────
+    // ── 8. ✅ Query booked appointments for this day ───────────────────────────
+    const OCCUPYING_STATUSES = ["upcoming", "inProgress", "completed"];
+
+    const bookedAgg = await Appointment.aggregate([
+      {
+        $match: {
+          clinic: clinic._id,
+          date:   requestedDate,          // UTC midnight — يتطابق مع bookAppointment
+          status: { $in: OCCUPYING_STATUSES },
+        },
+      },
+      {
+        $group: {
+          _id:   "$slotStart",
+          count: { $sum: 1 },
+        },
+      },
+    ]);
+
+    // "09:00" → 2
+    const bookedPerSlot = {};
+    let totalBookedToday = 0;
+    for (const entry of bookedAgg) {
+      bookedPerSlot[entry._id] = entry.count;
+      totalBookedToday += entry.count;
+    }
+
+    // ── 9. Annotate slots with real availability ───────────────────────────────
+    const slots = rawSlots.map((slot) => {
+      const bookedCount = bookedPerSlot[slot.startTime] ?? 0;
+      const slotFull    = bookedCount >= patientsPerSlot;
+      const dayFull     = totalBookedToday >= dailyCapacity;
+      const isAvailable = !slotFull && !dayFull;
+
+      return {
+        ...slot,
+        available:       isAvailable,
+        bookedCount,
+        patientsPerSlot,
+        remainingInSlot: Math.max(0, patientsPerSlot - bookedCount),
+        remainingInDay:  Math.max(0, dailyCapacity   - totalBookedToday),
+        ...(isAvailable ? {} : {
+          reason: slotFull ? "Slot is fully booked." : "Daily capacity reached.",
+        }),
+      };
+    });
+
+    // ── 10. Respond ───────────────────────────────────────────────────────────
     const status = dayEntry.isBookingLocked ? "booking_locked" : "open";
 
     return res.status(200).json({
@@ -648,12 +682,12 @@ exports.getDaySlots = async (req, res) => {
       close:           dayEntry.close,
       slotDuration,
       dailyCapacity,
+      patientsPerSlot,
+      totalBookedToday,
       totalSlots:      slots.length,
       hasAppointments: dayEntry.hasAppointments ?? false,
       breaks: (dayEntry.breaks ?? []).map((b) => ({
-        start: b.start,
-        end:   b.end,
-        label: b.label ?? "",
+        start: b.start, end: b.end, label: b.label ?? "",
       })),
       slots,
     });
