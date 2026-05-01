@@ -6,22 +6,28 @@ const { auth } = require('../middleware/auth');
 const { authorizeRoles } = require('../middleware/role');
 const { runValidation } = require('../middleware/validate');
 
-
-
-// 3. add new clinic
+// Create clinic
 router.post('/', auth, authorizeRoles('doctor'), clinicController.createClinic);
 
-//get clinic by id
-router.get('/:id', auth, authorizeRoles('doctor'),  clinicController.getClinic);
+// Get clinic by id
+router.get('/:id', auth, authorizeRoles('doctor'), clinicController.getClinic);
 
-// 5. update clinic
+// Update clinic
 router.put('/:id', auth, authorizeRoles('doctor'), clinicController.editClinic);
 
-// 6. delete clinic
+// Delete clinic
 router.delete('/:id', auth, authorizeRoles('doctor'), clinicController.deleteClinic);
 
-// routes/clinicRoutes.js
+// Week schedule override (create/update)
 router.patch("/:id/schedule/override", auth, authorizeRoles('doctor'), clinicController.overrideWeekSchedule);
+
+// Week schedule override (remove — restores default)
 router.delete("/:id/schedule/override", auth, authorizeRoles('doctor'), clinicController.deleteWeekOverride);
+
+// Manually flag a specific day as having appointments (or not).
+// Used until real appointment booking is wired up.
+// PATCH /api/clinic/:id/day-appointments
+// Body: { weekStart: "ISO date string", day: "Monday", hasAppointments: true }
+router.patch("/:id/day-appointments", auth, authorizeRoles('doctor'), clinicController.setDayAppointmentFlag);
 
 module.exports = router;
