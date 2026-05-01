@@ -61,30 +61,12 @@ const appointmentSchema = new mongoose.Schema(
       enum: ["atClinic", "prePay"],
       required: true,
     },
-
-
     status: {
       type: String,
       enum: ["available", "upcoming", "inProgress", "cancelled", "completed"],
-      default: "Available",
+      default: "upcoming",
     },
 
-    notes: {
-      type: String,
-      default: "",
-      trim: true,
-    },
-
-    files: [
-      {
-        fileName: String,
-        fileUrl: String,
-        uploadedAt: {
-          type: Date,
-          default: Date.now,
-        },
-      },
-    ],
   },
   { timestamps: true }
 );
