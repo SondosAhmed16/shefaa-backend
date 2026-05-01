@@ -29,5 +29,5 @@ router.delete("/:id/schedule/override", auth, authorizeRoles('doctor'), clinicCo
 // PATCH /api/clinic/:id/day-appointments
 // Body: { weekStart: "ISO date string", day: "Monday", hasAppointments: true }
 router.patch("/:id/day-appointments", auth, authorizeRoles('doctor'), clinicController.setDayAppointmentFlag);
-router.get("/:id/day-slots",protect, clinicController.getDaySlots);
+router.get("/:id/day-slots",auth ,authorizeRoles('patient', 'doctor'), clinicController.getDaySlots);
 module.exports = router;
