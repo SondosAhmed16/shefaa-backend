@@ -20,9 +20,19 @@ const appointmentSchema = new mongoose.Schema(
       required: true,
     },
 
+    prescription: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "Prescription",
+      default: null,
+    },
+
     date: {
       type: Date,
       required: true,
+    },
+
+    timeChosed: {
+      type: String,
     },
 
     slotStart: {
@@ -42,14 +52,8 @@ const appointmentSchema = new mongoose.Schema(
 
     paymentStatus: {
       type: String,
-      enum: ["pending", "paid-at-clinic" , "paid-online" ,"cancelled"],
+      enum: ["pending", "paid-at-clinic", "paid-online", "cancelled"],
       default: "pending",
-    },
-
-    appointmentType: {
-      type: String,
-      enum: ["in-clinic", "video-call"],
-      required: true,
     },
 
     paymentOption: {
@@ -61,8 +65,8 @@ const appointmentSchema = new mongoose.Schema(
 
     status: {
       type: String,
-      enum: ["Upcoming","InProgress","cancelled", "completed"],
-      default: "booked",
+      enum: ["available", "upcoming", "inProgress", "cancelled", "completed"],
+      default: "Available",
     },
 
     notes: {

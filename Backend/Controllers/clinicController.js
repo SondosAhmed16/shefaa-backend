@@ -1,7 +1,7 @@
 // controllers/clinicController.js
 const Clinic = require("../Models/Clinic");
 const Doctor = require("../Models/Doctors");
-
+const Appointment = require("../Models/Appointment");
 // ─── Helpers ────────────────────────────────────────────────────────────────
 
 const timeToMins = (t) => {
@@ -441,6 +441,230 @@ exports.setDayAppointmentFlag = async (req, res) => {
 
   } catch (err) {
     console.error("setDayAppointmentFlag error:", err);
+    return res.status(500).json({ message: "Internal server error." });
+  }
+};
+
+
+exports.getAvailableSlots = async (req, res) => {
+  try {
+    // ── 1. Parse & validate inputs ──────────────────────────────────────────
+    const { id: clinicId } = req.params;
+    const { date } = req.query; // expected: "YYYY-MM-DD"
+
+    if (!date) {
+      return res.status(400).json({ message: "Query param 'date' is required (YYYY-MM-DD)." });
+    }
+
+    // Build a Date object at midnight UTC for the requested date
+    const requestedDate = new Date(`${date}T00:00:00.000Z`);
+    if (isNaN(requestedDate.getTime())) {
+      return res.status(400).json({ message: "Invalid date format. Use YYYY-MM-DD." });
+    }
+
+    // Reject past dates entirely — no point showing old slots
+    const todayUTC = new Date();
+    todayUTC.setUTCHours(0, 0, 0, 0);
+    if (requestedDate < todayUTC) {
+      return res.status(400).json({ message: "Cannot fetch slots for a past date." });
+    }
+
+    const isToday = requestedDate.getTime() === todayUTC.getTime();
+
+    // ── 2. Load clinic ──────────────────────────────────────────────────────
+    const clinic = await Clinic.findById(clinicId).lean();
+    if (!clinic) return res.status(404).json({ message: "Clinic not found." });
+
+    // Only patients should be able to book active clinics
+    if (clinic.status !== "active") {
+      return res.status(403).json({ message: "This clinic is not currently active." });
+    }
+
+    // ── 3. Resolve schedule for the week containing the requested date ──────
+    //
+    // resolveWeek expects a weekStart date. We find the week start (Saturday
+    // in Middle-Eastern calendars, but your model uses any day order, so we
+    // find the most recent Saturday on or before the requested date).
+    //
+    const DAY_ORDER = ["Sunday","Monday","Tuesday","Wednesday","Thursday","Friday","Saturday"];
+    const requestedDayName = DAY_ORDER[requestedDate.getUTCDay()]; // e.g. "Monday"
+
+    // Find the Saturday on or before requestedDate (your week starts Saturday)
+    const daysSinceSaturday = (requestedDate.getUTCDay() + 1) % 7; // Sat=6 → 0 offset
+    const weekStartDate = new Date(requestedDate);
+    weekStartDate.setUTCDate(requestedDate.getUTCDate() - daysSinceSaturday);
+
+    // Use the Clinic instance method — but we used .lean() for performance,
+    // so we replicate the resolve logic inline here.
+    const override = clinic.weeklyOverrides?.find(
+      (o) => new Date(o.weekStart).toISOString() === weekStartDate.toISOString()
+    );
+    const defaults = clinic.defaultSchedule;
+
+    // Merge default days with override days exactly as resolveWeek does
+    const mergedDays = (defaults.days || []).map((defDay) => {
+      const ovDay = override?.days?.find((d) => d.day === defDay.day);
+      return ovDay ? { ...defDay, ...ovDay } : defDay;
+    });
+    for (const ovDay of override?.days || []) {
+      if (!mergedDays.some((d) => d.day === ovDay.day)) mergedDays.push(ovDay);
+    }
+
+    const resolvedSlotDuration    = override?.slotDuration    ?? defaults.slotDuration;
+    const resolvedDailyCapacity   = override?.dailyCapacity   ?? defaults.dailyCapacity;
+    const resolvedPatientsPerSlot = override?.patientsPerSlot ?? defaults.patientsPerSlot;
+
+    // ── 4. Find the day entry for the requested weekday ─────────────────────
+    const dayEntry = mergedDays.find((d) => d.day === requestedDayName);
+
+    // Day not configured at all → no slots
+    if (!dayEntry) {
+      return res.status(200).json({
+        date,
+        day: requestedDayName,
+        available: false,
+        reason: "Doctor does not work on this day.",
+        slots: [],
+      });
+    }
+
+    // ── 5. Day-level lock checks ────────────────────────────────────────────
+    if (!dayEntry.isActive) {
+      return res.status(200).json({
+        date, day: requestedDayName, available: false,
+        reason: "This day is marked as inactive.",
+        slots: [],
+      });
+    }
+    if (dayEntry.isDayLocked) {
+      return res.status(200).json({
+        date, day: requestedDayName, available: false,
+        reason: "This day has been locked by the doctor (e.g. day off, holiday).",
+        slots: [],
+      });
+    }
+    if (dayEntry.isBookingLocked) {
+      return res.status(200).json({
+        date, day: requestedDayName, available: false,
+        reason: "Booking for this day is currently disabled.",
+        slots: [],
+      });
+    }
+
+    // ── 6. Generate raw slots from schedule ─────────────────────────────────
+    const slotDuration    = dayEntry.slotDuration    ?? resolvedSlotDuration;
+    const dailyCapacity   = dayEntry.dailyCapacity   ?? resolvedDailyCapacity;
+    const patientsPerSlot = dayEntry.patientsPerSlot ?? resolvedPatientsPerSlot;
+
+    const rawSlots = buildDaySlots(
+      dayEntry.open,
+      dayEntry.close,
+      dayEntry.breaks,
+      slotDuration
+    );
+
+    if (!rawSlots.length) {
+      return res.status(200).json({
+        date, day: requestedDayName, available: false,
+        reason: "No slots could be generated for this day (check open/close/break config).",
+        slots: [],
+      });
+    }
+
+    // ── 7. Count existing appointments for this clinic on this date ─────────
+    //
+    // We match on:
+    //   - clinic  → the clinic id
+    //   - date    → midnight UTC of the requested date (how appointments are stored)
+    //   - status  → anything that "occupies" a slot; "cancelled" frees the slot
+    //
+    // slotStart is stored as a string "HH:MM" in the Appointment model.
+    // We group by slotStart to get per-slot counts.
+    //
+    const OCCUPYING_STATUSES = ["available", "upcoming", "inProgress", "completed"];
+    //   ^ "available" here means the appointment was created but not yet confirmed —
+    //     it still occupies the slot so double-booking is prevented.
+
+    const bookedAgg = await Appointment.aggregate([
+      {
+        $match: {
+          clinic: clinic._id,
+          date: requestedDate, // stored as midnight UTC Date
+          status: { $in: OCCUPYING_STATUSES },
+        },
+      },
+      {
+        $group: {
+          _id: "$slotStart",          // e.g. "09:00"
+          count: { $sum: 1 },
+        },
+      },
+    ]);
+
+    // Build a lookup map:  "09:00" → 3
+    const bookedPerSlot = {};
+    let totalBookedToday = 0;
+    for (const entry of bookedAgg) {
+      bookedPerSlot[entry._id] = entry.count;
+      totalBookedToday += entry.count;
+    }
+
+    // ── 8. Current time in minutes (for today's past-slot filtering) ─────────
+    const nowMins = isToday
+      ? new Date().getUTCHours() * 60 + new Date().getUTCMinutes()
+      : -1; // -1 means "don't filter" for future dates
+
+    // ── 9. Annotate each slot with availability ──────────────────────────────
+    const slots = rawSlots.map((slot) => {
+      const startStr = minsToTime(slot.start); // "09:00"
+      const endStr   = minsToTime(slot.end);   // "09:30"
+
+      const bookedOnThisSlot = bookedPerSlot[startStr] ?? 0;
+
+      // Rule A: hide slots in the past (only applies to today)
+      if (isToday && slot.end <= nowMins) {
+        return null; // filtered out below
+      }
+
+      // Rule B: slot-level capacity
+      const slotFull = bookedOnThisSlot >= patientsPerSlot;
+
+      // Rule C: day-level capacity
+      const dayFull = totalBookedToday >= dailyCapacity;
+
+      const isAvailable = !slotFull && !dayFull;
+
+      return {
+        slotStart: startStr,
+        slotEnd:   endStr,
+        isAvailable,
+        // Include counts so the patient UI can show "X spots left" if desired
+        bookedCount:      bookedOnThisSlot,
+        patientsPerSlot,
+        remainingInSlot:  Math.max(0, patientsPerSlot - bookedOnThisSlot),
+        remainingInDay:   Math.max(0, dailyCapacity - totalBookedToday),
+        ...(isAvailable ? {} : {
+          reason: slotFull ? "Slot is fully booked." : "Daily capacity reached.",
+        }),
+      };
+    }).filter(Boolean); // remove past slots
+
+    // ── 10. Response ─────────────────────────────────────────────────────────
+    return res.status(200).json({
+      date,
+      day:            requestedDayName,
+      clinicId:       clinic._id,
+      clinicName:     clinic.name,
+      available:      slots.some((s) => s.isAvailable),
+      slotDuration,
+      dailyCapacity,
+      patientsPerSlot,
+      totalBookedToday,
+      slots,
+    });
+
+  } catch (err) {
+    console.error("getAvailableSlots error:", err);
     return res.status(500).json({ message: "Internal server error." });
   }
 };
