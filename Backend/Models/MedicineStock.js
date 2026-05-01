@@ -4,50 +4,35 @@ const medicineStockSchema = new mongoose.Schema(
   {
     pharmacyId: {
       type: mongoose.Schema.Types.ObjectId,
-      ref: "Pharmacy",
-      required: true,
+      ref: "Pharmacy", required: true
     },
-
     medicineName: {
       type: String,
-      required: true,
-      trim: true,
+      required: true
     },
-
     quantity: {
       type: Number,
-      default: 0,
-      min: 0,
+      default: 0
     },
-
     price: {
       type: Number,
-      required: true,
-      min: 0,
+      required: true
     },
-
-    expirationDate: {
-      type: Date,
-      required: true,
+    minThreshold: {
+      type: Number,
+      default: 5
     },
-
-    description: {
-      type: String,
-      default: "",
-      trim: true,
-    },
-
     category: {
       type: String,
-      enum: [
-        "Painkiller",
-        "Antibiotic",
-        "Vitamin",
-        "Chronic",
-        "Emergency",
-        "Other",
-      ],
-      default: "Other",
+      required: true
+    },
+    expirationDate: {
+      type: Date,
+      required: true
+    },
+    requiresPrescription: {
+      type: Boolean,
+      default: false
     },
   },
   { timestamps: true }

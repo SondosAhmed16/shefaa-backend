@@ -159,3 +159,27 @@ exports.deleteReview = async (req, res) => {
     res.status(500).json({ message: 'Error deleting review' });
   }
 };
+
+exports.addPharmacyReview = async (req, res) => {
+  try {
+    const { pharmacyId, rating, comment } = req.body;
+    const patientProfile = await Patient.findOne({ userId: req.user._id });
+
+    const review = new Review({
+      patientId: patientProfile._id,
+      pharmacyId, 
+      rating,
+      comment
+    });
+
+    await review.save();
+    
+    const reviews = await Review.find({ pharmacyId });
+    const avgRating = reviews.reduce((sum, r) => sum + r.rating, 0) / reviews.length;
+    await Pharmacy.findByIdAndUpdate(pharmacyId, { rating: avgRating });
+
+    res.status(201).json({ message: 'Review added', review });
+  } catch (err) {
+    res.status(500).json({ message: err.message });
+  }
+};
