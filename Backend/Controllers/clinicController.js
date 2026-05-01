@@ -545,77 +545,125 @@ exports.setDayAppointmentFlag = async (req, res) => {
 
 exports.getDaySlots = async (req, res) => {
   try {
-    // ── 1. Auth ───────────────────────────────────────────────────────────────
-    const doctor = await Doctor.findOne({ userId: req.user.id });
-    if (!doctor) return res.status(403).json({ message: "Doctor profile not found." });
+    // ── 1. Identify user role ───────────────────────────────────────────────
+    let doctor = null;
+    let patient = null;
 
-    // ── 2. Load clinic ────────────────────────────────────────────────────────
+    if (req.user.role === "doctor") {
+      doctor = await Doctor.findOne({ userId: req.user._id });
+      if (!doctor) {
+        return res.status(403).json({ message: "Doctor profile not found." });
+      }
+    }
+
+    if (req.user.role === "patient") {
+      patient = await Patient.findOne({ userId: req.user._id });
+      if (!patient) {
+        return res.status(403).json({ message: "Patient profile not found." });
+      }
+    }
+
+    // ── 2. Load clinic ──────────────────────────────────────────────────────
     const clinic = await Clinic.findById(req.params.id);
-    if (!clinic) return res.status(404).json({ message: "Clinic not found." });
-    if (clinic.doctorId.toString() !== doctor._id.toString())
+    if (!clinic) {
+      return res.status(404).json({ message: "Clinic not found." });
+    }
+
+    // doctor بس اللي نتحقق إنه صاحب العيادة
+    if (doctor && clinic.doctorId.toString() !== doctor._id.toString()) {
       return res.status(403).json({ message: "Not authorized." });
+    }
 
-    // ── 3. Parse & validate the requested date ────────────────────────────────
+    // ── 3. Parse & validate date ────────────────────────────────────────────
     const { date } = req.query;
-    if (!date)
-      return res.status(400).json({ message: "Query param 'date' is required (YYYY-MM-DD)." });
 
-    const requestedDate = new Date(`${date}T00:00:00.000Z`); // ✅ UTC midnight دايماً
-    if (isNaN(requestedDate.getTime()))
-      return res.status(400).json({ message: "Invalid date format. Use YYYY-MM-DD." });
+    if (!date) {
+      return res.status(400).json({
+        message: "Query param 'date' is required (YYYY-MM-DD).",
+      });
+    }
 
-    const DAYS    = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];
-    const dayName = DAYS[requestedDate.getUTCDay()]; // ✅ UTC
+    const requestedDate = new Date(`${date}T00:00:00.000Z`);
+    if (isNaN(requestedDate.getTime())) {
+      return res.status(400).json({
+        message: "Invalid date format. Use YYYY-MM-DD.",
+      });
+    }
 
-    // ── 4. Resolve the week ───────────────────────────────────────────────────
+    const DAYS = [
+      "Sunday",
+      "Monday",
+      "Tuesday",
+      "Wednesday",
+      "Thursday",
+      "Friday",
+      "Saturday",
+    ];
+
+    const dayName = DAYS[requestedDate.getUTCDay()];
+
+    // ── 4. Resolve schedule ─────────────────────────────────────────────────
     const weekStart = getWeekStart(requestedDate);
-    const resolved  = clinic.resolveWeek(weekStart);
+    const resolved = clinic.resolveWeek(weekStart);
 
-    // ── 5. Find the day entry ─────────────────────────────────────────────────
+    // ── 5. Get day entry ────────────────────────────────────────────────────
     const dayEntry = resolved.days.find((d) => d.day === dayName);
 
     const base = {
-      date:      date,
-      day:       dayName,
+      date,
+      day: dayName,
       weekStart: weekStart.toISOString(),
     };
 
     if (!dayEntry) {
       return res.status(200).json({
-        ...base, status: "closed",
+        ...base,
+        status: "closed",
         reason: "Day not found in clinic schedule.",
-        open: null, close: null,
+        open: null,
+        close: null,
         slotDuration: resolved.slotDuration,
-        totalSlots: 0, breaks: [], slots: [],
+        totalSlots: 0,
+        breaks: [],
+        slots: [],
       });
     }
 
     if (!dayEntry.isActive) {
       return res.status(200).json({
-        ...base, status: "closed",
+        ...base,
+        status: "closed",
         reason: "Clinic is closed on this day.",
-        open: null, close: null,
+        open: null,
+        close: null,
         slotDuration: resolved.slotDuration,
-        totalSlots: 0, breaks: [], slots: [],
+        totalSlots: 0,
+        breaks: [],
+        slots: [],
       });
     }
 
     if (dayEntry.isDayLocked) {
       return res.status(200).json({
-        ...base, status: "day_locked",
+        ...base,
+        status: "day_locked",
         reason: "This day is fully locked.",
-        open: dayEntry.open, close: dayEntry.close,
+        open: dayEntry.open,
+        close: dayEntry.close,
         slotDuration: dayEntry.slotDuration ?? resolved.slotDuration,
-        totalSlots: 0, breaks: dayEntry.breaks ?? [], slots: [],
+        totalSlots: 0,
+        breaks: dayEntry.breaks ?? [],
+        slots: [],
       });
     }
 
-    // ── 6. Resolve per-day slot settings ──────────────────────────────────────
-    const slotDuration    = dayEntry.slotDuration    ?? resolved.slotDuration;
-    const dailyCapacity   = dayEntry.dailyCapacity   ?? resolved.dailyCapacity;
-    const patientsPerSlot = dayEntry.patientsPerSlot ?? resolved.patientsPerSlot;
+    // ── 6. Resolve slot settings ────────────────────────────────────────────
+    const slotDuration = dayEntry.slotDuration ?? resolved.slotDuration;
+    const dailyCapacity = dayEntry.dailyCapacity ?? resolved.dailyCapacity;
+    const patientsPerSlot =
+      dayEntry.patientsPerSlot ?? resolved.patientsPerSlot;
 
-    // ── 7. Generate raw slots ─────────────────────────────────────────────────
+    // ── 7. Generate slots ───────────────────────────────────────────────────
     const rawSlots = buildSlots({
       open: dayEntry.open,
       close: dayEntry.close,
@@ -624,74 +672,82 @@ exports.getDaySlots = async (req, res) => {
       breaks: dayEntry.breaks ?? [],
     });
 
-    // ── 8. ✅ Query booked appointments for this day ───────────────────────────
+    // ── 8. Get booked appointments ──────────────────────────────────────────
     const OCCUPYING_STATUSES = ["upcoming", "inProgress", "completed"];
 
     const bookedAgg = await Appointment.aggregate([
       {
         $match: {
           clinic: clinic._id,
-          date:   requestedDate,          // UTC midnight — يتطابق مع bookAppointment
+          date: requestedDate,
           status: { $in: OCCUPYING_STATUSES },
         },
       },
       {
         $group: {
-          _id:   "$slotStart",
+          _id: "$slotStart",
           count: { $sum: 1 },
         },
       },
     ]);
 
-    // "09:00" → 2
     const bookedPerSlot = {};
     let totalBookedToday = 0;
+
     for (const entry of bookedAgg) {
       bookedPerSlot[entry._id] = entry.count;
       totalBookedToday += entry.count;
     }
 
-    // ── 9. Annotate slots with real availability ───────────────────────────────
+    // ── 9. Build final slots ────────────────────────────────────────────────
     const slots = rawSlots.map((slot) => {
       const bookedCount = bookedPerSlot[slot.startTime] ?? 0;
-      const slotFull    = bookedCount >= patientsPerSlot;
-      const dayFull     = totalBookedToday >= dailyCapacity;
+
+      const slotFull = bookedCount >= patientsPerSlot;
+      const dayFull = totalBookedToday >= dailyCapacity;
       const isAvailable = !slotFull && !dayFull;
 
       return {
         ...slot,
-        available:       isAvailable,
+        available: isAvailable,
         bookedCount,
         patientsPerSlot,
         remainingInSlot: Math.max(0, patientsPerSlot - bookedCount),
-        remainingInDay:  Math.max(0, dailyCapacity   - totalBookedToday),
-        ...(isAvailable ? {} : {
-          reason: slotFull ? "Slot is fully booked." : "Daily capacity reached.",
-        }),
+        remainingInDay: Math.max(0, dailyCapacity - totalBookedToday),
+        ...(isAvailable
+          ? {}
+          : {
+              reason: slotFull
+                ? "Slot is fully booked."
+                : "Daily capacity reached.",
+            }),
       };
     });
 
-    // ── 10. Respond ───────────────────────────────────────────────────────────
+    // ── 10. Response ────────────────────────────────────────────────────────
     const status = dayEntry.isBookingLocked ? "booking_locked" : "open";
 
     return res.status(200).json({
       ...base,
       status,
-      ...(dayEntry.isBookingLocked && { reason: "New bookings are locked for this day." }),
-      open:            dayEntry.open,
-      close:           dayEntry.close,
+      ...(dayEntry.isBookingLocked && {
+        reason: "New bookings are locked for this day.",
+      }),
+      open: dayEntry.open,
+      close: dayEntry.close,
       slotDuration,
       dailyCapacity,
       patientsPerSlot,
       totalBookedToday,
-      totalSlots:      slots.length,
+      totalSlots: slots.length,
       hasAppointments: totalBookedToday > 0,
       breaks: (dayEntry.breaks ?? []).map((b) => ({
-        start: b.start, end: b.end, label: b.label ?? "",
+        start: b.start,
+        end: b.end,
+        label: b.label ?? "",
       })),
       slots,
     });
-
   } catch (err) {
     console.error("getDaySlots error:", err);
     return res.status(500).json({ message: "Internal server error." });
