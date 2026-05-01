@@ -7,26 +7,34 @@ const { auth } = require('../middleware/auth');
 const { authorizeRoles } = require('../middleware/role');
 const { runValidation } = require('../middleware/validate');
 
-// 1. Stock Management (For the logged-in Pharmacy)
+router.get('/dashboard-stats', auth, pharmacyController.getDashboardStats);
 
-// Get all medicine in the pharmacy's stock
-router.get('/stock', auth, authorizeRoles('pharmacy'), pharmacyController.getStock);
+router.get('/profile', auth, async (req, res) => {
+    const profile = await Pharmacy.findOne({ userId: req.user._id });
+    res.json(profile);
 
-// Add a new medicine to the stock
-router.post('/add-medicine', auth, authorizeRoles('pharmacy'), runValidation, pharmacyController.addMedicine);
+});router.patch('/settings', auth, pharmacyController.updateProfileSettings);
 
-// Update medicine quantity or price by stock ID
-router.put('/update-medicine/:id', auth, authorizeRoles('pharmacy'), runValidation, pharmacyController.updateMedicine);
+router.get('/inventory', auth, pharmacyController.getInventory); 
 
-// Delete medicine from stock
-router.delete('/delete-medicine/:id', auth, authorizeRoles('pharmacy'), pharmacyController.deleteMedicine);
+router.post('/inventory/add', auth, pharmacyController.addMedicine);
 
-// 2. Pharmacy Operations
+router.put('/inventory/update/:id', auth, pharmacyController.updateMedicine);
 
-// Search for medicines in all pharmacies (Public or Patient access)
-router.get('/search', pharmacyController.searchMedicines);
+router.delete('/inventory/delete/:id', auth, pharmacyController.deleteMedicine);
 
-// Dispense medicine (Reduce quantity after selling)
-router.post('/dispense', auth, authorizeRoles('pharmacy'), pharmacyController.dispenseMedicine);
+router.get('/prescriptions', auth, pharmacyController.getNewPrescriptions);
+
+router.get('/prescriptions/:id', auth, pharmacyController.getPrescriptionDetails);
+
+router.post('/prescriptions/confirm', auth, pharmacyController.confirmPrescriptionOrder);
+
+router.get('/inventory/alternatives', auth, pharmacyController.findAlternative);
+
+router.get('/orders', auth, pharmacyController.getOrders);
+
+router.patch('/orders/:orderId/status', auth, pharmacyController.updateOrderStatus);
+
+router.get('/search', pharmacyController.searchMedicines); 
 
 module.exports = router;
