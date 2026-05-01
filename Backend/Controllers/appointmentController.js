@@ -109,7 +109,7 @@ exports.bookAppointment = async (req, res) => {
     if (!clinic) return res.status(404).json({ message: "Clinic not found." });
 
     // ── 3. Load patient ───────────────────────────
-    const patientProfile = await Patient.findOne({ userId: req.user.id });
+    const patientProfile = await Patient.findOne({ userId: req.user._id });
     if (!patientProfile)
       return res.status(404).json({ message: "Patient profile not found." });
 
