@@ -1,7 +1,7 @@
 const express = require('express');
 const router = express.Router();
 const clinicController = require('../Controllers/clinicController');
-
+const { protect } = require("../middleware/auth")
 const { auth } = require('../middleware/auth');
 const { authorizeRoles } = require('../middleware/role');
 const { runValidation } = require('../middleware/validate');
@@ -29,5 +29,5 @@ router.delete("/:id/schedule/override", auth, authorizeRoles('doctor'), clinicCo
 // PATCH /api/clinic/:id/day-appointments
 // Body: { weekStart: "ISO date string", day: "Monday", hasAppointments: true }
 router.patch("/:id/day-appointments", auth, authorizeRoles('doctor'), clinicController.setDayAppointmentFlag);
-router.get("/:id/day-slots", clinicController.getDaySlots);
+router.get("/:id/day-slots",protect, clinicController.getDaySlots);
 module.exports = router;
