@@ -1,218 +1,333 @@
-const moment = require('moment');
-const Appointment = require('../Models/Appointment');
-const Clinic = require('../Models/Clinic');
-const Doctor = require('../Models/Doctors');
-const User = require('../Models/Users');
-const Patient = require('../Models/Patients');
-const nodemailer = require('nodemailer');
-const Notification = require('../Models/Notification');
+// controllers/appointmentController.js
+const mongoose = require("mongoose");
+const Appointment = require("../Models/Appointment");
+const Clinic = require("../Models/Clinic");
+const Doctor = require("../Models/Doctors");
+const Patient = require("../Models/Patients");
+const Notification = require("../Models/Notification");
 
+// ─── Helpers ─────────────────────────────────────────────────────────────────
 
-const transporter = nodemailer.createTransport({
-  service: 'gmail',
-  auth: {
-    user: process.env.MAIL_USER,
-    pass: process.env.MAIL_PASS,
-  },
-});
+const timeToMins = (t) => {
+  const [h, m] = t.split(":").map(Number);
+  return h * 60 + m;
+};
+
+const minsToTime = (mins) => {
+  const h = String(Math.floor(mins / 60)).padStart(2, "0");
+  const m = String(mins % 60).padStart(2, "0");
+  return `${h}:${m}`;
+};
+
+const buildDaySlots = (open, close, breaks = [], slotDuration) => {
+  const slots = [];
+  const sortedBreaks = [...breaks].sort((a, b) => a.start - b.start);
+  const windows = [];
+  let cursor = open;
+  for (const br of sortedBreaks) {
+    if (br.start > cursor) windows.push({ from: cursor, to: br.start });
+    cursor = br.end;
+  }
+  if (cursor < close) windows.push({ from: cursor, to: close });
+  for (const win of windows) {
+    let t = win.from;
+    while (t + slotDuration <= win.to) {
+      slots.push({ start: t, end: t + slotDuration });
+      t += slotDuration;
+    }
+  }
+  return slots;
+};
+
+// Same safe date comparison used in getAvailableSlots
+const isSameUTCDate = (a, b) => {
+  const da = new Date(a), db = new Date(b);
+  return (
+    da.getUTCFullYear() === db.getUTCFullYear() &&
+    da.getUTCMonth()    === db.getUTCMonth()    &&
+    da.getUTCDate()     === db.getUTCDate()
+  );
+};
+
+// Resolve the correct override for a given date (matches getAvailableSlots logic)
+const resolveScheduleForDate = (clinic, requestedDate) => {
+  const DAY_ORDER = ["Sunday","Monday","Tuesday","Wednesday","Thursday","Friday","Saturday"];
+  const requestedDayName = DAY_ORDER[requestedDate.getUTCDay()];
+
+  // Find week start (Saturday)
+  const daysSinceSaturday = (requestedDate.getUTCDay() + 1) % 7;
+  const weekStartDate = new Date(requestedDate);
+  weekStartDate.setUTCDate(requestedDate.getUTCDate() - daysSinceSaturday);
+
+  // Safe date comparison — avoids the ISO string timezone bug
+  const override = clinic.weeklyOverrides?.find((o) =>
+    isSameUTCDate(o.weekStart, weekStartDate)
+  );
+
+  const defaults = clinic.defaultSchedule;
+
+  const mergedDays = (defaults.days || []).map((defDay) => {
+    const ovDay = override?.days?.find((d) => d.day === defDay.day);
+    return ovDay ? { ...defDay.toObject?.() ?? defDay, ...ovDay.toObject?.() ?? ovDay } : (defDay.toObject?.() ?? defDay);
+  });
+  for (const ovDay of override?.days || []) {
+    if (!mergedDays.some((d) => d.day === ovDay.day))
+      mergedDays.push(ovDay.toObject?.() ?? ovDay);
+  }
+
+  return {
+    requestedDayName,
+    mergedDays,
+    resolvedSlotDuration:    override?.slotDuration    ?? defaults.slotDuration,
+    resolvedDailyCapacity:   override?.dailyCapacity   ?? defaults.dailyCapacity,
+    resolvedPatientsPerSlot: override?.patientsPerSlot ?? defaults.patientsPerSlot,
+  };
+};
+
+// ─── Book Appointment ─────────────────────────────────────────────────────────
 
 exports.bookAppointment = async (req, res) => {
   try {
-    const { clinicId, date, startTime, appointmentType, paymentOption } = req.body;
+    const { clinicId, date, slotStart, paymentOption, isFollowUp, notes } = req.body;
 
-
-    const clinic = await Clinic.findById(clinicId);
-    if (!clinic) return res.status(404).json({ message: 'Clinic not found' });
-
-
-    const requestedDate = new Date(date);
-    const dayName = requestedDate.toLocaleDateString('en-US', { weekday: 'long' });
-
-    const workingDay = clinic.daysOfWeek.find(d => d.day === dayName);
-    if (!workingDay) {
-      return res.status(400).json({ message: `Clinic is closed on ${dayName}` });
+    // ── 1. Basic validation ─────────────────────────────────────────────────
+    if (!clinicId || !date || !slotStart || !paymentOption) {
+      return res.status(400).json({ message: "clinicId, date, slotStart, and paymentOption are required." });
     }
 
+    // ── 2. Load clinic ──────────────────────────────────────────────────────
+    const clinic = await Clinic.findById(clinicId);
+    if (!clinic) return res.status(404).json({ message: "Clinic not found." });
+    if (clinic.status !== "active") return res.status(403).json({ message: "This clinic is not currently active." });
 
-    const timeToMinutes = (timeStr) => {
-      const [time, modifier] = timeStr.split(' ');
-      let [hours, minutes] = time.split(':');
-      if (hours === '12') hours = '00';
-      if (modifier === 'PM') hours = parseInt(hours, 10) + 12;
-      return parseInt(hours, 10) * 60 + parseInt(minutes, 10);
-    };
+    // ── 3. Load patient ─────────────────────────────────────────────────────
+    const patientProfile = await Patient.findOne({ userId: req.user.id });
+    if (!patientProfile) return res.status(404).json({ message: "Patient profile not found." });
 
-    const requestedTime = timeToMinutes(startTime);
-    const openTime = timeToMinutes(workingDay.open);
-    const closeTime = timeToMinutes(workingDay.close);
+    // ── 4. Parse date → midnight UTC (must match getAvailableSlots exactly) ─
+    const requestedDate = new Date(`${date}T00:00:00.000Z`);
+    if (isNaN(requestedDate.getTime())) {
+      return res.status(400).json({ message: "Invalid date format. Use YYYY-MM-DD." });
+    }
 
-    if (requestedTime < openTime || requestedTime >= closeTime) {
+    // Reject past dates
+    const todayUTC = new Date();
+    todayUTC.setUTCHours(0, 0, 0, 0);
+    if (requestedDate < todayUTC) {
+      return res.status(400).json({ message: "Cannot book an appointment in the past." });
+    }
+
+    // ── 5. Resolve schedule (default + override) for this date ──────────────
+    const { requestedDayName, mergedDays, resolvedSlotDuration, resolvedDailyCapacity, resolvedPatientsPerSlot } =
+      resolveScheduleForDate(clinic, requestedDate);
+
+    const dayEntry = mergedDays.find((d) => d.day === requestedDayName);
+
+    if (!dayEntry)            return res.status(400).json({ message: `Doctor does not work on ${requestedDayName}.` });
+    if (!dayEntry.isActive)   return res.status(400).json({ message: "This day is marked as inactive." });
+    if (dayEntry.isDayLocked) return res.status(400).json({ message: "This day has been locked by the doctor." });
+    if (dayEntry.isBookingLocked) return res.status(400).json({ message: "Booking for this day is currently disabled." });
+
+    // ── 6. Resolve capacity values for this day ─────────────────────────────
+    const slotDuration    = dayEntry.slotDuration    ?? resolvedSlotDuration;
+    const dailyCapacity   = dayEntry.dailyCapacity   ?? resolvedDailyCapacity;
+    const patientsPerSlot = dayEntry.patientsPerSlot ?? resolvedPatientsPerSlot;
+
+    // ── 7. Validate that the requested slot actually exists in the schedule ──
+    //
+    // This prevents patients from booking "09:17" or any time that isn't
+    // a real generated slot — even if it's within open/close hours.
+    //
+    const validSlots = buildDaySlots(dayEntry.open, dayEntry.close, dayEntry.breaks, slotDuration);
+    const matchedSlot = validSlots.find((s) => minsToTime(s.start) === slotStart);
+
+    if (!matchedSlot) {
       return res.status(400).json({
-        message: `Selected time is outside working hours (${workingDay.open} - ${workingDay.close})`
+        message: `"${slotStart}" is not a valid slot for ${requestedDayName}. Valid slots start at ${slotDuration}-minute intervals.`,
       });
     }
 
+    const slotEnd = minsToTime(matchedSlot.end);
 
-    const appointmentCount = await Appointment.countDocuments({
-      clinic: clinicId,
-      date: requestedDate,
-      slotStart: startTime,
-      status: { $ne: 'cancelled' }
-    });
-
-    if (appointmentCount >= clinic.capacityPerSlot) {
-      return res.status(400).json({ message: 'This time slot is already full.' });
+    // ── 8. Check for time conflicts (if booking today, slot must not be past) ─
+    const isToday = requestedDate.getTime() === todayUTC.getTime();
+    if (isToday) {
+      const nowMins = new Date().getUTCHours() * 60 + new Date().getUTCMinutes();
+      if (matchedSlot.end <= nowMins) {
+        return res.status(400).json({ message: "This slot has already passed." });
+      }
     }
 
+    // ── 9. Count occupying appointments for capacity checks ─────────────────
+    //
+    // "cancelled" is excluded — cancellations free the slot.
+    // All other statuses occupy the slot.
+    //
+    const OCCUPYING_STATUSES = ["upcoming", "inProgress", "completed"];
 
-    const endTime = moment(startTime, 'hh:mm A')
-      .add(clinic.slotDuration, 'minutes')
-      .format('hh:mm A');
+    const [slotCount, dayCount] = await Promise.all([
+      // Per-slot count
+      Appointment.countDocuments({
+        clinic: clinic._id,
+        date:   requestedDate,
+        slotStart,
+        status: { $in: OCCUPYING_STATUSES },
+      }),
+      // Per-day total count
+      Appointment.countDocuments({
+        clinic: clinic._id,
+        date:   requestedDate,
+        status: { $in: OCCUPYING_STATUSES },
+      }),
+    ]);
 
-    const patientProfile = await Patient.findOne({ userId: req.user._id });
-    if (!patientProfile) return res.status(404).json({ message: 'Patient profile not found' });
+    if (slotCount >= patientsPerSlot) {
+      return res.status(409).json({ message: "This slot is fully booked." });
+    }
+    if (dayCount >= dailyCapacity) {
+      return res.status(409).json({ message: "This day has reached its maximum daily capacity." });
+    }
 
-    const appointment = new Appointment({
+    // ── 10. Prevent duplicate booking by same patient on same day ───────────
+    const alreadyBooked = await Appointment.findOne({
+      clinic:  clinic._id,
       patient: patientProfile._id,
-      doctor: clinic.doctorId,
-      clinic: clinicId,
-      date: requestedDate,
-      slotStart: startTime,
-      slotEnd: endTime,
-      appointmentType,
-      price: clinic.price,
-      paymentOption: paymentOption || 'atClinic',
-      status: 'booked'
+      date:    requestedDate,
+      status:  { $in: OCCUPYING_STATUSES },
+    });
+    if (alreadyBooked) {
+      return res.status(409).json({ message: "You already have an appointment at this clinic on this day." });
+    }
+
+    // ── 11. Create appointment ───────────────────────────────────────────────
+    const appointment = await Appointment.create({
+      patient:      patientProfile._id,
+      doctor:       clinic.doctorId,
+      clinic:       clinic._id,
+      date:         requestedDate,      // midnight UTC — matches aggregate queries
+      slotStart,                        // "HH:MM" string — matches getAvailableSlots grouping
+      slotEnd,
+      paymentOption: paymentOption || "atClinic",
+      isFollowUp:   isFollowUp ?? false,
+      notes:        notes || "",
+      status:       "upcoming",         // ✅ valid enum value — NOT "booked" or "available"
+      paymentStatus: "pending",
     });
 
-    await appointment.save();
-
-
+    // ── 12. Notify patient ───────────────────────────────────────────────────
     await Notification.create({
-      recipient: req.user._id,
-      title: "Appointment Booked",
-      message: `Your appointment with the clinic has been confirmed for ${date} at ${startTime}`,
-      type: 'appointment'
+      recipient: req.user.id,
+      title:     "Appointment Booked",
+      message:   `Your appointment at ${clinic.name} on ${date} at ${slotStart} has been confirmed.`,
+      type:      "appointment",
     });
-    res.status(201).json({ message: 'Appointment booked successfully', appointment });
+
+    return res.status(201).json({
+      message: "Appointment booked successfully.",
+      appointment,
+    });
 
   } catch (err) {
-    res.status(500).json({ message: err.message });
+    console.error("bookAppointment error:", err);
+    return res.status(500).json({ message: "Internal server error." });
   }
 };
+
+// ─── Get Appointments ─────────────────────────────────────────────────────────
 
 exports.getAppointments = async (req, res) => {
   try {
     let filter = {};
 
-    if (req.user.role === 'doctor') {
-      const doctorProfile = await Doctor.findOne({ userId: req.user._id });
-      if (!doctorProfile) return res.status(404).json({ message: "Doctor profile not found" });
+    if (req.user.role === "doctor") {
+      const doctorProfile = await Doctor.findOne({ userId: req.user.id });
+      if (!doctorProfile) return res.status(404).json({ message: "Doctor profile not found." });
       filter.doctor = doctorProfile._id;
-    }
-    else if (req.user.role === 'patient') {
-      const patientProfile = await Patient.findOne({ userId: req.user._id });
-
-      if (!patientProfile) {
-        filter.patient = req.user._id;
-      } else {
-
-        filter.$or = [
-          { patient: patientProfile._id },
-          { patient: req.user._id }
-        ];
-      }
+    } else if (req.user.role === "patient") {
+      const patientProfile = await Patient.findOne({ userId: req.user.id });
+      if (!patientProfile) return res.status(404).json({ message: "Patient profile not found." });
+      filter.patient = patientProfile._id;
     }
 
     const appointments = await Appointment.find(filter)
-      .populate({
-        path: 'patient',
-        select: 'userId',
-        populate: { path: 'userId', select: 'name' }
-      })
-      .populate({
-        path: 'doctor',
-        select: 'userId',
-        populate: { path: 'userId', select: 'name' }
-      })
-      .populate('clinic', 'name address city')
-      .select('date slotStart slotEnd status price paymentOption')
-      .sort({ createdAt: -1 });
+      .populate({ path: "patient", select: "userId", populate: { path: "userId", select: "name" } })
+      .populate({ path: "doctor",  select: "userId", populate: { path: "userId", select: "name" } })
+      .populate("clinic", "name address city price")
+      .sort({ date: 1, slotStart: 1 });
 
-    res.json(appointments);
+    return res.status(200).json({ appointments });
+
   } catch (err) {
-    res.status(500).json({ message: err.message });
+    console.error("getAppointments error:", err);
+    return res.status(500).json({ message: "Internal server error." });
   }
 };
+
+// ─── Cancel Appointment ───────────────────────────────────────────────────────
 
 exports.cancelAppointment = async (req, res) => {
   try {
-    const { id } = req.params;
-    const appointment = await Appointment.findById(id);
+    const appointment = await Appointment.findById(req.params.id);
+    if (!appointment) return res.status(404).json({ message: "Appointment not found." });
 
-    if (!appointment) return res.status(404).json({ message: 'Appointment not found' });
+    const patientProfile = await Patient.findOne({ userId: req.user.id });
+    if (!patientProfile) return res.status(404).json({ message: "Patient profile not found." });
 
-    const patientProfile = await Patient.findOne({ userId: req.user._id });
-
-    if (!patientProfile || (appointment.patient.toString() !== patientProfile._id.toString() && req.user.role !== 'admin')) {
-      return res.status(403).json({ message: 'Not authorized to cancel this appointment' });
+    // Only the patient who booked it (or an admin) can cancel
+    const isOwner = appointment.patient.toString() === patientProfile._id.toString();
+    if (!isOwner && req.user.role !== "admin") {
+      return res.status(403).json({ message: "Not authorized to cancel this appointment." });
     }
 
-    appointment.status = 'cancelled';
+    // Can't cancel what's already done
+    if (["cancelled", "completed"].includes(appointment.status)) {
+      return res.status(400).json({ message: `Appointment is already ${appointment.status}.` });
+    }
+
+    appointment.status = "cancelled";
     await appointment.save();
 
-    res.json({ message: 'Appointment cancelled successfully' });
+    await Notification.create({
+      recipient: req.user.id,
+      title:     "Appointment Cancelled",
+      message:   `Your appointment on ${appointment.date.toISOString().split("T")[0]} at ${appointment.slotStart} has been cancelled.`,
+      type:      "appointment",
+    });
+
+    return res.status(200).json({ message: "Appointment cancelled successfully." });
+
   } catch (err) {
-    res.status(500).json({ message: err.message });
+    console.error("cancelAppointment error:", err);
+    return res.status(500).json({ message: "Internal server error." });
   }
 };
 
-
-/*exports.confirmAppointment = async (req, res) => {
-  try {
-    const { id } = req.params;
-
-    const appointment = await Appointment.findByIdAndUpdate(
-      id,
-      { paymentStatus: 'paid', status: 'confirmed' },
-      { new: true }
-    ).populate('clinic');
-
-    if (!appointment) return res.status(404).json({ message: 'Appointment not found' });
-
-    res.json({ message: 'Appointment confirmed and paid', appointment });
-  } catch (err) {
-    res.status(500).json({ message: err.message });
-  }
-};*/
-
+// ─── Send Reminders (Cron Job) ────────────────────────────────────────────────
 
 exports.sendReminders = async () => {
   try {
-    const tomorrow = new Date();
-    tomorrow.setDate(tomorrow.getDate() + 1);
+    const todayStart = new Date();
+    todayStart.setUTCHours(0, 0, 0, 0);
+    const todayEnd = new Date();
+    todayEnd.setUTCHours(23, 59, 59, 999);
 
     const appointments = await Appointment.find({
-      date: {
-        $gte: new Date().setHours(0, 0, 0, 0),
-        $lte: tomorrow.setHours(23, 59, 59, 999)
-      },
-      status: 'booked'
+      date:   { $gte: todayStart, $lte: todayEnd },
+      status: "upcoming",
     }).populate({
-      path: 'patient',
-      populate: { path: 'userId', select: 'email name' }
+      path: "patient",
+      populate: { path: "userId", select: "email name" },
     });
 
     for (const app of appointments) {
-      if (app.patient.userId.email) {
-        await transporter.sendMail({
-          to: app.patient.userId.email,
-          subject: 'Appointment Reminder',
-          text: `Hi ${app.patient.userId.name}, Reminder for your appointment today at ${app.slotStart}.`,
-        });
-      }
+      await Notification.create({
+        recipient: app.patient.userId._id,
+        title:     "Appointment Reminder",
+        message:   `Reminder: You have an appointment today at ${app.slotStart}.`,
+        type:      "appointment",
+      });
     }
   } catch (err) {
-    console.error('Reminder Job Error:', err.message);
+    console.error("sendReminders error:", err);
   }
 };
