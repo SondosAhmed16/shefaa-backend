@@ -480,31 +480,47 @@ exports.getAvailableSlots = async (req, res) => {
     if (!clinic) return res.status(404).json({ message: "Clinic not found." });
 
     // ── 3. Find the week start (Saturday on or before requested date) ───────
+    //
+    // getUTCDay(): Sun=0, Mon=1, Tue=2, Wed=3, Thu=4, Fri=5, Sat=6
+    // We want Saturday as day-0 of the week.
+    // daysSinceSaturday: Sat→0, Sun→1, Mon→2, Tue→3, Wed→4, Thu→5, Fri→6
+    //
     const DAY_ORDER = ["Sunday","Monday","Tuesday","Wednesday","Thursday","Friday","Saturday"];
     const requestedDayName = DAY_ORDER[requestedDate.getUTCDay()];
 
     const daysSinceSaturday = (requestedDate.getUTCDay() + 1) % 7;
     const weekStartDate = new Date(requestedDate);
     weekStartDate.setUTCDate(requestedDate.getUTCDate() - daysSinceSaturday);
+    // ✅ KEY FIX: Normalize to midnight UTC so the ISO string comparison works
+    // regardless of what timezone offset was used when the override was saved.
+    weekStartDate.setUTCHours(0, 0, 0, 0);
 
     // ── 4. Find override for this week ──────────────────────────────────────
-    const override = clinic.weeklyOverrides?.find(
-      (o) => new Date(o.weekStart).toISOString() === weekStartDate.toISOString()
-    );
+    //
+    // ✅ KEY FIX: Compare only the date portion (first 10 chars of ISO string)
+    // so a stored "2026-05-01T21:00:00.000Z" matches our "2026-05-02T00:00:00.000Z"
+    // when they refer to the same calendar Saturday in different timezones.
+    //
+    const weekStartDateStr = weekStartDate.toISOString().slice(0, 10); // "2026-05-02"
+
+    const override = clinic.weeklyOverrides?.find((o) => {
+      const storedStr = new Date(o.weekStart).toISOString().slice(0, 10);
+      // Same UTC date → exact match
+      if (storedStr === weekStartDateStr) return true;
+      // Stored date is 1 day behind (timezone offset shifted it back by a few hours)
+      // e.g. stored "2026-05-01T21:00:00.000Z" → storedStr "2026-05-01"
+      //      weekStartDateStr "2026-05-02" → difference = exactly 1 day
+      const diffMs = weekStartDate - new Date(o.weekStart);
+      return diffMs > 0 && diffMs < 24 * 60 * 60 * 1000;
+    });
+
     const defaults = clinic.defaultSchedule;
 
-    // ── 5. Find the default day entry and the override day entry separately ─
-    //
-    // CRITICAL: We merge field-by-field instead of spread ({ ...def, ...ovDay })
-    // because spread treats `undefined` and an explicit `[]` the same way —
-    // both would wipe out the default breaks. We need:
-    //   - breaks:  use override.breaks only if the override EXPLICITLY set them
-    //   - everything else: override value wins if it's not null/undefined
-    //
+    // ── 5. Find default day + override day separately ───────────────────────
     const defDay = defaults.days?.find((d) => d.day === requestedDayName);
     const ovDay  = override?.days?.find((d) => d.day === requestedDayName);
 
-    // Day not configured at all in defaults AND not in override → no slots
+    // Not configured anywhere → no slots
     if (!defDay && !ovDay) {
       return res.status(200).json({
         date,
@@ -515,19 +531,12 @@ exports.getAvailableSlots = async (req, res) => {
       });
     }
 
-    // ── 6. Merge day fields with correct priority ───────────────────────────
+    // ── 6. Merge day fields (override wins, field-by-field) ─────────────────
     //
-    // Priority (highest → lowest):
-    //   override day field  →  default day field  →  fallback value
-    //
-    // Special rule for `breaks`:
-    //   The override schema stores breaks as an array. An empty array `[]`
-    //   is a valid override meaning "no breaks this week" (e.g. doctor removed
-    //   lunch break). So we can't use `ovDay.breaks ?? defDay.breaks` because
-    //   `[] ?? defDay.breaks` would pick `[]` and lose the default breaks.
-    //   BUT `ovDay.breaks !== undefined` correctly distinguishes:
-    //     - ovDay.breaks = [...]  → override set breaks explicitly → use them
-    //     - ovDay.breaks = undefined → override never touched breaks → use default
+    // breaks special rule:
+    //   ovDay.breaks = [...]      → doctor explicitly set breaks for this week → use them
+    //   ovDay.breaks = []         → doctor explicitly removed all breaks → use []
+    //   ovDay.breaks = undefined  → override didn't touch breaks → fall back to default
     //
     const mergedDay = {
       day:             requestedDayName,
@@ -536,17 +545,16 @@ exports.getAvailableSlots = async (req, res) => {
       close:           ovDay?.close            ?? defDay?.close,
       isDayLocked:     ovDay?.isDayLocked      ?? defDay?.isDayLocked     ?? false,
       isBookingLocked: ovDay?.isBookingLocked  ?? defDay?.isBookingLocked ?? false,
-      // ← Key fix: only use override breaks if they were explicitly provided
-      breaks: ovDay !== undefined && ovDay.breaks !== undefined
+      breaks: (ovDay !== undefined && ovDay.breaks !== undefined)
         ? ovDay.breaks
         : (defDay?.breaks ?? []),
-      // Slot-level overrides (day → week override → default)
+      // Priority: day-level override → week-level override → global default
       slotDuration:    ovDay?.slotDuration    ?? override?.slotDuration    ?? defaults.slotDuration,
       dailyCapacity:   ovDay?.dailyCapacity   ?? override?.dailyCapacity   ?? defaults.dailyCapacity,
       patientsPerSlot: ovDay?.patientsPerSlot ?? override?.patientsPerSlot ?? defaults.patientsPerSlot,
     };
 
-    // ── 7. Day-level lock checks (all from mergedDay) ───────────────────────
+    // ── 7. Lock checks ──────────────────────────────────────────────────────
     if (!mergedDay.isActive) {
       return res.status(200).json({
         date, day: requestedDayName, available: false,
@@ -569,7 +577,6 @@ exports.getAvailableSlots = async (req, res) => {
       });
     }
 
-    // Sanity check: open/close must exist after merge
     if (mergedDay.open == null || mergedDay.close == null) {
       return res.status(200).json({
         date, day: requestedDayName, available: false,
@@ -578,11 +585,11 @@ exports.getAvailableSlots = async (req, res) => {
       });
     }
 
-    // ── 8. Generate raw slots using merged breaks ───────────────────────────
+    // ── 8. Generate slots ───────────────────────────────────────────────────
     const rawSlots = buildDaySlots(
       mergedDay.open,
       mergedDay.close,
-      mergedDay.breaks,       // ← correct merged breaks, not defDay.breaks
+      mergedDay.breaks,
       mergedDay.slotDuration
     );
 
@@ -594,7 +601,7 @@ exports.getAvailableSlots = async (req, res) => {
       });
     }
 
-    // ── 9. Count existing appointments ─────────────────────────────────────
+    // ── 9. Count booked appointments ────────────────────────────────────────
     const OCCUPYING_STATUSES = ["available", "upcoming", "inProgress", "completed"];
 
     const bookedAgg = await Appointment.aggregate([
@@ -620,7 +627,7 @@ exports.getAvailableSlots = async (req, res) => {
       totalBookedToday += entry.count;
     }
 
-    // ── 10. Current time in minutes (today only) ────────────────────────────
+    // ── 10. Current time in minutes (today filter) ──────────────────────────
     const nowMins = isToday
       ? new Date().getUTCHours() * 60 + new Date().getUTCMinutes()
       : -1;
@@ -630,21 +637,22 @@ exports.getAvailableSlots = async (req, res) => {
       const startStr = minsToTime(slot.start);
       const endStr   = minsToTime(slot.end);
 
+      // Drop past slots (today only)
       if (isToday && slot.end <= nowMins) return null;
 
       const bookedOnThisSlot = bookedPerSlot[startStr] ?? 0;
-      const slotFull = bookedOnThisSlot >= mergedDay.patientsPerSlot;
-      const dayFull  = totalBookedToday  >= mergedDay.dailyCapacity;
+      const slotFull    = bookedOnThisSlot >= mergedDay.patientsPerSlot;
+      const dayFull     = totalBookedToday  >= mergedDay.dailyCapacity;
       const isAvailable = !slotFull && !dayFull;
 
       return {
-        slotStart: startStr,
-        slotEnd:   endStr,
+        slotStart:       startStr,
+        slotEnd:         endStr,
         isAvailable,
         bookedCount:     bookedOnThisSlot,
         patientsPerSlot: mergedDay.patientsPerSlot,
         remainingInSlot: Math.max(0, mergedDay.patientsPerSlot - bookedOnThisSlot),
-        remainingInDay:  Math.max(0, mergedDay.dailyCapacity  - totalBookedToday),
+        remainingInDay:  Math.max(0, mergedDay.dailyCapacity   - totalBookedToday),
         ...(isAvailable ? {} : {
           reason: slotFull ? "Slot is fully booked." : "Daily capacity reached.",
         }),
@@ -654,12 +662,12 @@ exports.getAvailableSlots = async (req, res) => {
     // ── 12. Response ────────────────────────────────────────────────────────
     return res.status(200).json({
       date,
-      day:            requestedDayName,
-      clinicId:       clinic._id,
-      clinicName:     clinic.name,
-      available:      slots.some((s) => s.isAvailable),
-      slotDuration:   mergedDay.slotDuration,
-      dailyCapacity:  mergedDay.dailyCapacity,
+      day:             requestedDayName,
+      clinicId:        clinic._id,
+      clinicName:      clinic.name,
+      available:       slots.some((s) => s.isAvailable),
+      slotDuration:    mergedDay.slotDuration,
+      dailyCapacity:   mergedDay.dailyCapacity,
       patientsPerSlot: mergedDay.patientsPerSlot,
       totalBookedToday,
       slots,
