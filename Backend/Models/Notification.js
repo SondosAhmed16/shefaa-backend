@@ -8,11 +8,24 @@ const notificationSchema = new mongoose.Schema({
   },
   title: { type: String, required: true }, 
   message: { type: String, required: true }, 
+  
   type: { 
     type: String, 
-    enum: ['appointment', 'medication', 'system'], 
+    enum: [
+      'medication',          // مستخدم فعلياً في كود المريض الحالي
+      'new_prescription',    // للصيدلية عند استلام روشتة
+      'new_order',           // للصيدلية عند طلب جديد
+      'order_status',        // للمريض عند تجهيز طلبه
+      'low_stock',           // للصيدلية (تنبيه المخزن)
+      'appointment',         // للدكتور والمريض (المواعيد)
+      'payment_confirmed',   // تأكيد الدفع في سكرين التتبع
+      'system'               // إشعارات عامة
+    ], 
     default: 'system' 
   },
+  
+  relatedId: { type: mongoose.Schema.Types.ObjectId }, 
+
   isRead: { type: Boolean, default: false },
   createdAt: { type: Date, default: Date.now }
 });

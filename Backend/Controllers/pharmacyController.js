@@ -2,13 +2,14 @@ const Pharmacy = require('../Models/Pharmaces');
 const MedicineStock = require('../Models/MedicineStock');
 const Order = require('../Models/Order');
 const Prescription = require('../Models/Prescription');
+const Notification = require('../Models/Notification');
 
 // Helper to get Pharmacy Profile by User ID
 const getPharmacyByUserId = async (userId) => {
   return await Pharmacy.findOne({ userId });
 };
 
-exports.updateMedicine = async (req, res) => {
+/*exports.updateMedicine = async (req, res) => {
   try {
     const { id } = req.params;
     const { quantity, price } = req.body;
@@ -61,7 +62,7 @@ exports.searchMedicines = async (req, res) => {
   } catch (err) {
     res.status(500).json({ message: err.message });
   }
-};
+}; */
 
 /*********************************************/
 
@@ -70,6 +71,11 @@ exports.getDashboardStats = async (req, res) => {
   try {
     const pharmacy = await Pharmacy.findOne({ userId: req.user._id });
     if (!pharmacy) return res.status(404).json({ message: 'Pharmacy not found' });
+
+    const newPrescriptionsCount = await Prescription.countDocuments({
+      suggestedPharmacies: pharmacy._id,
+      status: "Pending"
+    });
 
     const newOrdersCount = await Order.countDocuments({
       pharmacyId: pharmacy._id,
@@ -97,7 +103,8 @@ exports.getDashboardStats = async (req, res) => {
       stats: {
         newOrders: newOrdersCount,
         completed: completedOrdersCount,
-        lowStock: lowStockItems.length
+        lowStock: lowStockItems.length,
+        newPrescriptions: newPrescriptionsCount
       },
       lowStockDetails: lowStockItems,
       pendingOrders: pendingOrders
@@ -145,15 +152,15 @@ exports.getNewPrescriptions = async (req, res) => {
 exports.getInventory = async (req, res) => {
   try {
     const pharmacy = await Pharmacy.findOne({ userId: req.user._id });
-    
+
     const allMedicines = await MedicineStock.find({ pharmacyId: pharmacy._id });
 
     const lowStock = allMedicines.filter(m => m.quantity > 0 && m.quantity <= m.minThreshold);
     const outOfStock = allMedicines.filter(m => m.quantity === 0);
 
     res.json({
-      totalItems: allMedicines.length, 
-      lowStockCount: lowStock.length, 
+      totalItems: allMedicines.length,
+      lowStockCount: lowStock.length,
       allMedicines,
       lowStockAlerts: lowStock,
       outOfStock
@@ -167,17 +174,27 @@ exports.addMedicine = async (req, res) => {
   try {
     const pharmacy = await Pharmacy.findOne({ userId: req.user._id });
     const { medicineName, category, price, quantity, requiresPrescription } = req.body;
-    
+
     const newMedicine = new MedicineStock({
       pharmacyId: pharmacy._id,
       medicineName,
       category,
       price,
       quantity,
-      requiresPrescription 
+      requiresPrescription
     });
 
     await newMedicine.save();
+
+    if (quantity <= (minThreshold || 5)) {
+      await Notification.create({
+        recipient: req.user._id,
+        title: `Low stock alert — ${medicineName}`,
+        message: `${medicineName} (${quantity} left). Please restock soon.`,
+        type: 'low_stock', //
+        relatedId: newMedicine._id
+      });
+    }
     res.status(201).json(newMedicine);
   } catch (err) {
     res.status(400).json({ message: err.message });
@@ -186,7 +203,7 @@ exports.addMedicine = async (req, res) => {
 
 exports.getPrescriptionDetails = async (req, res) => {
   try {
-    const { id } = req.params; 
+    const { id } = req.params;
     const pharmacy = await Pharmacy.findOne({ userId: req.user._id });
 
     const prescription = await Prescription.findById(id)
@@ -196,14 +213,14 @@ exports.getPrescriptionDetails = async (req, res) => {
     if (!prescription) return res.status(404).json({ message: 'Prescription not found' });
 
     const medicinesWithStatus = await Promise.all(prescription.medicines.map(async (med) => {
-      const stockItem = await MedicineStock.findOne({ 
-        pharmacyId: pharmacy._id, 
-        medicineName: new RegExp(med.name, 'i') 
+      const stockItem = await MedicineStock.findOne({
+        pharmacyId: pharmacy._id,
+        medicineName: new RegExp(med.name, 'i')
       });
 
       return {
         name: med.name,
-        neededQuantity: med.quantity, 
+        neededQuantity: med.quantity,
         availableQuantity: stockItem ? stockItem.quantity : 0,
         price: stockItem ? stockItem.price : 0,
         isInStock: stockItem && stockItem.quantity >= med.quantity
@@ -215,7 +232,7 @@ exports.getPrescriptionDetails = async (req, res) => {
       medicinesStatus: medicinesWithStatus,
       summary: {
         subtotal: medicinesWithStatus.reduce((acc, curr) => acc + (curr.isInStock ? curr.price : 0), 0),
-        delivery: pharmacy.deliveryFees || 15 
+        delivery: pharmacy.deliveryFees || 15
       }
     });
   } catch (err) {
@@ -225,18 +242,33 @@ exports.getPrescriptionDetails = async (req, res) => {
 
 exports.confirmPrescriptionOrder = async (req, res) => {
   try {
-    const { prescriptionId, items, total } = req.body;
+    const { prescriptionId, items, total, deliveryAddress, patientUserId } = req.body;
     const pharmacy = await Pharmacy.findOne({ userId: req.user._id });
+
+    const randomNum = Math.floor(1000 + Math.random() * 9000);
+    const orderNumber = `PHX-${randomNum}`;
 
     const newOrder = await Order.create({
       pharmacyId: pharmacy._id,
+      userId: req.body.userId,
       prescriptionId,
-      items, 
+      orderNumber,
+      items,
       totalPrice: total,
-      status: 'Preparing' 
+      deliveryAddress,
+      paymentMethod: paymentMethod || "Cash",
+      status: 'Preparing'
     });
 
-    res.status(201).json({ message: 'Order confirmed successfuly ', order: newOrder });
+    await Notification.create({
+      recipient: patientUserId,
+      title: "Order Confirmed",
+      message: `Your order from ${pharmacy.pharmacyName} is being prepared`,
+      type: 'order_status',
+      relatedId: newOrder._id
+    });
+
+    res.status(201).json({ message: 'Order confirmed successfully', order: newOrder });
   } catch (err) {
     res.status(500).json({ message: err.message });
   }
@@ -244,7 +276,7 @@ exports.confirmPrescriptionOrder = async (req, res) => {
 
 exports.findAlternative = async (req, res) => {
   try {
-    const { category } = req.query; 
+    const { category } = req.query;
     const pharmacy = await Pharmacy.findOne({ userId: req.user._id });
 
     const alternatives = await MedicineStock.find({
@@ -262,8 +294,8 @@ exports.findAlternative = async (req, res) => {
 exports.getOrders = async (req, res) => {
   try {
     const pharmacy = await Pharmacy.findOne({ userId: req.user._id });
-    const { status } = req.query; 
-    
+    const { status } = req.query;
+
     let query = { pharmacyId: pharmacy._id };
     if (status) query.status = status;
 
@@ -280,15 +312,140 @@ exports.getOrders = async (req, res) => {
 exports.updateOrderStatus = async (req, res) => {
   try {
     const { orderId } = req.params;
-    const { status } = req.body; 
+    const { status } = req.body;
 
     const updatedOrder = await Order.findByIdAndUpdate(
       orderId,
       { status },
       { new: true }
     );
+    await Notification.create({
+      recipient: updatedOrder.userId,
+      title: "Order Status Updated",
+      message: `Your order ${updatedOrder.orderNumber} is now ${status}`,
+      type: 'order_status',
+      relatedId: updatedOrder._id
+    });
 
     res.json({ message: `Order status updated to ${status}`, updatedOrder });
+  } catch (err) {
+    res.status(500).json({ message: err.message });
+  }
+};
+
+
+exports.searchWithAvailability = async (req, res) => {
+  try {
+    const { lng, lat, query } = req.query;
+
+    if (!lng || !lat) {
+      return res.status(400).json({ message: "Location coordinates are required." });
+    }
+
+    const results = await Pharmacy.aggregate([
+      {
+        $geoNear: {
+          near: { type: "Point", coordinates: [parseFloat(lng), parseFloat(lat)] },
+          distanceField: "distance",
+          spherical: true,
+          distanceMultiplier: 0.001,
+          maxDistance: 10000
+        }
+      },
+      {
+        $lookup: {
+          from: "medicinestocks",
+          localField: "_id",
+          foreignField: "pharmacyId",
+          as: "inventory"
+        }
+      },
+      {
+        $addFields: {
+          isAvailable: {
+            $gt: [
+              {
+                $size: {
+                  $filter: {
+                    input: "$inventory",
+                    as: "item",
+                    cond: {
+                      $and: [
+                        { $regexMatch: { input: "$$item.medicineName", regex: query || "", options: "i" } },
+                        { $gt: ["$$item.quantity", 0] }
+                      ]
+                    }
+                  }
+                }
+              },
+              0
+            ]
+          }
+        }
+      },
+      {
+        $project: {
+          pharmacyName: 1,
+          rating: 1,
+          openNow: 1,
+          deliveryAvailable: 1,
+          distance: { $round: ["$distance", 1] },
+          isAvailable: 1,
+          "addresses.addressText": 1
+        }
+      }
+    ]);
+
+    res.json(results);
+  } catch (err) {
+    res.status(500).json({ message: err.message });
+  }
+};
+
+exports.getOrderTracking = async (req, res) => {
+  try {
+    const { orderId } = req.params;
+
+    const order = await Order.findById(orderId)
+      .populate('pharmacyId', 'pharmacyName phone addresses');
+
+    if (!order) return res.status(404).json({ message: 'Order not found' });
+
+    res.json({
+      orderNumber: order.orderNumber,
+      status: order.status,
+      estimatedTime: order.estimatedTime,
+      pharmacyName: order.pharmacyId.pharmacyName,
+      pharmacyPhone: order.pharmacyId.phone,
+      address: order.deliveryAddress,
+      payment: order.paymentMethod,
+      total: order.totalPrice,
+      items: order.items
+    });
+  } catch (err) {
+    res.status(500).json({ message: err.message });
+  }
+};
+
+exports.updateInventoryItem = async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { quantity } = req.body;
+    const pharmacy = await Pharmacy.findOne({ userId: req.user._id });
+
+    const stock = await MedicineStock.findByIdAndUpdate(id, { quantity }, { new: true });
+
+    if (stock.quantity <= stock.minThreshold) {
+      await Notification.create({
+        recipient: req.user._id,
+        title: `Low stock alert — ${stock.medicineName}`,
+        message: `Only ${stock.quantity} items left in stock.`,
+        type: 'low_stock',
+        relatedId: stock._id
+      });
+    }
+
+    res.json(stock);
   } catch (err) {
     res.status(500).json({ message: err.message });
   }

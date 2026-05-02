@@ -19,9 +19,9 @@ router.get('/inventory', auth, pharmacyController.getInventory);
 
 router.post('/inventory/add', auth, pharmacyController.addMedicine);
 
-router.put('/inventory/update/:id', auth, pharmacyController.updateMedicine);
+//router.put('/inventory/update/:id', auth, pharmacyController.updateMedicine);
 
-router.delete('/inventory/delete/:id', auth, pharmacyController.deleteMedicine);
+//router.delete('/inventory/delete/:id', auth, pharmacyController.deleteMedicine);
 
 router.get('/prescriptions', auth, pharmacyController.getNewPrescriptions);
 
@@ -35,6 +35,10 @@ router.get('/orders', auth, pharmacyController.getOrders);
 
 router.patch('/orders/:orderId/status', auth, pharmacyController.updateOrderStatus);
 
-router.get('/search', pharmacyController.searchMedicines); 
+router.get('/patient/search', auth, pharmacyController.searchWithAvailability);
+
+router.get('/orders/track/:orderId', auth, pharmacyController.getOrderTracking);
+
+//router.get('/search', pharmacyController.searchMedicines); 
 
 module.exports = router;

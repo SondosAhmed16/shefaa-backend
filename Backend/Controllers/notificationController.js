@@ -18,3 +18,35 @@ exports.markAsRead = async (req, res) => {
     res.status(500).json({ message: err.message });
   }
 };
+
+exports.getNotificationsForUI = async (req, res) => {
+  try {
+    const allNotifications = await Notification.find({ recipient: req.user._id })
+      .sort({ createdAt: -1 });
+
+    const unreadCount = allNotifications.filter(n => !n.isRead).length;
+
+ 
+    const notificationsGrouped = {
+      unreadCount: unreadCount,
+      new: allNotifications.filter(n => !n.isRead),
+      earlier: allNotifications.filter(n => n.isRead)
+    };
+
+    res.status(200).json(notificationsGrouped);
+  } catch (err) {
+    res.status(500).json({ message: err.message });
+  }
+};
+
+exports.markAllRead = async (req, res) => {
+  try {
+    await Notification.updateMany(
+      { recipient: req.user._id, isRead: false },
+      { $set: { isRead: true } }
+    );
+    res.status(200).json({ message: "All notifications marked as read" });
+  } catch (err) {
+    res.status(500).json({ message: err.message });
+  }
+};

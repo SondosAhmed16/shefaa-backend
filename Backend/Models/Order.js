@@ -14,6 +14,26 @@ const orderSchema = new mongoose.Schema({
         price: Number
     }],
     totalPrice: Number
-}, { timestamps: true });
+    ,
+    orderNumber: { type: String, required: true }, // PHX-1082
+    status: {
+        type: String,
+        enum: ["New", "Preparing", "Ready", "Shipped", "Completed"], 
+        default: "New"
+    },
+    estimatedTime: { type: String }, 
+    paymentMethod: {
+        type: String,
+        enum: ["Cash", "Credit Card"],
+        default: "Cash"
+    },
+    paymentStatus: {
+        type: String,
+        enum: ["Pending", "Paid"],
+        default: "Pending"
+    },
+    deliveryAddress: { type: String, required: true }
+}
+    , { timestamps: true });
 
 module.exports = mongoose.model("Order", orderSchema);
