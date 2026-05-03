@@ -319,21 +319,40 @@ const hasAppointmentDayStarted = (appointmentDate) => {
 // ─────────────────────────────────────────────
 exports.getMyAppointments = async (req, res) => {
   try {
-    const patientProfile = await Patient.findOne({ userId: req.user._id });
-    if (!patientProfile)
-      return res.status(404).json({ success: false, message: "Patient profile not found." });
+    let appointments;
 
-    const appointments = await Appointment.find({ patient: patientProfile._id })
-      .populate("doctor", "name specialization")
-      .populate("clinic", "name address")
-      .populate("prescription")
-      .sort({ date: -1 });
+    if (req.user.role === "patient") {
+      const patientProfile = await Patient.findOne({ userId: req.user._id });
+      if (!patientProfile)
+        return res.status(404).json({ success: false, message: "Patient profile not found." });
+
+      appointments = await Appointment.find({ patient: patientProfile._id })
+        .populate("doctor", "name specialization")
+        .populate("clinic", "name address")
+        .populate("prescription")
+        .sort({ date: -1 });
+
+    } else if (req.user.role === "doctor") {
+      const doctorProfile = await Doctor.findOne({ userId: req.user._id });
+      if (!doctorProfile)
+        return res.status(404).json({ success: false, message: "Doctor profile not found." });
+
+      appointments = await Appointment.find({ doctor: doctorProfile._id })
+        .populate("patient", "name dateOfBirth")
+        .populate("clinic", "name address")
+        .populate("prescription")
+        .sort({ date: -1 });
+
+    } else {
+      return res.status(403).json({ success: false, message: "Unauthorized role." });
+    }
 
     return res.status(200).json({
       success: true,
       count: appointments.length,
       data: appointments,
     });
+
   } catch (error) {
     console.error("getMyAppointments error:", error);
     return res.status(500).json({ success: false, message: "Server error while fetching appointments." });
