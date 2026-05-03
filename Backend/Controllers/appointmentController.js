@@ -319,13 +319,15 @@ const hasAppointmentDayStarted = (appointmentDate) => {
 // ─────────────────────────────────────────────
 exports.getMyAppointments = async (req, res) => {
   try {
-    const patientId = req.user._id; // assumes auth middleware sets req.user
+    const patientProfile = await Patient.findOne({ userId: req.user._id });
+    if (!patientProfile)
+      return res.status(404).json({ success: false, message: "Patient profile not found." });
 
-    const appointments = await Appointment.find({ patient: patientId })
+    const appointments = await Appointment.find({ patient: patientProfile._id })
       .populate("doctor", "name specialization")
       .populate("clinic", "name address")
       .populate("prescription")
-      .sort({ date: -1 }); // most recent first
+      .sort({ date: -1 });
 
     return res.status(200).json({
       success: true,
@@ -334,163 +336,85 @@ exports.getMyAppointments = async (req, res) => {
     });
   } catch (error) {
     console.error("getMyAppointments error:", error);
-    return res.status(500).json({
-      success: false,
-      message: "Server error while fetching appointments.",
-    });
+    return res.status(500).json({ success: false, message: "Server error while fetching appointments." });
   }
 };
 
-// ─────────────────────────────────────────────
-// PATCH /appointments/:id/cancel
-// Cancel an appointment only if its day has NOT started yet
-// ─────────────────────────────────────────────
 exports.cancelAppointment = async (req, res) => {
   try {
-    const patientId = req.user._id;
-    const { id } = req.params;
+    const patientProfile = await Patient.findOne({ userId: req.user._id });
+    if (!patientProfile)
+      return res.status(404).json({ success: false, message: "Patient profile not found." });
 
+    const { id } = req.params;
     const appointment = await Appointment.findById(id);
 
-    if (!appointment) {
-      return res.status(404).json({
-        success: false,
-        message: "Appointment not found.",
-      });
-    }
+    if (!appointment)
+      return res.status(404).json({ success: false, message: "Appointment not found." });
 
-    // Ensure the appointment belongs to this patient
-    if (appointment.patient.toString() !== patientId.toString()) {
-      return res.status(403).json({
-        success: false,
-        message: "You are not authorized to cancel this appointment.",
-      });
-    }
+    if (appointment.patient.toString() !== patientProfile._id.toString())
+      return res.status(403).json({ success: false, message: "You are not authorized to cancel this appointment." });
 
-    // Already cancelled
-    if (appointment.status === "cancelled") {
-      return res.status(400).json({
-        success: false,
-        message: "Appointment is already cancelled.",
-      });
-    }
+    if (appointment.status === "cancelled")
+      return res.status(400).json({ success: false, message: "Appointment is already cancelled." });
 
-    // Cannot cancel a completed appointment
-    if (appointment.status === "completed") {
-      return res.status(400).json({
-        success: false,
-        message: "Cannot cancel a completed appointment.",
-      });
-    }
+    if (appointment.status === "completed")
+      return res.status(400).json({ success: false, message: "Cannot cancel a completed appointment." });
 
-    // Block cancellation if the appointment day has already started
-    if (hasAppointmentDayStarted(appointment.date)) {
-      return res.status(400).json({
-        success: false,
-        message:
-          "Cannot cancel an appointment on or after its scheduled day. Please contact the clinic directly.",
-      });
-    }
+    if (hasAppointmentDayStarted(appointment.date))
+      return res.status(400).json({ success: false, message: "Cannot cancel an appointment on or after its scheduled day." });
 
     appointment.status = "cancelled";
     appointment.paymentStatus = "cancelled";
     await appointment.save();
 
-    return res.status(200).json({
-      success: true,
-      message: "Appointment cancelled successfully.",
-      data: appointment,
-    });
+    return res.status(200).json({ success: true, message: "Appointment cancelled successfully.", data: appointment });
   } catch (error) {
     console.error("cancelAppointment error:", error);
-    return res.status(500).json({
-      success: false,
-      message: "Server error while cancelling appointment.",
-    });
+    return res.status(500).json({ success: false, message: "Server error while cancelling appointment." });
   }
 };
 
-// ─────────────────────────────────────────────
-// PATCH /appointments/:id/reschedule
-// Reschedule an appointment only if its day has NOT started yet.
-// Body: { date, slotStart, slotEnd, timeChosed? }
-// ─────────────────────────────────────────────
 exports.rescheduleAppointment = async (req, res) => {
   try {
-    const patientId = req.user._id;
+    const patientProfile = await Patient.findOne({ userId: req.user._id });
+    if (!patientProfile)
+      return res.status(404).json({ success: false, message: "Patient profile not found." });
+
     const { id } = req.params;
     const { date, slotStart, slotEnd, timeChosed } = req.body;
 
-    // Validate required fields
-    if (!date || !slotStart || !slotEnd) {
-      return res.status(400).json({
-        success: false,
-        message: "New date, slotStart, and slotEnd are required.",
-      });
-    }
+    if (!date || !slotStart || !slotEnd)
+      return res.status(400).json({ success: false, message: "New date, slotStart, and slotEnd are required." });
 
     const appointment = await Appointment.findById(id);
 
-    if (!appointment) {
-      return res.status(404).json({
-        success: false,
-        message: "Appointment not found.",
-      });
-    }
+    if (!appointment)
+      return res.status(404).json({ success: false, message: "Appointment not found." });
 
-    // Ensure the appointment belongs to this patient
-    if (appointment.patient.toString() !== patientId.toString()) {
-      return res.status(403).json({
-        success: false,
-        message: "You are not authorized to reschedule this appointment.",
-      });
-    }
+    if (appointment.patient.toString() !== patientProfile._id.toString())
+      return res.status(403).json({ success: false, message: "You are not authorized to reschedule this appointment." });
 
-    // Cannot reschedule cancelled or completed appointments
-    if (["cancelled", "completed"].includes(appointment.status)) {
-      return res.status(400).json({
-        success: false,
-        message: `Cannot reschedule a ${appointment.status} appointment.`,
-      });
-    }
+    if (["cancelled", "completed"].includes(appointment.status))
+      return res.status(400).json({ success: false, message: `Cannot reschedule a ${appointment.status} appointment.` });
 
-    // Block rescheduling if the appointment day has already started (inProgress or past)
-    if (hasAppointmentDayStarted(appointment.date)) {
-      return res.status(400).json({
-        success: false,
-        message:
-          "Cannot reschedule an appointment once its day has started. Please contact the clinic directly.",
-      });
-    }
+    if (hasAppointmentDayStarted(appointment.date))
+      return res.status(400).json({ success: false, message: "Cannot reschedule an appointment once its day has started." });
 
-    // Validate the new date is in the future (not already started)
-    const newDate = new Date(date);
-    if (hasAppointmentDayStarted(newDate)) {
-      return res.status(400).json({
-        success: false,
-        message: "The new appointment date must be a future date.",
-      });
-    }
+    const newDate = new Date(`${date}T00:00:00.000Z`);
+    if (hasAppointmentDayStarted(newDate))
+      return res.status(400).json({ success: false, message: "The new appointment date must be a future date." });
 
-    // Apply updates
     appointment.date = newDate;
     appointment.slotStart = slotStart;
     appointment.slotEnd = slotEnd;
     if (timeChosed !== undefined) appointment.timeChosed = timeChosed;
-    appointment.status = "upcoming"; // reset to upcoming after reschedule
-
+    appointment.status = "upcoming";
     await appointment.save();
 
-    return res.status(200).json({
-      success: true,
-      message: "Appointment rescheduled successfully.",
-      data: appointment,
-    });
+    return res.status(200).json({ success: true, message: "Appointment rescheduled successfully.", data: appointment });
   } catch (error) {
     console.error("rescheduleAppointment error:", error);
-    return res.status(500).json({
-      success: false,
-      message: "Server error while rescheduling appointment.",
-    });
+    return res.status(500).json({ success: false, message: "Server error while rescheduling appointment." });
   }
 };
