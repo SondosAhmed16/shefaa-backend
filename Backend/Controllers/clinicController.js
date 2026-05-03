@@ -318,6 +318,11 @@ exports.deleteClinic = async (req, res) => {
 //   "booking_locked" — slots visible but isBookingLocked = true
 //   "day_locked"     — isDayLocked = true, no slots returned
 //   "closed"         — isActive = false or day not in schedule
+//
+// Slot reason values (when available = false):
+//   "expired"              — past date, slot was never booked
+//   "Slot is fully booked." — patientsPerSlot reached
+//   "Daily capacity reached." — dailyCapacity reached
 // ─────────────────────────────────────────────────────────────────────────────
 
 exports.getDaySlots = async (req, res) => {
@@ -354,6 +359,10 @@ exports.getDaySlots = async (req, res) => {
       return res.status(400).json({ message: "Invalid date format. Use YYYY-MM-DD." });
     }
 
+    const todayUTC = new Date();
+    todayUTC.setUTCHours(0, 0, 0, 0);
+    const isPast = requestedDate < todayUTC;
+
     const DAYS = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];
     const dayName = DAYS[requestedDate.getUTCDay()];
 
@@ -363,7 +372,7 @@ exports.getDaySlots = async (req, res) => {
     // ── 5. Get day entry ────────────────────────────────────────────────────
     const dayEntry = schedule.days.find((d) => d.day === dayName);
 
-    const base = { date, day: dayName };
+    const base = { date, day: dayName, isPast };
 
     if (!dayEntry) {
       return res.status(200).json({
@@ -408,8 +417,8 @@ exports.getDaySlots = async (req, res) => {
     }
 
     // ── 6. Resolve slot settings ────────────────────────────────────────────
-    const slotDuration   = dayEntry.slotDuration   ?? schedule.slotDuration;
-    const dailyCapacity  = dayEntry.dailyCapacity  ?? schedule.dailyCapacity;
+    const slotDuration    = dayEntry.slotDuration    ?? schedule.slotDuration;
+    const dailyCapacity   = dayEntry.dailyCapacity   ?? schedule.dailyCapacity;
     const patientsPerSlot = dayEntry.patientsPerSlot ?? schedule.patientsPerSlot;
 
     // ── 7. Generate raw slots ───────────────────────────────────────────────
@@ -453,17 +462,22 @@ exports.getDaySlots = async (req, res) => {
       const bookedCount = bookedPerSlot[slot.startTime] ?? 0;
       const slotFull    = bookedCount >= patientsPerSlot;
       const dayFull     = totalBookedToday >= dailyCapacity;
-      const isAvailable = !slotFull && !dayFull;
+      const isExpired   = isPast && bookedCount === 0;
+      const isAvailable = !isPast && !slotFull && !dayFull;
 
       return {
         ...slot,
         available: isAvailable,
         bookedCount,
         patientsPerSlot,
-        remainingInSlot: Math.max(0, patientsPerSlot - bookedCount),
-        remainingInDay:  Math.max(0, dailyCapacity - totalBookedToday),
-        ...(isAvailable ? {} : {
-          reason: slotFull ? "Slot is fully booked." : "Daily capacity reached.",
+        remainingInSlot: isAvailable ? Math.max(0, patientsPerSlot - bookedCount) : 0,
+        remainingInDay:  isAvailable ? Math.max(0, dailyCapacity - totalBookedToday) : 0,
+        ...(!isAvailable && {
+          reason: isExpired
+            ? "expired"
+            : slotFull
+            ? "Slot is fully booked."
+            : "Daily capacity reached.",
         }),
       };
     });
