@@ -23,8 +23,6 @@ router.get('/medications', auth, patientController.getMedications);
 
 router.post('/medications', auth, patientController.addMedication);
 
-router.get('/appointments/upcoming', auth, appointmentController.getAppointments);
-
 //router.get('/appointments', auth, authorizeRoles('patient'), patientController.getAppointments);
 router.get('/notifications', auth, notificationController.getMyNotifications);
 
