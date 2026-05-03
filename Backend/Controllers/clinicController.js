@@ -3,6 +3,7 @@ const Clinic = require("../Models/Clinic");
 const Doctor = require("../Models/Doctors");
 const Appointment = require("../Models/Appointment");
 const Patient = require("../Models/Patients");
+
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
 const timeToMins = (t) => {
@@ -16,21 +17,10 @@ const minsToTime = (mins) => {
   return `${h}:${m}`;
 };
 
-const getWeekStart = (date) => {
-  const d = new Date(date);
-  // اشتغل بـ UTC عشان يتطابق مع اللي المخزن في الـ DB
-  const day = d.getUTCDay(); // 0 Sun … 6 Sat
-  const diff = day === 6 ? 0 : day + 1;
-  d.setUTCDate(d.getUTCDate() - diff);
-  d.setUTCHours(0, 0, 0, 0);
-  return d;
-};
-
 const overlaps = (s1, e1, s2, e2) => s1 < e2 && e1 > s2;
 
 const rangesOverlap = (a1, a2, b1, b2) => a1 < b2 && b1 < a2;
 
-// Used by createClinic / editClinic / overrideWeekSchedule slotsPreview
 const buildDaySlots = (open, close, breaks = [], slotDuration) => {
   const slots = [];
   const sortedBreaks = [...breaks].sort((a, b) => a.start - b.start);
@@ -51,8 +41,8 @@ const buildDaySlots = (open, close, breaks = [], slotDuration) => {
   return slots;
 };
 
-const resolveScheduleSlots = (resolvedWeek) => {
-  const { days, slotDuration } = resolvedWeek;
+const resolveScheduleSlots = (schedule) => {
+  const { days, slotDuration } = schedule;
   const result = {};
   for (const day of days) {
     if (!day.isActive || day.isDayLocked) continue;
@@ -86,10 +76,6 @@ const checkNoOverlapForDoctor = async (doctorId, newDays, excludeClinicId = null
   return { conflict: false };
 };
 
-/**
- * Build enriched time slots for getDaySlots.
- * Respects breaks, dailyCapacity cap, and returns human-readable times.
- */
 const buildSlots = ({ open, close, slotDuration, dailyCapacity, breaks = [] }) => {
   const validBreaks = breaks.filter(
     (b) => b.start != null && b.end != null && b.start < b.end
@@ -110,7 +96,7 @@ const buildSlots = ({ open, close, slotDuration, dailyCapacity, breaks = [] }) =
       end:       slotEnd,
       startTime: minsToTime(t),
       endTime:   minsToTime(slotEnd),
-      available: true, // flip to false once Appointments collection is wired up
+      available: true,
     });
     index++;
 
@@ -162,14 +148,14 @@ exports.createClinic = async (req, res) => {
       });
 
       return {
-        day: d.day, isActive: d.isActive !== false,
+        day: d.day,
+        isActive:        d.isActive !== false,
         open, close, breaks,
         slotDuration:    d.slotDuration    ?? null,
         dailyCapacity:   d.dailyCapacity   ?? null,
         patientsPerSlot: d.patientsPerSlot ?? null,
         isDayLocked:     d.isDayLocked     ?? false,
         isBookingLocked: d.isBookingLocked ?? false,
-        hasAppointments: false,
       };
     });
 
@@ -191,8 +177,7 @@ exports.createClinic = async (req, res) => {
 
     await Doctor.findByIdAndUpdate(doctorId, { $push: { clinics: clinic._id } });
 
-    const resolvedWeek  = clinic.resolveWeek(new Date());
-    const slotsPreview  = resolveScheduleSlots({ ...resolvedWeek, slotDuration });
+    const slotsPreview = resolveScheduleSlots(clinic.defaultSchedule);
 
     return res.status(201).json({ message: "Clinic created successfully.", clinic, slotsPreview });
 
@@ -250,13 +235,14 @@ exports.editClinic = async (req, res) => {
         });
 
         return {
-          day: d.day, isActive: d.isActive !== false, open, close, breaks,
+          day: d.day,
+          isActive:        d.isActive !== false,
+          open, close, breaks,
           slotDuration:    d.slotDuration    ?? null,
           dailyCapacity:   d.dailyCapacity   ?? null,
           patientsPerSlot: d.patientsPerSlot ?? null,
           isDayLocked:     d.isDayLocked     ?? false,
           isBookingLocked: d.isBookingLocked ?? false,
-          hasAppointments: d.hasAppointments ?? false,
         };
       });
 
@@ -274,13 +260,13 @@ exports.editClinic = async (req, res) => {
       clinic.defaultSchedule.patientsPerSlot = patientsPerSlot;
     }
 
-    if (name)                         clinic.name             = name.trim();
-    if (city)                         clinic.city             = city.trim();
-    if (address)                      clinic.address          = address.trim();
-    if (price != null)                clinic.price            = price;
+    if (name)                           clinic.name             = name.trim();
+    if (city)                           clinic.city             = city.trim();
+    if (address)                        clinic.address          = address.trim();
+    if (price != null)                  clinic.price            = price;
     if (operatingLicense !== undefined) clinic.operatingLicense = operatingLicense;
-    if (status)                       clinic.status           = status;
-    if (location?.coordinates)        clinic.location         = { type: "Point", coordinates: location.coordinates };
+    if (status)                         clinic.status           = status;
+    if (location?.coordinates)          clinic.location         = { type: "Point", coordinates: location.coordinates };
 
     await clinic.save();
     return res.status(200).json({ message: "Clinic updated successfully.", clinic });
@@ -324,217 +310,8 @@ exports.deleteClinic = async (req, res) => {
   }
 };
 
-// ─── Week Override ────────────────────────────────────────────────────────────
-
-exports.overrideWeekSchedule = async (req, res) => {
-  try {
-    const doctor = await Doctor.findOne({ userId: req.user.id });
-    if (!doctor) return res.status(403).json({ message: "Doctor profile not found." });
-
-    const clinic = await Clinic.findById(req.params.id);
-    if (!clinic) return res.status(404).json({ message: "Clinic not found." });
-    if (clinic.doctorId.toString() !== doctor._id.toString())
-      return res.status(403).json({ message: "Not authorized." });
-
-    const { weekStart, days = [] } = req.body;
-    if (!weekStart) return res.status(400).json({ message: "weekStart is required." });
-
-    const weekStartDate = new Date(weekStart);
-    if (isNaN(weekStartDate.getTime()))
-      return res.status(400).json({ message: "Invalid weekStart date." });
-    if (!Array.isArray(days))
-      return res.status(400).json({ message: "days must be an array." });
-
-    const VALID_DAYS = ["Saturday", "Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday"];
-    const defaultDays = clinic.defaultSchedule.days;
-
-    const normalisedOverrideDays = days.map((d, i) => {
-      if (!VALID_DAYS.includes(d.day))
-        throw { status: 400, message: `Invalid day "${d.day}" at index ${i}.` };
-
-      const defDay = defaultDays.find((dd) => dd.day === d.day);
-      const open  = d.open  != null ? (typeof d.open  === "string" ? timeToMins(d.open)  : d.open)  : defDay?.open;
-      const close = d.close != null ? (typeof d.close === "string" ? timeToMins(d.close) : d.close) : defDay?.close;
-
-      if (open == null || close == null)
-        throw { status: 400, message: `${d.day}: open and close are required (no default found).` };
-      if (open >= close)
-        throw { status: 400, message: `${d.day}: open must be before close.` };
-
-      let breaks = defDay?.breaks ?? [];
-      if (d.breaks !== undefined) {
-        breaks = (d.breaks || []).map((br) => {
-          const bStart = typeof br.start === "string" ? timeToMins(br.start) : br.start;
-          const bEnd   = typeof br.end   === "string" ? timeToMins(br.end)   : br.end;
-          if (bStart < open || bEnd > close || bStart >= bEnd)
-            throw { status: 400, message: `${d.day}: invalid break ${bStart}–${bEnd}.` };
-          return { start: bStart, end: bEnd, label: br.label || "" };
-        });
-      }
-
-      return {
-        day:  d.day,
-        isActive:        d.isActive        ?? defDay?.isActive        ?? true,
-        open, close, breaks,
-        slotDuration:    d.slotDuration    ?? defDay?.slotDuration    ?? null,
-        dailyCapacity:   d.dailyCapacity   ?? defDay?.dailyCapacity   ?? null,
-        patientsPerSlot: d.patientsPerSlot ?? defDay?.patientsPerSlot ?? null,
-        isDayLocked:     d.isDayLocked     ?? defDay?.isDayLocked     ?? false,
-        isBookingLocked: d.isBookingLocked ?? defDay?.isBookingLocked ?? false,
-        // ✅ Preserve existing hasAppointments unless explicitly sent
-        hasAppointments: d.hasAppointments ?? defDay?.hasAppointments ?? false,
-      };
-    });
-
-    const dayNames = normalisedOverrideDays.map((d) => d.day);
-    if (new Set(dayNames).size !== dayNames.length)
-      return res.status(400).json({ message: "Duplicate days in request." });
-
-    const existingOverrideIdx = clinic.weeklyOverrides.findIndex(
-      (o) => o.weekStart.toISOString() === weekStartDate.toISOString()
-    );
-
-    if (existingOverrideIdx === -1) {
-      clinic.weeklyOverrides.push({
-        weekStart:       weekStartDate,
-        days:            normalisedOverrideDays,
-        slotDuration:    req.body.slotDuration    ?? null,
-        dailyCapacity:   req.body.dailyCapacity   ?? null,
-        patientsPerSlot: req.body.patientsPerSlot ?? null,
-      });
-    } else {
-      const existing = clinic.weeklyOverrides[existingOverrideIdx];
-      for (const newDay of normalisedOverrideDays) {
-        const idx = existing.days.findIndex((d) => d.day === newDay.day);
-        if (idx === -1) {
-          existing.days.push(newDay);
-        } else {
-          // ✅ Never overwrite hasAppointments with false if it was already true
-          const prevHasAppointments = existing.days[idx].hasAppointments;
-          existing.days[idx] = {
-            ...newDay,
-            hasAppointments: prevHasAppointments || newDay.hasAppointments,
-          };
-        }
-      }
-      if (req.body.slotDuration    != null) existing.slotDuration    = req.body.slotDuration;
-      if (req.body.dailyCapacity   != null) existing.dailyCapacity   = req.body.dailyCapacity;
-      if (req.body.patientsPerSlot != null) existing.patientsPerSlot = req.body.patientsPerSlot;
-    }
-
-    await clinic.save();
-
-    const resolvedWeek = clinic.resolveWeek(weekStartDate);
-    const slotsPreview = resolveScheduleSlots(resolvedWeek);
-
-    return res.status(200).json({
-      message: "Week schedule overridden successfully.",
-      weekStart: weekStartDate,
-      resolvedWeek,
-      slotsPreview,
-    });
-
-  } catch (err) {
-    if (err.status) return res.status(err.status).json({ message: err.message });
-    console.error("overrideWeekSchedule error:", err);
-    return res.status(500).json({ message: "Internal server error." });
-  }
-};
-
-exports.deleteWeekOverride = async (req, res) => {
-  try {
-    const doctor = await Doctor.findOne({ userId: req.user.id });
-    if (!doctor) return res.status(403).json({ message: "Doctor profile not found." });
-
-    const clinic = await Clinic.findById(req.params.id);
-    if (!clinic) return res.status(404).json({ message: "Clinic not found." });
-    if (clinic.doctorId.toString() !== doctor._id.toString())
-      return res.status(403).json({ message: "Not authorized." });
-
-    const { weekStart } = req.body;
-    if (!weekStart) return res.status(400).json({ message: "weekStart is required." });
-
-    const weekStartDate = new Date(weekStart);
-    const before = clinic.weeklyOverrides.length;
-    clinic.weeklyOverrides = clinic.weeklyOverrides.filter(
-      (o) => o.weekStart.toISOString() !== weekStartDate.toISOString()
-    );
-    if (clinic.weeklyOverrides.length === before)
-      return res.status(404).json({ message: "No override found for this week." });
-
-    await clinic.save();
-    return res.status(200).json({ message: "Override removed. Default schedule restored." });
-
-  } catch (err) {
-    console.error("deleteWeekOverride error:", err);
-    return res.status(500).json({ message: "Internal server error." });
-  }
-};
-
-// ─── Day Appointment Flag ─────────────────────────────────────────────────────
-
-exports.setDayAppointmentFlag = async (req, res) => {
-  try {
-    const doctor = await Doctor.findOne({ userId: req.user.id });
-    if (!doctor) return res.status(403).json({ message: "Doctor profile not found." });
-
-    const clinic = await Clinic.findById(req.params.id);
-    if (!clinic) return res.status(404).json({ message: "Clinic not found." });
-    if (clinic.doctorId.toString() !== doctor._id.toString())
-      return res.status(403).json({ message: "Not authorized." });
-
-    const { weekStart, day, hasAppointments } = req.body;
-    if (!weekStart || !day || hasAppointments === undefined) {
-      return res.status(400).json({ message: "weekStart, day, and hasAppointments are required." });
-    }
-
-    const VALID_DAYS = ["Saturday", "Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday"];
-    if (!VALID_DAYS.includes(day))
-      return res.status(400).json({ message: `Invalid day "${day}".` });
-
-    const weekStartDate = new Date(weekStart);
-    if (isNaN(weekStartDate.getTime()))
-      return res.status(400).json({ message: "Invalid weekStart date." });
-
-    let overrideIdx = clinic.weeklyOverrides.findIndex(
-      (o) => o.weekStart.toISOString() === weekStartDate.toISOString()
-    );
-
-    if (overrideIdx === -1) {
-      clinic.weeklyOverrides.push({ weekStart: weekStartDate, days: [] });
-      overrideIdx = clinic.weeklyOverrides.length - 1;
-    }
-
-    const override = clinic.weeklyOverrides[overrideIdx];
-    const dayIdx   = override.days.findIndex((d) => d.day === day);
-
-    if (dayIdx === -1) {
-      const defDay = clinic.defaultSchedule.days.find((d) => d.day === day);
-      if (!defDay)
-        return res.status(404).json({ message: `Day "${day}" not found in default schedule.` });
-      override.days.push({ ...defDay.toObject(), hasAppointments: Boolean(hasAppointments) });
-    } else {
-      override.days[dayIdx].hasAppointments = Boolean(hasAppointments);
-    }
-
-    await clinic.save();
-    return res.status(200).json({
-      message: `hasAppointments for ${day} set to ${hasAppointments}.`,
-      weekStart: weekStartDate,
-      day,
-      hasAppointments: Boolean(hasAppointments),
-    });
-  } catch (err) {
-    console.error("setDayAppointmentFlag error:", err);
-    return res.status(500).json({ message: "Internal server error." });
-  }
-};
-
 // ─── GET Day Slots ────────────────────────────────────────────────────────────
 // GET /api/clinic/:id/day-slots?date=YYYY-MM-DD
-//
-// Returns resolved appointment slots for a specific day.
-// Merges weeklyOverrides on top of defaultSchedule (same as the UI's resolveDay).
 //
 // Response status values:
 //   "open"           — normal, slots available for booking
@@ -551,69 +328,42 @@ exports.getDaySlots = async (req, res) => {
 
     if (req.user.role === "doctor") {
       doctor = await Doctor.findOne({ userId: req.user._id });
-      if (!doctor) {
-        return res.status(403).json({ message: "Doctor profile not found." });
-      }
+      if (!doctor) return res.status(403).json({ message: "Doctor profile not found." });
     }
 
     if (req.user.role === "patient") {
       patient = await Patient.findOne({ userId: req.user._id });
-      if (!patient) {
-        return res.status(403).json({ message: "Patient profile not found." });
-      }
+      if (!patient) return res.status(403).json({ message: "Patient profile not found." });
     }
 
     // ── 2. Load clinic ──────────────────────────────────────────────────────
     const clinic = await Clinic.findById(req.params.id);
-    if (!clinic) {
-      return res.status(404).json({ message: "Clinic not found." });
-    }
+    if (!clinic) return res.status(404).json({ message: "Clinic not found." });
 
-    // doctor بس اللي نتحقق إنه صاحب العيادة
-    if (doctor && clinic.doctorId.toString() !== doctor._id.toString()) {
+    if (doctor && clinic.doctorId.toString() !== doctor._id.toString())
       return res.status(403).json({ message: "Not authorized." });
-    }
 
     // ── 3. Parse & validate date ────────────────────────────────────────────
     const { date } = req.query;
-
     if (!date) {
-      return res.status(400).json({
-        message: "Query param 'date' is required (YYYY-MM-DD).",
-      });
+      return res.status(400).json({ message: "Query param 'date' is required (YYYY-MM-DD)." });
     }
 
     const requestedDate = new Date(`${date}T00:00:00.000Z`);
     if (isNaN(requestedDate.getTime())) {
-      return res.status(400).json({
-        message: "Invalid date format. Use YYYY-MM-DD.",
-      });
+      return res.status(400).json({ message: "Invalid date format. Use YYYY-MM-DD." });
     }
 
-    const DAYS = [
-      "Sunday",
-      "Monday",
-      "Tuesday",
-      "Wednesday",
-      "Thursday",
-      "Friday",
-      "Saturday",
-    ];
-
+    const DAYS = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];
     const dayName = DAYS[requestedDate.getUTCDay()];
 
-    // ── 4. Resolve schedule ─────────────────────────────────────────────────
-    const weekStart = getWeekStart(requestedDate);
-    const resolved = clinic.resolveWeek(weekStart);
+    // ── 4. Get schedule from defaultSchedule directly ───────────────────────
+    const schedule = clinic.defaultSchedule;
 
     // ── 5. Get day entry ────────────────────────────────────────────────────
-    const dayEntry = resolved.days.find((d) => d.day === dayName);
+    const dayEntry = schedule.days.find((d) => d.day === dayName);
 
-    const base = {
-      date,
-      day: dayName,
-      weekStart: weekStart.toISOString(),
-    };
+    const base = { date, day: dayName };
 
     if (!dayEntry) {
       return res.status(200).json({
@@ -622,7 +372,7 @@ exports.getDaySlots = async (req, res) => {
         reason: "Day not found in clinic schedule.",
         open: null,
         close: null,
-        slotDuration: resolved.slotDuration,
+        slotDuration: schedule.slotDuration,
         totalSlots: 0,
         breaks: [],
         slots: [],
@@ -636,7 +386,7 @@ exports.getDaySlots = async (req, res) => {
         reason: "Clinic is closed on this day.",
         open: null,
         close: null,
-        slotDuration: resolved.slotDuration,
+        slotDuration: schedule.slotDuration,
         totalSlots: 0,
         breaks: [],
         slots: [],
@@ -650,7 +400,7 @@ exports.getDaySlots = async (req, res) => {
         reason: "This day is fully locked.",
         open: dayEntry.open,
         close: dayEntry.close,
-        slotDuration: dayEntry.slotDuration ?? resolved.slotDuration,
+        slotDuration: dayEntry.slotDuration ?? schedule.slotDuration,
         totalSlots: 0,
         breaks: dayEntry.breaks ?? [],
         slots: [],
@@ -658,12 +408,11 @@ exports.getDaySlots = async (req, res) => {
     }
 
     // ── 6. Resolve slot settings ────────────────────────────────────────────
-    const slotDuration = dayEntry.slotDuration ?? resolved.slotDuration;
-    const dailyCapacity = dayEntry.dailyCapacity ?? resolved.dailyCapacity;
-    const patientsPerSlot =
-      dayEntry.patientsPerSlot ?? resolved.patientsPerSlot;
+    const slotDuration   = dayEntry.slotDuration   ?? schedule.slotDuration;
+    const dailyCapacity  = dayEntry.dailyCapacity  ?? schedule.dailyCapacity;
+    const patientsPerSlot = dayEntry.patientsPerSlot ?? schedule.patientsPerSlot;
 
-    // ── 7. Generate slots ───────────────────────────────────────────────────
+    // ── 7. Generate raw slots ───────────────────────────────────────────────
     const rawSlots = buildSlots({
       open: dayEntry.open,
       close: dayEntry.close,
@@ -702,9 +451,8 @@ exports.getDaySlots = async (req, res) => {
     // ── 9. Build final slots ────────────────────────────────────────────────
     const slots = rawSlots.map((slot) => {
       const bookedCount = bookedPerSlot[slot.startTime] ?? 0;
-
-      const slotFull = bookedCount >= patientsPerSlot;
-      const dayFull = totalBookedToday >= dailyCapacity;
+      const slotFull    = bookedCount >= patientsPerSlot;
+      const dayFull     = totalBookedToday >= dailyCapacity;
       const isAvailable = !slotFull && !dayFull;
 
       return {
@@ -713,14 +461,10 @@ exports.getDaySlots = async (req, res) => {
         bookedCount,
         patientsPerSlot,
         remainingInSlot: Math.max(0, patientsPerSlot - bookedCount),
-        remainingInDay: Math.max(0, dailyCapacity - totalBookedToday),
-        ...(isAvailable
-          ? {}
-          : {
-              reason: slotFull
-                ? "Slot is fully booked."
-                : "Daily capacity reached.",
-            }),
+        remainingInDay:  Math.max(0, dailyCapacity - totalBookedToday),
+        ...(isAvailable ? {} : {
+          reason: slotFull ? "Slot is fully booked." : "Daily capacity reached.",
+        }),
       };
     });
 
@@ -730,9 +474,7 @@ exports.getDaySlots = async (req, res) => {
     return res.status(200).json({
       ...base,
       status,
-      ...(dayEntry.isBookingLocked && {
-        reason: "New bookings are locked for this day.",
-      }),
+      ...(dayEntry.isBookingLocked && { reason: "New bookings are locked for this day." }),
       open: dayEntry.open,
       close: dayEntry.close,
       slotDuration,
@@ -748,6 +490,7 @@ exports.getDaySlots = async (req, res) => {
       })),
       slots,
     });
+
   } catch (err) {
     console.error("getDaySlots error:", err);
     return res.status(500).json({ message: "Internal server error." });
