@@ -811,7 +811,7 @@ exports.getPrescriptionByAppointment = async (req, res) => {
 exports.completeAppointment = async (req, res) => {
   try {
     const { id } = req.params;
-    const { slotStart, slotEnd } = req.body;
+    const { slotStart, slotEnd, ... } = req.body || {};
 
     // ── 1. Role guard ─────────────────────────────
     if (req.user.role !== "doctor") {
