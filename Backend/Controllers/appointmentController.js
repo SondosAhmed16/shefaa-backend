@@ -5,7 +5,7 @@ const Clinic = require("../Models/Clinic");
 const Doctor = require("../Models/Doctors");
 const Patient = require("../Models/Patients");
 const Notification = require("../Models/Notification");
-
+const Prescription = require("../Models/Prescription");
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 
 const timeToMins = (t) => {
@@ -703,5 +703,167 @@ exports.markAppointmentAsPaid = async (req, res) => {
       success: false,
       message: "Server error while updating payment status.",
     });
+  }
+};
+
+
+
+// ─── POST /api/prescriptions ──────────────────────────────────────────────────
+// Doctor creates a prescription for an appointment
+exports.createPrescription = async (req, res) => {
+  try {
+    const { appointment: appointmentId, diagnosis, medicines, labTests, imaging, nextVisit, notes } = req.body;
+
+    // ── 1. Role guard ─────────────────────────────
+    if (req.user.role !== "doctor") {
+      return res.status(403).json({ success: false, message: "Only doctors can create prescriptions." });
+    }
+
+    // ── 2. Load doctor profile ────────────────────
+    const doctorProfile = await Doctor.findOne({ userId: req.user._id });
+    if (!doctorProfile) {
+      return res.status(404).json({ success: false, message: "Doctor profile not found." });
+    }
+
+    // ── 3. Validate required fields ───────────────
+    if (!appointmentId) {
+      return res.status(400).json({ success: false, message: "appointment ID is required." });
+    }
+
+    // ── 4. Load appointment ───────────────────────
+    const appointment = await Appointment.findById(appointmentId);
+    if (!appointment) {
+      return res.status(404).json({ success: false, message: "Appointment not found." });
+    }
+
+    // ── 5. Ownership check ────────────────────────
+    if (appointment.doctor.toString() !== doctorProfile._id.toString()) {
+      return res.status(403).json({ success: false, message: "You are not authorized to prescribe for this appointment." });
+    }
+
+    // ── 6. Prevent duplicate prescription ─────────
+    if (appointment.prescription) {
+      return res.status(409).json({ success: false, message: "A prescription already exists for this appointment. Use update instead." });
+    }
+
+    // ── 7. Create prescription ────────────────────
+    const prescription = await Prescription.create({
+      appointment: appointment._id,
+      doctor:      doctorProfile._id,
+      patient:     appointment.patient,
+      diagnosis:   diagnosis   || "",
+      medicines:   medicines   || [],
+      labTests:    labTests    || [],
+      imaging:     imaging     || [],
+      nextVisit:   nextVisit   || "",
+      notes:       notes       || "",
+    });
+
+    // ── 8. Link prescription → appointment ────────
+    appointment.prescription = prescription._id;
+    await appointment.save();
+
+    // ── 9. Return populated prescription ──────────
+    const populated = await Prescription.findById(prescription._id)
+      .populate("doctor",      "name specialization")
+      .populate("patient",     "userId age gender")
+      .populate("appointment", "date slotStart slotEnd clinic");
+
+    return res.status(201).json({
+      success: true,
+      message: "Prescription created successfully.",
+      data: populated,
+    });
+
+  } catch (error) {
+    console.error("createPrescription error:", error);
+    return res.status(500).json({ success: false, message: "Server error while creating prescription." });
+  }
+};
+
+
+// ─── GET /api/prescriptions/appointment/:appointmentId ────────────────────────
+// Get prescription for a specific appointment
+exports.getPrescriptionByAppointment = async (req, res) => {
+  try {
+    const { appointmentId } = req.params;
+
+    const prescription = await Prescription.findOne({ appointment: appointmentId })
+      .populate("doctor",      "name specialization")
+      .populate("patient",     "userId age gender")
+      .populate("appointment", "date slotStart slotEnd clinic");
+
+    if (!prescription) {
+      return res.status(404).json({ success: false, message: "No prescription found for this appointment." });
+    }
+
+    return res.status(200).json({ success: true, data: prescription });
+
+  } catch (error) {
+    console.error("getPrescriptionByAppointment error:", error);
+    return res.status(500).json({ success: false, message: "Server error." });
+  }
+};
+
+
+// ─── PATCH /api/appointments/:id/complete ─────────────────────────────────────
+// Doctor marks an appointment as completed + optionally updates slot times
+exports.completeAppointment = async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { slotStart, slotEnd } = req.body;
+
+    // ── 1. Role guard ─────────────────────────────
+    if (req.user.role !== "doctor") {
+      return res.status(403).json({ success: false, message: "Only doctors can complete appointments." });
+    }
+
+    // ── 2. Validate ObjectId ──────────────────────
+    if (!mongoose.Types.ObjectId.isValid(id)) {
+      return res.status(400).json({ success: false, message: "Invalid appointment ID." });
+    }
+
+    // ── 3. Load doctor profile ────────────────────
+    const doctorProfile = await Doctor.findOne({ userId: req.user._id });
+    if (!doctorProfile) {
+      return res.status(404).json({ success: false, message: "Doctor profile not found." });
+    }
+
+    // ── 4. Load appointment ───────────────────────
+    const appointment = await Appointment.findById(id);
+    if (!appointment) {
+      return res.status(404).json({ success: false, message: "Appointment not found." });
+    }
+
+    // ── 5. Ownership check ────────────────────────
+    if (appointment.doctor.toString() !== doctorProfile._id.toString()) {
+      return res.status(403).json({ success: false, message: "You are not authorized to update this appointment." });
+    }
+
+    // ── 6. Status guard ───────────────────────────
+    if (appointment.status === "cancelled") {
+      return res.status(400).json({ success: false, message: "Cannot complete a cancelled appointment." });
+    }
+
+    if (appointment.status === "completed") {
+      return res.status(400).json({ success: false, message: "Appointment is already completed." });
+    }
+
+    // ── 7. Update ─────────────────────────────────
+    appointment.status = "completed";
+    if (slotStart) appointment.slotStart = slotStart;
+    if (slotEnd)   appointment.slotEnd   = slotEnd;
+
+    await appointment.save();
+
+    return res.status(200).json({
+      success: true,
+      message: "Appointment marked as completed.",
+      data: appointment,
+    });
+
+  } catch (error) {
+    console.error("completeAppointment error:", error);
+    return res.status(500).json({ success: false, message: "Server error while completing appointment." });
   }
 };

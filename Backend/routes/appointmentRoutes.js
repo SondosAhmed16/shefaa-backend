@@ -9,4 +9,7 @@ router.get('/my', auth, authorizeRoles('patient','doctor'), appointmentControlle
 router.patch('/:id/cancel', auth, authorizeRoles('patient','doctor'), appointmentController.cancelAppointment);
 router.post('/:id/blockPatient', auth, authorizeRoles('doctor'), appointmentController.blockPatientForNoShow);
 router.patch("/:id/mark-paid", auth, authorizeRoles('doctor'), appointmentController.markAppointmentAsPaid);
+router.post("/prescription", auth, authorizeRoles('doctor'),appointmentController.createPrescription);
+router.get("/:appointmentId/getPrescription", auth, authorizeRoles('doctor','patient'),appointmentController.getPrescriptionByAppointment);
+router.patch("/:id/complete", auth, authorizeRoles('doctor'), appointmentController.completeAppointment);
 module.exports = router;

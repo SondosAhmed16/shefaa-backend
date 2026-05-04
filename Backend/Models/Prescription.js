@@ -1,5 +1,5 @@
 const mongoose = require("mongoose");
-const medicationSchema = require("./Medication"); // CommonJS
+const medicationSchema = require("./Medication");
 
 const prescriptionSchema = new mongoose.Schema(
   {
@@ -21,9 +21,39 @@ const prescriptionSchema = new mongoose.Schema(
       required: true,
     },
 
+    // ── NEW: Diagnosis ──────────────────────────────
+    diagnosis: {
+      type: String,
+      default: "",
+      trim: true,
+    },
+
     medicines: {
-      type: [medicationSchema], 
+      type: [medicationSchema],
       default: [],
+    },
+
+    // ── NEW: Lab Tests ──────────────────────────────
+    labTests: [
+      {
+        type: String,
+        trim: true,
+      },
+    ],
+
+    // ── NEW: Imaging / Radiology ────────────────────
+    imaging: [
+      {
+        type: String,
+        trim: true,
+      },
+    ],
+
+    // ── NEW: Next Visit ─────────────────────────────
+    nextVisit: {
+      type: String,   // e.g. "2 weeks", "1 month"
+      default: "",
+      trim: true,
     },
 
     notes: {
