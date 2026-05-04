@@ -687,7 +687,7 @@ exports.markAppointmentAsPaid = async (req, res) => {
         recipient: patientProfile.userId._id,
         title: "Payment Confirmed",
         message: `Your payment for the appointment on ${appointment.date.toDateString()} has been marked as paid.`,
-        type: "payment",
+        type: "payment_confirmed", // ✅ matches the enum
       });
     }
 
