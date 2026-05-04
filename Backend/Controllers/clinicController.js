@@ -92,10 +92,10 @@ const buildSlots = ({ open, close, slotDuration, dailyCapacity, breaks = [] }) =
 
     slots.push({
       index,
-      start:     t,
-      end:       slotEnd,
+      start: t,
+      end: slotEnd,
       startTime: minsToTime(t),
-      endTime:   minsToTime(slotEnd),
+      endTime: minsToTime(slotEnd),
       available: true,
     });
     index++;
@@ -134,14 +134,14 @@ exports.createClinic = async (req, res) => {
     const normalisedDays = days.map((d, i) => {
       if (!VALID_DAYS.includes(d.day))
         throw { status: 400, message: `Invalid day "${d.day}" at index ${i}.` };
-      const open  = typeof d.open  === "string" ? timeToMins(d.open)  : d.open;
+      const open = typeof d.open === "string" ? timeToMins(d.open) : d.open;
       const close = typeof d.close === "string" ? timeToMins(d.close) : d.close;
       if (open >= close)
         throw { status: 400, message: `${d.day}: open time must be before close time.` };
 
       const breaks = (d.breaks || []).map((br) => {
         const bStart = typeof br.start === "string" ? timeToMins(br.start) : br.start;
-        const bEnd   = typeof br.end   === "string" ? timeToMins(br.end)   : br.end;
+        const bEnd = typeof br.end === "string" ? timeToMins(br.end) : br.end;
         if (bStart < open || bEnd > close || bStart >= bEnd)
           throw { status: 400, message: `${d.day}: break ${bStart}–${bEnd} is invalid.` };
         return { start: bStart, end: bEnd, label: br.label || "" };
@@ -149,12 +149,12 @@ exports.createClinic = async (req, res) => {
 
       return {
         day: d.day,
-        isActive:        d.isActive !== false,
+        isActive: d.isActive !== false,
         open, close, breaks,
-        slotDuration:    d.slotDuration    ?? null,
-        dailyCapacity:   d.dailyCapacity   ?? null,
+        slotDuration: d.slotDuration ?? null,
+        dailyCapacity: d.dailyCapacity ?? null,
         patientsPerSlot: d.patientsPerSlot ?? null,
-        isDayLocked:     d.isDayLocked     ?? false,
+        isDayLocked: d.isDayLocked ?? false,
         isBookingLocked: d.isBookingLocked ?? false,
       };
     });
@@ -203,8 +203,8 @@ exports.editClinic = async (req, res) => {
 
     if (schedule) {
       const {
-        slotDuration    = clinic.defaultSchedule.slotDuration,
-        dailyCapacity   = clinic.defaultSchedule.dailyCapacity,
+        slotDuration = clinic.defaultSchedule.slotDuration,
+        dailyCapacity = clinic.defaultSchedule.dailyCapacity,
         patientsPerSlot = clinic.defaultSchedule.patientsPerSlot,
         days = [],
       } = schedule;
@@ -221,14 +221,14 @@ exports.editClinic = async (req, res) => {
       const normalisedDays = days.map((d, i) => {
         if (!VALID_DAYS.includes(d.day))
           throw { status: 400, message: `Invalid day "${d.day}" at index ${i}.` };
-        const open  = typeof d.open  === "string" ? timeToMins(d.open)  : d.open;
+        const open = typeof d.open === "string" ? timeToMins(d.open) : d.open;
         const close = typeof d.close === "string" ? timeToMins(d.close) : d.close;
         if (open >= close)
           throw { status: 400, message: `${d.day}: open time must be before close time.` };
 
         const breaks = (d.breaks || []).map((br) => {
           const bStart = typeof br.start === "string" ? timeToMins(br.start) : br.start;
-          const bEnd   = typeof br.end   === "string" ? timeToMins(br.end)   : br.end;
+          const bEnd = typeof br.end === "string" ? timeToMins(br.end) : br.end;
           if (bStart < open || bEnd > close || bStart >= bEnd)
             throw { status: 400, message: `${d.day}: break ${bStart}–${bEnd} is invalid.` };
           return { start: bStart, end: bEnd, label: br.label || "" };
@@ -236,12 +236,12 @@ exports.editClinic = async (req, res) => {
 
         return {
           day: d.day,
-          isActive:        d.isActive !== false,
+          isActive: d.isActive !== false,
           open, close, breaks,
-          slotDuration:    d.slotDuration    ?? null,
-          dailyCapacity:   d.dailyCapacity   ?? null,
+          slotDuration: d.slotDuration ?? null,
+          dailyCapacity: d.dailyCapacity ?? null,
           patientsPerSlot: d.patientsPerSlot ?? null,
-          isDayLocked:     d.isDayLocked     ?? false,
+          isDayLocked: d.isDayLocked ?? false,
           isBookingLocked: d.isBookingLocked ?? false,
         };
       });
@@ -254,19 +254,19 @@ exports.editClinic = async (req, res) => {
       const { conflict, message: conflictMsg } = await checkNoOverlapForDoctor(doctorId, activeDays, clinic._id);
       if (conflict) return res.status(409).json({ message: conflictMsg });
 
-      clinic.defaultSchedule.days            = normalisedDays;
-      clinic.defaultSchedule.slotDuration    = slotDuration;
-      clinic.defaultSchedule.dailyCapacity   = dailyCapacity;
+      clinic.defaultSchedule.days = normalisedDays;
+      clinic.defaultSchedule.slotDuration = slotDuration;
+      clinic.defaultSchedule.dailyCapacity = dailyCapacity;
       clinic.defaultSchedule.patientsPerSlot = patientsPerSlot;
     }
 
-    if (name)                           clinic.name             = name.trim();
-    if (city)                           clinic.city             = city.trim();
-    if (address)                        clinic.address          = address.trim();
-    if (price != null)                  clinic.price            = price;
+    if (name) clinic.name = name.trim();
+    if (city) clinic.city = city.trim();
+    if (address) clinic.address = address.trim();
+    if (price != null) clinic.price = price;
     if (operatingLicense !== undefined) clinic.operatingLicense = operatingLicense;
-    if (status)                         clinic.status           = status;
-    if (location?.coordinates)          clinic.location         = { type: "Point", coordinates: location.coordinates };
+    if (status) clinic.status = status;
+    if (location?.coordinates) clinic.location = { type: "Point", coordinates: location.coordinates };
 
     await clinic.save();
     return res.status(200).json({ message: "Clinic updated successfully.", clinic });
@@ -417,8 +417,8 @@ exports.getDaySlots = async (req, res) => {
     }
 
     // ── 6. Resolve slot settings ────────────────────────────────────────────
-    const slotDuration    = dayEntry.slotDuration    ?? schedule.slotDuration;
-    const dailyCapacity   = dayEntry.dailyCapacity   ?? schedule.dailyCapacity;
+    const slotDuration = dayEntry.slotDuration ?? schedule.slotDuration;
+    const dailyCapacity = dayEntry.dailyCapacity ?? schedule.dailyCapacity;
     const patientsPerSlot = dayEntry.patientsPerSlot ?? schedule.patientsPerSlot;
 
     // ── 7. Generate raw slots ───────────────────────────────────────────────
@@ -458,12 +458,17 @@ exports.getDaySlots = async (req, res) => {
     }
 
     // ── 9. Build final slots ────────────────────────────────────────────────
+    const nowMins = new Date().getUTCHours() * 60 + new Date().getUTCMinutes();
+    const isToday = !isPast && requestedDate.toISOString().slice(0, 10) === new Date().toISOString().slice(0, 10);
+
     const slots = rawSlots.map((slot) => {
       const bookedCount = bookedPerSlot[slot.startTime] ?? 0;
-      const slotFull    = bookedCount >= patientsPerSlot;
-      const dayFull     = totalBookedToday >= dailyCapacity;
-      const isExpired   = isPast && bookedCount === 0;
-      const isAvailable = !isPast && !slotFull && !dayFull;
+      const slotFull = bookedCount >= patientsPerSlot;
+      const dayFull = totalBookedToday >= dailyCapacity;
+
+      // expired لو: past date وملقيش حجوزات، أو today والوقت عدى على الـ slot وملقيش حجوزات
+      const isExpired = (isPast && bookedCount === 0) || (isToday && slot.end <= nowMins && bookedCount === 0);
+      const isAvailable = !isPast && !slotFull && !dayFull && !(isToday && slot.end <= nowMins);
 
       return {
         ...slot,
@@ -471,13 +476,13 @@ exports.getDaySlots = async (req, res) => {
         bookedCount,
         patientsPerSlot,
         remainingInSlot: isAvailable ? Math.max(0, patientsPerSlot - bookedCount) : 0,
-        remainingInDay:  isAvailable ? Math.max(0, dailyCapacity - totalBookedToday) : 0,
+        remainingInDay: isAvailable ? Math.max(0, dailyCapacity - totalBookedToday) : 0,
         ...(!isAvailable && {
           reason: isExpired
             ? "expired"
             : slotFull
-            ? "Slot is fully booked."
-            : "Daily capacity reached.",
+              ? "Slot is fully booked."
+              : "Daily capacity reached.",
         }),
       };
     });
