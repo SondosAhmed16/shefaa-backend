@@ -402,11 +402,8 @@ exports.getMyAppointments = async (req, res) => {
   }
 };
 
-const mongoose = require("mongoose");
-const Appointment = require("../models/Appointment");
-const Patient = require("../models/Patient");
-const Doctor = require("../models/Doctor");
-const { hasAppointmentDayStarted } = require("../utils/dateHelpers");
+
+
 
 exports.cancelAppointment = async (req, res) => {
   try {
