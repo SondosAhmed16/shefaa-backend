@@ -346,6 +346,15 @@ exports.getMyAppointments = async (req, res) => {
       }
 
       appointments = await Appointment.find({ patient: patientProfile._id })
+        .populate({
+          path: "patient",
+          select: "address age gender height weight bloodType allergies chronicConditions isBlocked",
+          populate: {
+            path: "userId",
+            model: "User",
+            select: "name email phoneNumber",
+          },
+        })
         .populate("doctor", "name specialization")
         .populate("clinic", "name address")
         .populate("prescription")
@@ -393,38 +402,114 @@ exports.getMyAppointments = async (req, res) => {
   }
 };
 
+const mongoose = require("mongoose");
+const Appointment = require("../models/Appointment");
+const Patient = require("../models/Patient");
+const Doctor = require("../models/Doctor");
+const { hasAppointmentDayStarted } = require("../utils/dateHelpers");
+
 exports.cancelAppointment = async (req, res) => {
   try {
-    const patientProfile = await Patient.findOne({ userId: req.user._id });
-    if (!patientProfile)
-      return res.status(404).json({ success: false, message: "Patient profile not found." });
-
     const { id } = req.params;
+
+    // ✅ validate ObjectId
+    if (!mongoose.Types.ObjectId.isValid(id)) {
+      return res.status(400).json({
+        success: false,
+        message: "Invalid appointment ID.",
+      });
+    }
+
+    // ✅ get appointment
     const appointment = await Appointment.findById(id);
+    if (!appointment) {
+      return res.status(404).json({
+        success: false,
+        message: "Appointment not found.",
+      });
+    }
 
-    if (!appointment)
-      return res.status(404).json({ success: false, message: "Appointment not found." });
+    // ✅ authorization حسب الدور
+    let isAuthorized = false;
 
-    if (appointment.patient.toString() !== patientProfile._id.toString())
-      return res.status(403).json({ success: false, message: "You are not authorized to cancel this appointment." });
+    if (req.user.role === "patient") {
+      const patientProfile = await Patient.findOne({ userId: req.user._id });
 
-    if (appointment.status === "cancelled")
-      return res.status(400).json({ success: false, message: "Appointment is already cancelled." });
+      if (!patientProfile) {
+        return res.status(404).json({
+          success: false,
+          message: "Patient profile not found.",
+        });
+      }
 
-    if (appointment.status === "completed")
-      return res.status(400).json({ success: false, message: "Cannot cancel a completed appointment." });
+      isAuthorized =
+        appointment.patient.toString() === patientProfile._id.toString();
+    }
 
-    if (hasAppointmentDayStarted(appointment.date))
-      return res.status(400).json({ success: false, message: "Cannot cancel an appointment on or after its scheduled day." });
+    if (req.user.role === "doctor") {
+      const doctorProfile = await Doctor.findOne({ userId: req.user._id });
 
+      if (!doctorProfile) {
+        return res.status(404).json({
+          success: false,
+          message: "Doctor profile not found.",
+        });
+      }
+
+      isAuthorized =
+        appointment.doctor.toString() === doctorProfile._id.toString();
+    }
+
+    if (!isAuthorized) {
+      return res.status(403).json({
+        success: false,
+        message: "You are not authorized to cancel this appointment.",
+      });
+    }
+
+    // ✅ validations على الحالة
+    if (appointment.status === "cancelled") {
+      return res.status(400).json({
+        success: false,
+        message: "Appointment is already cancelled.",
+      });
+    }
+
+    if (appointment.status === "completed") {
+      return res.status(400).json({
+        success: false,
+        message: "Cannot cancel a completed appointment.",
+      });
+    }
+
+    // ✅ منع الإلغاء يوم المعاد
+    if (hasAppointmentDayStarted(appointment.date)) {
+      return res.status(400).json({
+        success: false,
+        message:
+          "Cannot cancel an appointment on or after its scheduled day.",
+      });
+    }
+
+    // ✅ update
     appointment.status = "cancelled";
+
+    // حسب السيستم بتاعك تقدري تغيري دي
     appointment.paymentStatus = "cancelled";
+
     await appointment.save();
 
-    return res.status(200).json({ success: true, message: "Appointment cancelled successfully.", data: appointment });
+    return res.status(200).json({
+      success: true,
+      message: "Appointment cancelled successfully.",
+      data: appointment,
+    });
   } catch (error) {
     console.error("cancelAppointment error:", error);
-    return res.status(500).json({ success: false, message: "Server error while cancelling appointment." });
+    return res.status(500).json({
+      success: false,
+      message: "Server error while cancelling appointment.",
+    });
   }
 };
 
@@ -529,5 +614,106 @@ exports.blockPatientForNoShow = async (req, res) => {
   } catch (error) {
     console.error("blockPatientForNoShow error:", error);
     return res.status(500).json({ success: false, message: "Server error while blocking patient." });
+  }
+};
+
+// controllers/appointmentController.js
+
+/**
+ * PATCH /api/appointments/:id/mark-paid
+ * Doctor or admin marks an appointment's payment as paid.
+ */
+exports.markAppointmentAsPaid = async (req, res) => {
+  try {
+    const { id } = req.params;
+
+    // ── 1. Validate ObjectId ──────────────────────
+    if (!mongoose.Types.ObjectId.isValid(id)) {
+      return res.status(400).json({
+        success: false,
+        message: "Invalid appointment ID.",
+      });
+    }
+
+    // ── 2. Role guard ─────────────────────────────
+    if (!["doctor", "admin"].includes(req.user.role)) {
+      return res.status(403).json({
+        success: false,
+        message: "Only doctors or admins can mark payments.",
+      });
+    }
+
+    // ── 3. Load appointment ───────────────────────
+    const appointment = await Appointment.findById(id);
+    if (!appointment) {
+      return res.status(404).json({
+        success: false,
+        message: "Appointment not found.",
+      });
+    }
+
+    // ── 4. Ownership check (doctor must own this clinic) ──
+    if (req.user.role === "doctor") {
+      const doctorProfile = await Doctor.findOne({ userId: req.user._id });
+      if (!doctorProfile) {
+        return res.status(404).json({
+          success: false,
+          message: "Doctor profile not found.",
+        });
+      }
+
+      if (appointment.doctor.toString() !== doctorProfile._id.toString()) {
+        return res.status(403).json({
+          success: false,
+          message: "You are not authorized to update this appointment.",
+        });
+      }
+    }
+
+    // ── 5. Guard: don't re-pay or pay cancelled ───
+    if (appointment.paymentStatus === "paid") {
+      return res.status(400).json({
+        success: false,
+        message: "Appointment is already marked as paid.",
+      });
+    }
+
+    if (appointment.status === "cancelled") {
+      return res.status(400).json({
+        success: false,
+        message: "Cannot mark payment for a cancelled appointment.",
+      });
+    }
+
+    // ── 6. Update ─────────────────────────────────
+    appointment.paymentStatus = "paid";
+    appointment.paidAt = new Date();       // optional audit field
+    await appointment.save();
+
+    // ── 7. Notify patient ─────────────────────────
+    const patientProfile = await Patient.findById(appointment.patient)
+      .populate("userId", "_id");
+
+    if (patientProfile?.userId) {
+      await Notification.create({
+        recipient: patientProfile.userId._id,
+        title: "Payment Confirmed",
+        message: `Your payment for the appointment on ${appointment.date.toDateString()} has been marked as paid.`,
+        type: "payment",
+      });
+    }
+
+    return res.status(200).json({
+      success: true,
+      message: "Appointment marked as paid successfully.",
+      data: appointment,
+    });
+
+  } catch (error) {
+    console.error("markAppointmentAsPaid error:", error);
+    return res.status(500).json({
+      success: false,
+      message: "Server error while updating payment status.",
+    });
   }
 };
