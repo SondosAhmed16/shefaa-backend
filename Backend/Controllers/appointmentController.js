@@ -335,7 +335,6 @@ exports.getMyAppointments = async (req, res) => {
       if (!patientProfile)
         return res.status(404).json({ success: false, message: "Patient profile not found." });
 
-      // Auto-lift expired block before allowing access
       await patientProfile.checkAndLiftBlock();
 
       if (patientProfile.isBlocked) {
@@ -348,7 +347,7 @@ exports.getMyAppointments = async (req, res) => {
       appointments = await Appointment.find({ patient: patientProfile._id })
         .populate({
           path: "patient",
-          select: "address age gender height weight bloodType allergies chronicConditions isBlocked",
+          select: "userId address age gender height weight bloodType allergies chronicConditions isBlocked",
           populate: {
             path: "userId",
             model: "User",
@@ -368,23 +367,16 @@ exports.getMyAppointments = async (req, res) => {
       appointments = await Appointment.find({ doctor: doctorProfile._id })
         .populate({
           path: "patient",
-          select: "name dateOfBirth",
-          // Also pull the full Patient profile linked to this user
+          select: "userId address age gender height weight bloodType allergies chronicConditions isBlocked",
           populate: {
-            path: "userId",       // the ObjectId stored in Appointment.patient is a Patient doc
-            model: "Patient",
-            // no select → returns everything: age, gender, bloodType, allergies,
-            // chronicConditions, medications, height, weight, isBlocked, etc.
-          }
+            path: "userId",
+            model: "User",
+            select: "name email phoneNumber",
+          },
         })
         .populate("clinic", "name address")
         .populate("prescription")
         .sort({ date: -1 });
-
-      // NOTE: if Appointment.patient references the User model directly (not Patient),
-      // replace the populate above with a two-step approach:
-      // 1. populate("patient", "name dateOfBirth")
-      // 2. after the query, find Patient docs by userId for each appointment
 
     } else {
       return res.status(403).json({ success: false, message: "Unauthorized role." });
@@ -401,7 +393,6 @@ exports.getMyAppointments = async (req, res) => {
     return res.status(500).json({ success: false, message: "Server error while fetching appointments." });
   }
 };
-
 
 
 
