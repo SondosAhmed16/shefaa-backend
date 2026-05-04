@@ -659,7 +659,7 @@ exports.markAppointmentAsPaid = async (req, res) => {
     }
 
     // ── 5. Guard: don't re-pay or pay cancelled ───
-    if (appointment.paymentStatus === "paid") {
+    if (appointment.paymentStatus === "paid-at-clinic") {
       return res.status(400).json({
         success: false,
         message: "Appointment is already marked as paid.",
@@ -674,7 +674,7 @@ exports.markAppointmentAsPaid = async (req, res) => {
     }
 
     // ── 6. Update ─────────────────────────────────
-    appointment.paymentStatus = "paid";
+    appointment.paymentStatus = "paid-at-clinic";
     appointment.paidAt = new Date();       // optional audit field
     await appointment.save();
 
