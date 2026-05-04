@@ -17,7 +17,7 @@ router.put('/profile/basic-info', auth, patientController.updateBasicInfo);
 
 router.put('/profile/medical-info', auth, patientController.updateMedicalInfo);
 
-router.put('/profile', auth, authorizeRoles('patient'), runValidation, patientController.updateProfile);
+router.put('/profile', auth, authorizeRoles('patient','doctor'), runValidation, patientController.updateProfile);
 
 router.get('/medications', auth, patientController.getMedications);
 

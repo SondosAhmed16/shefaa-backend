@@ -44,14 +44,14 @@ const isSameUTCDate = (a, b) => {
   const da = new Date(a), db = new Date(b);
   return (
     da.getUTCFullYear() === db.getUTCFullYear() &&
-    da.getUTCMonth()    === db.getUTCMonth()    &&
-    da.getUTCDate()     === db.getUTCDate()
+    da.getUTCMonth() === db.getUTCMonth() &&
+    da.getUTCDate() === db.getUTCDate()
   );
 };
 
 // Resolve the correct override for a given date (matches getAvailableSlots logic)
 const resolveScheduleForDate = (clinic, requestedDate) => {
-  const DAY_ORDER = ["Sunday","Monday","Tuesday","Wednesday","Thursday","Friday","Saturday"];
+  const DAY_ORDER = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];
   const requestedDayName = DAY_ORDER[requestedDate.getUTCDay()];
 
   // Find week start (Saturday)
@@ -78,8 +78,8 @@ const resolveScheduleForDate = (clinic, requestedDate) => {
   return {
     requestedDayName,
     mergedDays,
-    resolvedSlotDuration:    override?.slotDuration    ?? defaults.slotDuration,
-    resolvedDailyCapacity:   override?.dailyCapacity   ?? defaults.dailyCapacity,
+    resolvedSlotDuration: override?.slotDuration ?? defaults.slotDuration,
+    resolvedDailyCapacity: override?.dailyCapacity ?? defaults.dailyCapacity,
     resolvedPatientsPerSlot: override?.patientsPerSlot ?? defaults.patientsPerSlot,
   };
 };
@@ -109,10 +109,19 @@ exports.bookAppointment = async (req, res) => {
     if (!clinic) return res.status(404).json({ message: "Clinic not found." });
 
     // ── 3. Load patient ───────────────────────────
+    // ── 3. Load patient ───────────────────────────
     const patientProfile = await Patient.findOne({ userId: req.user._id });
     if (!patientProfile)
       return res.status(404).json({ message: "Patient profile not found." });
 
+    // ── 3.5 Block check ───────────────────────────
+    await patientProfile.checkAndLiftBlock();
+
+    if (patientProfile.isBlocked) {
+      return res.status(403).json({
+        message: `You are blocked from booking appointments until ${patientProfile.blockedUntil.toDateString()}. Reason: ${patientProfile.blockReason}`,
+      });
+    }
     // ── 4. Parse date ─────────────────────────────
     const requestedDate = new Date(`${date}T00:00:00.000Z`);
     if (isNaN(requestedDate.getTime())) {
@@ -276,7 +285,7 @@ exports.sendReminders = async () => {
     todayEnd.setUTCHours(23, 59, 59, 999);
 
     const appointments = await Appointment.find({
-      date:   { $gte: todayStart, $lte: todayEnd },
+      date: { $gte: todayStart, $lte: todayEnd },
       status: "upcoming",
     }).populate({
       path: "patient",
@@ -286,9 +295,9 @@ exports.sendReminders = async () => {
     for (const app of appointments) {
       await Notification.create({
         recipient: app.patient.userId._id,
-        title:     "Appointment Reminder",
-        message:   `Reminder: You have an appointment today at ${app.slotStart}.`,
-        type:      "appointment",
+        title: "Appointment Reminder",
+        message: `Reminder: You have an appointment today at ${app.slotStart}.`,
+        type: "appointment",
       });
     }
   } catch (err) {
@@ -326,6 +335,16 @@ exports.getMyAppointments = async (req, res) => {
       if (!patientProfile)
         return res.status(404).json({ success: false, message: "Patient profile not found." });
 
+      // Auto-lift expired block before allowing access
+      await patientProfile.checkAndLiftBlock();
+
+      if (patientProfile.isBlocked) {
+        return res.status(403).json({
+          success: false,
+          message: `Your account is blocked until ${patientProfile.blockedUntil.toDateString()}. Reason: ${patientProfile.blockReason}`,
+        });
+      }
+
       appointments = await Appointment.find({ patient: patientProfile._id })
         .populate("doctor", "name specialization")
         .populate("clinic", "name address")
@@ -338,10 +357,25 @@ exports.getMyAppointments = async (req, res) => {
         return res.status(404).json({ success: false, message: "Doctor profile not found." });
 
       appointments = await Appointment.find({ doctor: doctorProfile._id })
-        .populate("patient", "name dateOfBirth")
+        .populate({
+          path: "patient",
+          select: "name dateOfBirth",
+          // Also pull the full Patient profile linked to this user
+          populate: {
+            path: "userId",       // the ObjectId stored in Appointment.patient is a Patient doc
+            model: "Patient",
+            // no select → returns everything: age, gender, bloodType, allergies,
+            // chronicConditions, medications, height, weight, isBlocked, etc.
+          }
+        })
         .populate("clinic", "name address")
         .populate("prescription")
         .sort({ date: -1 });
+
+      // NOTE: if Appointment.patient references the User model directly (not Patient),
+      // replace the populate above with a two-step approach:
+      // 1. populate("patient", "name dateOfBirth")
+      // 2. after the query, find Patient docs by userId for each appointment
 
     } else {
       return res.status(403).json({ success: false, message: "Unauthorized role." });
@@ -435,5 +469,65 @@ exports.rescheduleAppointment = async (req, res) => {
   } catch (error) {
     console.error("rescheduleAppointment error:", error);
     return res.status(500).json({ success: false, message: "Server error while rescheduling appointment." });
+  }
+};
+
+/**
+ * POST /api/appointments/:appointmentId/block-patient
+ * Doctor/admin marks a patient as no-show → blocks them for 5 days.
+ * Automatically sets isBlocked, blockedUntil (+5 days), and blockReason.
+ */
+exports.blockPatientForNoShow = async (req, res) => {
+  try {
+    const { appointmentId } = req.params;
+
+    // Only doctors (or admins) may block
+    if (!["doctor", "admin"].includes(req.user.role)) {
+      return res.status(403).json({ success: false, message: "Unauthorized." });
+    }
+
+    const appointment = await Appointment.findById(appointmentId);
+    if (!appointment) {
+      return res.status(404).json({ success: false, message: "Appointment not found." });
+    }
+
+    // Guard: only past appointments that were not rescheduled/cancelled/completed
+    const isPast = new Date(appointment.date) < new Date();
+    const blockableStatuses = ["pending", "confirmed"]; // adjust to your status enum
+    if (!isPast || !blockableStatuses.includes(appointment.status)) {
+      return res.status(400).json({
+        success: false,
+        message: "Can only block for past appointments with no prior cancellation or reschedule.",
+      });
+    }
+
+    // Resolve the Patient profile (appointment.patient may be a User _id or a Patient _id)
+    const patientProfile = await Patient.findById(appointment.patient);
+    if (!patientProfile) {
+      return res.status(404).json({ success: false, message: "Patient profile not found." });
+    }
+
+    const BLOCK_DAYS = 5;
+    const blockedUntil = new Date();
+    blockedUntil.setDate(blockedUntil.getDate() + BLOCK_DAYS);
+
+    patientProfile.isBlocked = true;
+    patientProfile.blockedUntil = blockedUntil;
+    patientProfile.blockReason = `No-show for appointment on ${new Date(appointment.date).toDateString()} without prior cancellation or reschedule.`;
+    await patientProfile.save();
+
+    // Optionally mark the appointment itself
+    appointment.status = "no-show";
+    await appointment.save();
+
+    return res.status(200).json({
+      success: true,
+      message: `Patient blocked until ${blockedUntil.toDateString()}.`,
+      blockedUntil,
+    });
+
+  } catch (error) {
+    console.error("blockPatientForNoShow error:", error);
+    return res.status(500).json({ success: false, message: "Server error while blocking patient." });
   }
 };

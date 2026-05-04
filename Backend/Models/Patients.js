@@ -8,22 +8,9 @@ const patientSchema = new mongoose.Schema(
       required: true,
       unique: true,
     },
-    address: {
-      type: String,
-      default: "",
-    },
-    age: {
-      type: Number,
-      default: 1,
-      min: 1,
-      max: 120,
-    },
-    gender: {
-      type: String,
-      enum: ["male", "female", ""],
-      default: "",
-    },
-    // to add medication 
+    address: { type: String, default: "" },
+    age: { type: Number, default: 1, min: 1, max: 120 },
+    gender: { type: String, enum: ["male", "female", ""], default: "" },
     medications: [{
       name: String,
       dosage: String,
@@ -35,7 +22,7 @@ const patientSchema = new mongoose.Schema(
       isActive: { type: Boolean, default: true },
       adherenceHistory: [{
         date: { type: Date, default: Date.now },
-        status: { type: String, enum: ['taken', 'missed'], default: 'taken' }
+        status: { type: String, enum: ["taken", "missed"], default: "taken" }
       }]
     }],
     height: { type: Number, default: 0 },
@@ -46,11 +33,24 @@ const patientSchema = new mongoose.Schema(
       default: "",
     },
     allergies: { type: [String], default: "None" },
-    chronicConditions: {
-      type: [String], default: "None",
-    }
+    chronicConditions: { type: [String], default: "None" },
+
+    // --- Block system ---
+    isBlocked: { type: Boolean, default: false },
+    blockedUntil: { type: Date, default: null },
+    blockReason: { type: String, default: null },
   },
   { timestamps: true }
 );
+
+// Auto-lift expired blocks on read
+patientSchema.methods.checkAndLiftBlock = async function () {
+  if (this.isBlocked && this.blockedUntil && new Date() > this.blockedUntil) {
+    this.isBlocked = false;
+    this.blockedUntil = null;
+    this.blockReason = null;
+    await this.save();
+  }
+};
 
 module.exports = mongoose.model("Patient", patientSchema);
