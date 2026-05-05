@@ -12,4 +12,6 @@ router.patch("/:id/mark-paid", auth, authorizeRoles('doctor'), appointmentContro
 router.post("/prescription", auth, authorizeRoles('doctor'),appointmentController.createPrescription);
 router.get("/:appointmentId/getPrescription", auth, authorizeRoles('doctor','patient'),appointmentController.getPrescriptionByAppointment);
 router.patch("/:id/complete", auth, authorizeRoles('doctor'), appointmentController.completeAppointment);
+router.get("/:id/getPreviousPrescription", auth, authorizeRoles('doctor'), appointmentController.getPreviousPrescription);
+router.patch("/:id/updatePrescription", auth, authorizeRoles('doctor'), appointmentController.updatePrescription);
 module.exports = router;
