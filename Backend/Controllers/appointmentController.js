@@ -872,7 +872,7 @@ exports.completeAppointment = async (req, res) => {
 // Doctor edits an existing prescription
 exports.updatePrescription = async (req, res) => {
   try {
-    const { prescriptionId } = req.params;
+    const { id: prescriptionId } = req.params;
     const { diagnosis, medicines, labTests, imaging, nextVisit, notes } = req.body;
  
     // ── 1. Role guard ─────────────────────────────
