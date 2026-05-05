@@ -937,7 +937,7 @@ exports.updatePrescription = async (req, res) => {
 // Uses the doctor ID (from the auth token) and the patient ID (from the appointment).
 exports.getPreviousPrescription = async (req, res) => {
   try {
-    const { appointmentId } = req.params;
+    const { id: appointmentId } = req.params;  // ✅
  
     // ── 1. Role guard ─────────────────────────────
     if (req.user.role !== "doctor") {
