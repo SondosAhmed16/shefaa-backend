@@ -155,7 +155,6 @@ exports.addMedicalRecord = async (req, res) => {
   }
 };
 
-//search doctor {name , city , specialization , gender}
 exports.searchDoctors = async (req, res) => {
   try {
     const { specialization, gender, city, name } = req.query;
@@ -171,42 +170,61 @@ exports.searchDoctors = async (req, res) => {
     }
 
     if (city) {
-      const clinicsInCity = await Clinic.find({ city: { $regex: new RegExp(city, "i") } });
+      const clinicsInCity = await Clinic.find({
+        city: { $regex: new RegExp(city, "i") }
+      });
+
       const doctorIds = clinicsInCity.map(c => c.doctorId.toString());
       doctorQuery._id = { $in: doctorIds };
     }
 
-    let userMatch = { path: 'userId', select: 'name' };
+    let userMatch = { path: "userId", select: "name" };
+
     if (name) {
-      userMatch.match = { name: { $regex: new RegExp(name, "i") } };
+      userMatch.match = {
+        name: { $regex: new RegExp(name, "i") }
+      };
     }
 
-    let doctors = await Doctor.find(doctorQuery).populate(userMatch);
+    let doctors = await Doctor.find(doctorQuery)
+      .populate(userMatch)
+      .lean();
 
     if (name) {
       doctors = doctors.filter(doc => doc.userId !== null);
     }
 
-    const results = await Promise.all(doctors.map(async (doc) => {
-      const doctorClinics = await Clinic.find({
-        doctorId: doc._id,
-        ...(city && { city: { $regex: new RegExp(city, "i") } })
-      }, 'name city address location price daysOfWeek');
+    const results = await Promise.all(
+      doctors.map(async (doctor) => {
+        const doctorClinics = await Clinic.find({
+          doctorId: doctor._id,
+          ...(city && {
+            city: { $regex: new RegExp(city, "i") }
+          })
+        }).lean(); // رجّع الكلينك كامل
 
-      return {
-        _id: doc._id,
-        name: doc.userId ? doc.userId.name : "Unknown",
-        specialization: doc.specialization,
-        clinics: doctorClinics.map(clinic => ({
-          name: clinic.name,
-          city: clinic.city,
-          address: clinic.address,
-          location: clinic.location,
-          price: clinic.price,
-          daysOfWeek: clinic.daysOfWeek || []
-        }))
-      };
-    }));
+        return {
+          _id: doctor._id,
+          name: doctor.userId?.name || "Unknown",
+
+          specialization: doctor.specialization,
+          age: doctor.age,
+          yearsOfExperience: doctor.yearsOfExperience,
+          image: doctor.image,
+          about: doctor.about,
+          degrees: doctor.degrees,
+          gender: doctor.gender,
+          rating: doctor.rating,
+
+          prePaymentNumbers: doctor.prePaymentNumbers,
+          clinicConsultationPrice: doctor.clinicConsultationPrice,
+
+          reviews: doctor.reviews || [],
+
+          clinics: doctorClinics // هنا رجّعناه كامل بدون map
+        };
+      })
+    );
 
     const finalResult = city
       ? results.filter(r => r.clinics.length > 0)
