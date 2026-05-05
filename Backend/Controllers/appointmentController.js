@@ -749,14 +749,14 @@ exports.createPrescription = async (req, res) => {
     // ── 7. Create prescription ────────────────────
     const prescription = await Prescription.create({
       appointment: appointment._id,
-      doctor:      doctorProfile._id,
-      patient:     appointment.patient,
-      diagnosis:   diagnosis   || "",
-      medicines:   medicines   || [],
-      labTests:    labTests    || [],
-      imaging:     imaging     || [],
-      nextVisit:   nextVisit   || "",
-      notes:       notes       || "",
+      doctor: doctorProfile._id,
+      patient: appointment.patient,
+      diagnosis: diagnosis || "",
+      medicines: medicines || [],
+      labTests: labTests || [],
+      imaging: imaging || [],
+      nextVisit: nextVisit || "",
+      notes: notes || "",
     });
 
     // ── 8. Link prescription → appointment ────────
@@ -765,8 +765,8 @@ exports.createPrescription = async (req, res) => {
 
     // ── 9. Return populated prescription ──────────
     const populated = await Prescription.findById(prescription._id)
-      .populate("doctor",      "name specialization")
-      .populate("patient",     "userId age gender")
+      .populate("doctor", "name specialization")
+      .populate("patient", "userId age gender")
       .populate("appointment", "date slotStart slotEnd clinic");
 
     return res.status(201).json({
@@ -789,8 +789,8 @@ exports.getPrescriptionByAppointment = async (req, res) => {
     const { appointmentId } = req.params;
 
     const prescription = await Prescription.findOne({ appointment: appointmentId })
-      .populate("doctor",      "name specialization")
-      .populate("patient",     "userId age gender")
+      .populate("doctor", "name specialization")
+      .populate("patient", "userId age gender")
       .populate("appointment", "date slotStart slotEnd clinic");
 
     if (!prescription) {
@@ -852,7 +852,7 @@ exports.completeAppointment = async (req, res) => {
     // ── 7. Update ─────────────────────────────────
     appointment.status = "completed";
     if (slotStart) appointment.slotStart = slotStart;
-    if (slotEnd)   appointment.slotEnd   = slotEnd;
+    if (slotEnd) appointment.slotEnd = slotEnd;
 
     await appointment.save();
 
@@ -874,63 +874,64 @@ exports.updatePrescription = async (req, res) => {
   try {
     const { id: prescriptionId } = req.params;
     const { diagnosis, medicines, labTests, imaging, nextVisit, notes } = req.body;
- 
+
     // ── 1. Role guard ─────────────────────────────
     if (req.user.role !== "doctor") {
       return res.status(403).json({ success: false, message: "Only doctors can update prescriptions." });
     }
- 
+
     // ── 2. Validate ObjectId ──────────────────────
     if (!mongoose.Types.ObjectId.isValid(prescriptionId)) {
       return res.status(400).json({ success: false, message: "Invalid prescription ID." });
     }
- 
+
     // ── 3. Load doctor profile ────────────────────
     const doctorProfile = await Doctor.findOne({ userId: req.user._id });
     if (!doctorProfile) {
       return res.status(404).json({ success: false, message: "Doctor profile not found." });
     }
- 
+
     // ── 4. Load prescription ──────────────────────
-    const prescription = await Prescription.findById(prescriptionId);
+    // بدل: const prescription = await Prescription.findById(prescriptionId);
+    const prescription = await Prescription.findOne({ appointment: prescriptionId });
     if (!prescription) {
       return res.status(404).json({ success: false, message: "Prescription not found." });
     }
- 
+
     // ── 5. Ownership check ────────────────────────
     if (prescription.doctor.toString() !== doctorProfile._id.toString()) {
       return res.status(403).json({ success: false, message: "You are not authorized to edit this prescription." });
     }
- 
+
     // ── 6. Apply updates (only fields that were sent) ──
-    if (diagnosis  !== undefined) prescription.diagnosis  = diagnosis;
-    if (medicines  !== undefined) prescription.medicines  = medicines;
-    if (labTests   !== undefined) prescription.labTests   = labTests;
-    if (imaging    !== undefined) prescription.imaging    = imaging;
-    if (nextVisit  !== undefined) prescription.nextVisit  = nextVisit;
-    if (notes      !== undefined) prescription.notes      = notes;
- 
+    if (diagnosis !== undefined) prescription.diagnosis = diagnosis;
+    if (medicines !== undefined) prescription.medicines = medicines;
+    if (labTests !== undefined) prescription.labTests = labTests;
+    if (imaging !== undefined) prescription.imaging = imaging;
+    if (nextVisit !== undefined) prescription.nextVisit = nextVisit;
+    if (notes !== undefined) prescription.notes = notes;
+
     await prescription.save();
- 
+
     // ── 7. Return populated prescription ──────────
     const populated = await Prescription.findById(prescription._id)
-      .populate("doctor",      "name specialization")
-      .populate("patient",     "userId age gender")
+      .populate("doctor", "name specialization")
+      .populate("patient", "userId age gender")
       .populate("appointment", "date slotStart slotEnd clinic");
- 
+
     return res.status(200).json({
       success: true,
       message: "Prescription updated successfully.",
       data: populated,
     });
- 
+
   } catch (error) {
     console.error("updatePrescription error:", error);
     return res.status(500).json({ success: false, message: "Server error while updating prescription." });
   }
 };
- 
- 
+
+
 // ─── GET /api/appointments/:appointmentId/previousPrescription ────────────────
 // Returns the most recent previous prescription written by this doctor
 // for the same patient — useful when the current appointment is a follow-up.
@@ -938,62 +939,62 @@ exports.updatePrescription = async (req, res) => {
 exports.getPreviousPrescription = async (req, res) => {
   try {
     const { id: appointmentId } = req.params;  // ✅
- 
+
     // ── 1. Role guard ─────────────────────────────
     if (req.user.role !== "doctor") {
       return res.status(403).json({ success: false, message: "Only doctors can access previous prescriptions." });
     }
- 
+
     // ── 2. Validate ObjectId ──────────────────────
     if (!mongoose.Types.ObjectId.isValid(appointmentId)) {
       return res.status(400).json({ success: false, message: "Invalid appointment ID." });
     }
- 
+
     // ── 3. Load doctor profile ────────────────────
     const doctorProfile = await Doctor.findOne({ userId: req.user._id });
     if (!doctorProfile) {
       return res.status(404).json({ success: false, message: "Doctor profile not found." });
     }
- 
+
     // ── 4. Load the current appointment to get patient + date ──
     const currentAppointment = await Appointment.findById(appointmentId);
     if (!currentAppointment) {
       return res.status(404).json({ success: false, message: "Appointment not found." });
     }
- 
+
     // ── 5. Ownership check ────────────────────────
     if (currentAppointment.doctor.toString() !== doctorProfile._id.toString()) {
       return res.status(403).json({ success: false, message: "You are not authorized to access this appointment." });
     }
- 
+
     // ── 6. Find the most recent prescription by this doctor
     //       for this patient, EXCLUDING the current appointment ──
     const previousPrescription = await Prescription.findOne({
-      doctor:      doctorProfile._id,
-      patient:     currentAppointment.patient,
+      doctor: doctorProfile._id,
+      patient: currentAppointment.patient,
       appointment: { $ne: currentAppointment._id },  // exclude current
     })
       .sort({ createdAt: -1 })  // most recent first
-      .populate("doctor",      "name specialization")
-      .populate("patient",     "userId age gender")
+      .populate("doctor", "name specialization")
+      .populate("patient", "userId age gender")
       .populate("appointment", "date slotStart slotEnd clinic isFollowUp");
- 
+
     if (!previousPrescription) {
       return res.status(404).json({
         success: false,
         message: "No previous prescription found for this patient.",
       });
     }
- 
+
     return res.status(200).json({
       success: true,
       data: previousPrescription,
     });
- 
+
   } catch (error) {
     console.error("getPreviousPrescription error:", error);
     return res.status(500).json({ success: false, message: "Server error while fetching previous prescription." });
   }
 };
- 
- 
+
+
