@@ -371,3 +371,180 @@ exports.googleLoginMobile = async (req, res) => {
     res.status(401).json({ success: false, message: "Invalid Google Token" });
   }
 };
+
+
+
+// ─────────────────────────────────────────────────────────────────────────────
+// CHANGE PASSWORD  (authenticated – requires verifyToken middleware)
+// POST /api/auth/change-password
+// Body: { currentPassword, newPassword }
+// ─────────────────────────────────────────────────────────────────────────────
+exports.changePassword = async (req, res) => {
+  try {
+    const { currentPassword, newPassword } = req.body;
+ 
+    if (!currentPassword || !newPassword) {
+      return res.status(400).json({ message: "Both fields are required." });
+    }
+    if (newPassword.length < 8) {
+      return res.status(400).json({ message: "New password must be at least 8 characters." });
+    }
+ 
+    const user = await User.findById(req.user._id);
+    if (!user) return res.status(404).json({ message: "User not found." });
+ 
+    // 1. Verify current password
+    const isMatch = await bcrypt.compare(currentPassword, user.password);
+    if (!isMatch) {
+      return res.status(401).json({ message: "Current password is incorrect." });
+    }
+ 
+    // 2. Prevent reuse
+    const isSame = await bcrypt.compare(newPassword, user.password);
+    if (isSame) {
+      return res.status(400).json({ message: "New password must differ from the current one." });
+    }
+ 
+    // 3. Hash & save
+    const salt = await bcrypt.genSalt(10);
+    user.password = await bcrypt.hash(newPassword, salt);
+    user.passwordChangedAt = new Date();   // optional: track last change date
+    await user.save();
+ 
+    // 4. Invalidate all refresh tokens so other sessions are logged out
+    await RefreshToken.deleteMany({ user: user._id });
+ 
+    res.status(200).json({ message: "Password updated successfully. Please log in again." });
+  } catch (err) {
+    res.status(500).json({ message: err.message });
+  }
+};
+ 
+// ─────────────────────────────────────────────────────────────────────────────
+// TWO-FACTOR AUTHENTICATION
+//
+// The flow uses a 6-digit OTP stored (hashed) in the user document.
+// Add these fields to your User schema:
+//
+//   twoFA: {
+//     enabled:    { type: Boolean, default: false },
+//     method:     { type: String, enum: ["sms","email"], default: "email" },
+//     otpHash:    { type: String },
+//     otpExpires: { type: Date },
+//   }
+//
+// ─────────────────────────────────────────────────────────────────────────────
+ 
+// ── 1. ENABLE / DISABLE 2FA ──────────────────────────────────────────────────
+// POST /api/auth/2fa/toggle
+// Body: { enabled: true|false, method: "sms"|"email" }
+exports.toggle2FA = async (req, res) => {
+  try {
+    const { enabled, method } = req.body;
+ 
+    if (typeof enabled !== "boolean") {
+      return res.status(400).json({ message: "'enabled' must be a boolean." });
+    }
+    if (enabled && !["sms", "email"].includes(method)) {
+      return res.status(400).json({ message: "Method must be 'sms' or 'email'." });
+    }
+ 
+    const user = await User.findById(req.user._id);
+    if (!user) return res.status(404).json({ message: "User not found." });
+ 
+    user.twoFA = { enabled, method: enabled ? method : user.twoFA?.method ?? "email" };
+    await user.save();
+ 
+    res.status(200).json({
+      message: `Two-factor authentication ${enabled ? "enabled" : "disabled"}.`,
+      twoFA: user.twoFA,
+    });
+  } catch (err) {
+    res.status(500).json({ message: err.message });
+  }
+};
+ 
+// ── 2. SEND OTP  (called right after password check in login) ────────────────
+// POST /api/auth/2fa/send-otp
+// Body: { userId }   ← pass the id returned from the first login step
+exports.send2FAOTP = async (req, res) => {
+  try {
+    const { userId } = req.body;
+    const user = await User.findById(userId);
+    if (!user || !user.twoFA?.enabled) {
+      return res.status(400).json({ message: "2FA is not enabled for this account." });
+    }
+ 
+    // Generate 6-digit OTP
+    const otp     = Math.floor(100000 + Math.random() * 900000).toString();
+    const otpHash = crypto.createHash("sha256").update(otp).digest("hex");
+ 
+    user.twoFA.otpHash    = otpHash;
+    user.twoFA.otpExpires = new Date(Date.now() + 10 * 60 * 1000); // 10 min
+    await user.save();
+ 
+    if (user.twoFA.method === "email") {
+      await sendVerificationEmail(user.email, otp);           // reuse your existing helper
+    } else {
+      // SMS: plug in Twilio / AWS SNS here
+      // await sendSMS(user.phoneNumber, `Your verification code: ${otp}`);
+      console.log(`[SMS stub] OTP for ${user.phoneNumber}: ${otp}`);
+    }
+ 
+    res.status(200).json({ message: "OTP sent.", method: user.twoFA.method });
+  } catch (err) {
+    res.status(500).json({ message: err.message });
+  }
+};
+ 
+// ── 3. VERIFY OTP  (final login step when 2FA is on) ────────────────────────
+// POST /api/auth/2fa/verify-otp
+// Body: { userId, otp }
+exports.verify2FAOTP = async (req, res) => {
+  try {
+    const { userId, otp } = req.body;
+    if (!userId || !otp) {
+      return res.status(400).json({ message: "userId and otp are required." });
+    }
+ 
+    const user = await User.findById(userId);
+    if (!user) return res.status(404).json({ message: "User not found." });
+ 
+    const hashedInput = crypto.createHash("sha256").update(otp).digest("hex");
+ 
+    if (
+      !user.twoFA?.otpHash ||
+      user.twoFA.otpHash !== hashedInput ||
+      user.twoFA.otpExpires < new Date()
+    ) {
+      return res.status(401).json({ message: "Invalid or expired OTP." });
+    }
+ 
+    // Clear OTP
+    user.twoFA.otpHash    = undefined;
+    user.twoFA.otpExpires = undefined;
+    await user.save();
+ 
+    // Issue tokens (same as normal login)
+    const { generateAccessToken, generateRefreshToken } = require("../utils/tokens");
+    const RefreshToken = require("../Models/RefreshToken");
+ 
+    const accessToken  = generateAccessToken(user);
+    const refreshToken = generateRefreshToken(user);
+ 
+    await RefreshToken.create({
+      token: refreshToken,
+      user:  user._id,
+      expiresAt: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000),
+    });
+ 
+    res.status(200).json({
+      message: "Login successful.",
+      accessToken,
+      refreshToken,
+      user: { id: user._id, name: user.name, role: user.role },
+    });
+  } catch (err) {
+    res.status(500).json({ message: err.message });
+  }
+};

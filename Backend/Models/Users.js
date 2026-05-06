@@ -28,17 +28,17 @@ const userSchema = new mongoose.Schema(
       required: true,
     },
     googleId: {
-    type: String,
-    unique: true,
-    sparse: true 
-},
+      type: String,
+      unique: true,
+      sparse: true
+    },
 
     role: {
       type: String,
       enum: ["doctor", "patient", "pharmacy", "lab", "admin"],
       default: "patient",
     },
-      phoneNumber: {
+    phoneNumber: {
       type: String,
       required: true,
       unique: true,
@@ -48,6 +48,29 @@ const userSchema = new mongoose.Schema(
     isVerified: {
       type: Boolean,
       default: false,
+    },
+    passwordChangedAt: {
+      type: Date,
+    },
+
+    twoFA: {
+      enabled: {
+        type: Boolean,
+        default: false,
+      },
+      method: {
+        type: String,
+        enum: ["sms", "email"],
+        default: "email",
+      },
+      otpHash: {
+        type: String,
+        select: false,   // never returned by default queries
+      },
+      otpExpires: {
+        type: Date,
+        select: false,
+      },
     },
   },
   { timestamps: true }
