@@ -9,10 +9,10 @@ const pharmacySchema = new mongoose.Schema(
       unique: true
     },
 
-    pharmacyName: {
+   /* pharmacyName: {
       type: String,
       required: true
-    },
+    },*/
 
     commercialRegisterNumber: {
       type: String,
