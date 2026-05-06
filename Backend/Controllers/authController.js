@@ -19,7 +19,18 @@ const {
 } = require("../utils/tokens");
 
 const { sendVerificationEmail } = require("../utils/sendEmail");
+function parseDevice(req) {
+  const ua = req.headers["user-agent"] || "";
+  let device = "Unknown device";
 
+  if (/iPhone|iPad/.test(ua)) device = "Safari · iPhone";
+  else if (/Android/.test(ua)) device = "Chrome · Android";
+  else if (/Macintosh/.test(ua)) device = "Safari · MacBook";
+  else if (/Windows/.test(ua)) device = "Chrome · Windows";
+  else if (/Linux/.test(ua)) device = "Browser · Linux";
+
+  return device;
+}
 
 // Register 
 exports.register = async (req, res) => {
@@ -139,10 +150,10 @@ exports.login = async (req, res) => {
     const { identity, password } = req.body;
     let user = null;
 
-user = await User.findOne({
+    user = await User.findOne({
       $or: [
-        { email: { $regex: new RegExp(`^${identity}$`, 'i') } }, 
-        { phoneNumber: identity } 
+        { email: { $regex: new RegExp(`^${identity}$`, 'i') } },
+        { phoneNumber: identity }
       ]
     });
 
@@ -171,6 +182,9 @@ user = await User.findOne({
       token: refreshToken,
       user: user._id,
       expiresAt: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000),
+      deviceInfo: parseDevice(req),
+      ipAddress: req.ip || req.headers["x-forwarded-for"] || "",
+      location: "",   // optionally use an IP geolocation service later
     });
 
     res.json({
@@ -379,44 +393,44 @@ exports.googleLoginMobile = async (req, res) => {
 exports.changePassword = async (req, res) => {
   try {
     const { currentPassword, newPassword } = req.body;
- 
+
     if (!currentPassword || !newPassword) {
       return res.status(400).json({ message: "Both fields are required." });
     }
     if (newPassword.length < 8) {
       return res.status(400).json({ message: "New password must be at least 8 characters." });
     }
- 
+
     const user = await User.findById(req.user._id);
     if (!user) return res.status(404).json({ message: "User not found." });
- 
+
     // 1. Verify current password
     const isMatch = await bcrypt.compare(currentPassword, user.password);
     if (!isMatch) {
       return res.status(401).json({ message: "Current password is incorrect." });
     }
- 
+
     // 2. Prevent reuse
     const isSame = await bcrypt.compare(newPassword, user.password);
     if (isSame) {
       return res.status(400).json({ message: "New password must differ from the current one." });
     }
- 
+
     // 3. Hash & save
     const salt = await bcrypt.genSalt(10);
     user.password = await bcrypt.hash(newPassword, salt);
     user.passwordChangedAt = new Date();   // optional: track last change date
     await user.save();
- 
+
     // 4. Invalidate all refresh tokens so other sessions are logged out
     await RefreshToken.deleteMany({ user: user._id });
- 
+
     res.status(200).json({ message: "Password updated successfully. Please log in again." });
   } catch (err) {
     res.status(500).json({ message: err.message });
   }
 };
- 
+
 // ─────────────────────────────────────────────────────────────────────────────
 // TWO-FACTOR AUTHENTICATION
 //
@@ -431,27 +445,27 @@ exports.changePassword = async (req, res) => {
 //   }
 //
 // ─────────────────────────────────────────────────────────────────────────────
- 
+
 // ── 1. ENABLE / DISABLE 2FA ──────────────────────────────────────────────────
 // POST /api/auth/2fa/toggle
 // Body: { enabled: true|false, method: "sms"|"email" }
 exports.toggle2FA = async (req, res) => {
   try {
     const { enabled, method } = req.body;
- 
+
     if (typeof enabled !== "boolean") {
       return res.status(400).json({ message: "'enabled' must be a boolean." });
     }
     if (enabled && !["sms", "email"].includes(method)) {
       return res.status(400).json({ message: "Method must be 'sms' or 'email'." });
     }
- 
+
     const user = await User.findById(req.user._id);
     if (!user) return res.status(404).json({ message: "User not found." });
- 
+
     user.twoFA = { enabled, method: enabled ? method : user.twoFA?.method ?? "email" };
     await user.save();
- 
+
     res.status(200).json({
       message: `Two-factor authentication ${enabled ? "enabled" : "disabled"}.`,
       twoFA: user.twoFA,
@@ -460,7 +474,7 @@ exports.toggle2FA = async (req, res) => {
     res.status(500).json({ message: err.message });
   }
 };
- 
+
 // ── 2. SEND OTP  (called right after password check in login) ────────────────
 // POST /api/auth/2fa/send-otp
 // Body: { userId }   ← pass the id returned from the first login step
@@ -471,15 +485,15 @@ exports.send2FAOTP = async (req, res) => {
     if (!user || !user.twoFA?.enabled) {
       return res.status(400).json({ message: "2FA is not enabled for this account." });
     }
- 
+
     // Generate 6-digit OTP
-    const otp     = Math.floor(100000 + Math.random() * 900000).toString();
+    const otp = Math.floor(100000 + Math.random() * 900000).toString();
     const otpHash = crypto.createHash("sha256").update(otp).digest("hex");
- 
-    user.twoFA.otpHash    = otpHash;
+
+    user.twoFA.otpHash = otpHash;
     user.twoFA.otpExpires = new Date(Date.now() + 10 * 60 * 1000); // 10 min
     await user.save();
- 
+
     if (user.twoFA.method === "email") {
       await sendVerificationEmail(user.email, otp);           // reuse your existing helper
     } else {
@@ -487,13 +501,13 @@ exports.send2FAOTP = async (req, res) => {
       // await sendSMS(user.phoneNumber, `Your verification code: ${otp}`);
       console.log(`[SMS stub] OTP for ${user.phoneNumber}: ${otp}`);
     }
- 
+
     res.status(200).json({ message: "OTP sent.", method: user.twoFA.method });
   } catch (err) {
     res.status(500).json({ message: err.message });
   }
 };
- 
+
 // ── 3. VERIFY OTP  (final login step when 2FA is on) ────────────────────────
 // POST /api/auth/2fa/verify-otp
 // Body: { userId, otp }
@@ -503,12 +517,12 @@ exports.verify2FAOTP = async (req, res) => {
     if (!userId || !otp) {
       return res.status(400).json({ message: "userId and otp are required." });
     }
- 
+
     const user = await User.findById(userId);
     if (!user) return res.status(404).json({ message: "User not found." });
- 
+
     const hashedInput = crypto.createHash("sha256").update(otp).digest("hex");
- 
+
     if (
       !user.twoFA?.otpHash ||
       user.twoFA.otpHash !== hashedInput ||
@@ -516,31 +530,96 @@ exports.verify2FAOTP = async (req, res) => {
     ) {
       return res.status(401).json({ message: "Invalid or expired OTP." });
     }
- 
+
     // Clear OTP
-    user.twoFA.otpHash    = undefined;
+    user.twoFA.otpHash = undefined;
     user.twoFA.otpExpires = undefined;
     await user.save();
- 
+
     // Issue tokens (same as normal login)
     const { generateAccessToken, generateRefreshToken } = require("../utils/tokens");
     const RefreshToken = require("../Models/RefreshToken");
- 
-    const accessToken  = generateAccessToken(user);
+
+    const accessToken = generateAccessToken(user);
     const refreshToken = generateRefreshToken(user);
- 
+
     await RefreshToken.create({
       token: refreshToken,
-      user:  user._id,
+      user: user._id,
       expiresAt: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000),
     });
- 
+
     res.status(200).json({
       message: "Login successful.",
       accessToken,
       refreshToken,
       user: { id: user._id, name: user.name, role: user.role },
     });
+  } catch (err) {
+    res.status(500).json({ message: err.message });
+  }
+};
+
+// GET /api/auth/sessions
+exports.getSessions = async (req, res) => {
+  try {
+    const currentToken =
+      req.headers.authorization?.split(" ")[1] || "";
+
+    const sessions = await RefreshToken.find({
+      user: req.user._id,
+      expiresAt: { $gt: new Date() },
+    }).sort({ createdAt: -1 });
+
+    const result = sessions.map((s) => ({
+      id:         s._id,
+      deviceInfo: s.deviceInfo,
+      ipAddress:  s.ipAddress,
+      location:   s.location,
+      createdAt:  s.createdAt,
+      // mark current session by matching the access token's user+iat
+      // simplest proxy: most recently created = current
+      current: s._id.toString() ===
+        sessions[0]._id.toString(), // first = most recent
+    }));
+
+    res.json({ sessions: result });
+  } catch (err) {
+    res.status(500).json({ message: err.message });
+  }
+};
+
+// DELETE /api/auth/sessions/:id  — revoke one session
+exports.revokeSession = async (req, res) => {
+  try {
+    const session = await RefreshToken.findOne({
+      _id:  req.params.id,
+      user: req.user._id,       // users can only revoke their own
+    });
+
+    if (!session) {
+      return res.status(404).json({ message: "Session not found." });
+    }
+
+    await session.deleteOne();
+    res.json({ message: "Session revoked." });
+  } catch (err) {
+    res.status(500).json({ message: err.message });
+  }
+};
+
+// DELETE /api/auth/sessions  — revoke all except current
+exports.revokeAllSessions = async (req, res) => {
+  try {
+    // We need to know which token is "current" — pass it from frontend
+    const { currentSessionId } = req.body;
+
+    await RefreshToken.deleteMany({
+      user: req.user._id,
+      _id:  { $ne: currentSessionId },
+    });
+
+    res.json({ message: "All other sessions revoked." });
   } catch (err) {
     res.status(500).json({ message: err.message });
   }

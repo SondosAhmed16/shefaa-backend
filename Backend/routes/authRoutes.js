@@ -125,5 +125,8 @@ router.get("/me", protect, getCurrentUser);
 router.post("/change-password",    protect, authController.changePassword);  // auth required
 router.post("/2fa/toggle",         protect, authController.toggle2FA);       // auth required
 router.post("/2fa/send-otp",       authController.send2FAOTP);                   // pre-auth (login flow)
-router.post("/2fa/verify-otp",     authController.verify2FAOTP);             
+router.post("/2fa/verify-otp",     authController.verify2FAOTP);    
+router.get("/sessions",         protect, authController.getSessions);
+router.delete("/sessions/:id",  protect, authController.revokeSession);
+router.delete("/sessions",      protect, authController.revokeAllSessions);         
 module.exports = router;
