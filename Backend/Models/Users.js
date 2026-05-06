@@ -54,24 +54,11 @@ const userSchema = new mongoose.Schema(
     },
 
     twoFA: {
-      enabled: {
-        type: Boolean,
-        default: false,
-      },
-      method: {
-        type: String,
-        enum: ["sms", "email"],
-        default: "email",
-      },
-      otpHash: {
-        type: String,
-        select: false,   // never returned by default queries
-      },
-      otpExpires: {
-        type: Date,
-        select: false,
-      },
-    },
+      enabled: { type: Boolean, default: false },
+      method: { type: String, enum: ["sms", "email"], default: "email" },
+      otpHash: { type: String },
+      otpExpires: { type: Date },
+    }
   },
   { timestamps: true }
 );
