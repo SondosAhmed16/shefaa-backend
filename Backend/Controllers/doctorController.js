@@ -27,7 +27,6 @@ exports.getDoctorProfile = async (req, res) => {
       rating: doctor.rating,
       paymentOption: doctor.paymentOption,
       prePaymentNumbers: doctor.prePaymentNumbers,
-      preOnlineConsultation: doctor.preOnlineConsultation,
       clinicConsultationPrice: doctor.clinicConsultationPrice,
       clinics: doctor.clinics,
       reviews: doctor.reviews,
@@ -51,7 +50,6 @@ exports.updateDoctorProfile = async (req, res) => {
     const {
       specialization,
       yearsOfExperience,
-      preOnlineConsultation,
       about,
       age,
       paymentOption,
@@ -70,7 +68,6 @@ exports.updateDoctorProfile = async (req, res) => {
     const doctorUpdateData = {
       specialization,
       yearsOfExperience,
-      preOnlineConsultation,
       about,
       age,
       paymentOption,

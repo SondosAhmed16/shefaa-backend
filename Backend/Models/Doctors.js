@@ -51,12 +51,6 @@ const doctorSchema = new mongoose.Schema(
       type: [String],
       default: [],
     },
-
-    preOnlineConsultation: {
-      type: Boolean,
-      default: false,
-    },
-
     clinics: [
       {
         type: mongoose.Schema.Types.ObjectId,
