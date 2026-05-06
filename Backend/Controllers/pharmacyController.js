@@ -114,21 +114,66 @@ exports.getDashboardStats = async (req, res) => {
   }
 };
 
+// get profile
+exports.getProfile = async (req, res) => {
+  try {
+    const pharmacy = await Pharmacy.findOne({ userId: req.user._id });
+
+    if (!pharmacy) {
+      return res.status(404).json({ message: 'Pharmacy profile not found' });
+    }
+
+    res.json(pharmacy);
+  } catch (err) {
+    res.status(500).json({ message: err.message });
+  }
+};
+
 // UPDATE PROFILE 
 
 exports.updateProfileSettings = async (req, res) => {
   try {
-    const { deliveryAvailable, openNow, prescriptionOnly } = req.body;
+    const { 
+      deliveryAvailable, 
+      openNow, 
+      prescriptionOnly,
+      deliveryTime,
+      deliveryArea,
+      paymentMethods,
+      phone,
+      about,
+      workingHours,
+      commercialRegisterNumber,
+      licenseExpiry 
+    } = req.body;
+
     const updatedPharmacy = await Pharmacy.findOneAndUpdate(
       { userId: req.user._id },
-      { deliveryAvailable, openNow, prescriptionOnly },
-      { new: true }
+      { 
+        deliveryAvailable, 
+        openNow, 
+        prescriptionOnly,
+        deliveryTime,
+        deliveryArea,
+        paymentMethods,
+        phone,
+        about,
+        workingHours,
+        commercialRegisterNumber,
+        licenseExpiry
+      },
+      { new: true, runValidators: true }
     );
+    
+    if (!updatedPharmacy) return res.status(404).json({ message: 'Pharmacy not found' });
+
     res.json(updatedPharmacy);
   } catch (err) {
     res.status(500).json({ message: err.message });
   }
 };
+
+
 
 // get new perciptions
 

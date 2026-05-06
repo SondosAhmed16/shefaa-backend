@@ -9,11 +9,9 @@ const { runValidation } = require('../middleware/validate');
 
 router.get('/dashboard-stats', auth, pharmacyController.getDashboardStats);
 
-router.get('/profile', auth, async (req, res) => {
-    const profile = await Pharmacy.findOne({ userId: req.user._id });
-    res.json(profile);
+router.get('/profile', auth, pharmacyController.getProfile);
 
-});router.patch('/settings', auth, pharmacyController.updateProfileSettings);
+router.patch('/settings', auth, pharmacyController.updateProfileSettings);
 
 router.get('/inventory', auth, pharmacyController.getInventory); 
 
