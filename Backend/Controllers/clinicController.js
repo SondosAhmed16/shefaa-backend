@@ -458,8 +458,10 @@ exports.getDaySlots = async (req, res) => {
     }
 
     // ── 9. Build final slots ────────────────────────────────────────────────
-    const nowMins = new Date().getUTCHours() * 60 + new Date().getUTCMinutes();
-    const isToday = !isPast && requestedDate.toISOString().slice(0, 10) === new Date().toISOString().slice(0, 10);
+    const nowLocal = new Date(new Date().toLocaleString("en-US", { timeZone: "Africa/Cairo" }));
+    const nowMins = nowLocal.getHours() * 60 + nowLocal.getMinutes();
+    const todayLocal = nowLocal.toISOString().slice(0, 10); // still YYYY-MM-DD
+    const isToday = !isPast && requestedDate.toISOString().slice(0, 10) === todayLocal;
 
     const slots = rawSlots.map((slot) => {
       const bookedCount = bookedPerSlot[slot.startTime] ?? 0;
