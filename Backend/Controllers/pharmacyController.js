@@ -194,31 +194,58 @@ exports.getNewPrescriptions = async (req, res) => {
   }
 };
 
+// get inventory
+
 exports.getInventory = async (req, res) => {
   try {
-    const pharmacy = await Pharmacy.findOne({ userId: req.user._id });
+    const pharmacy = await getPharmacyByUserId(req.user._id);
+    if (!pharmacy) return res.status(404).json({ message: 'Pharmacy not found' });
 
-    const allMedicines = await MedicineStock.find({ pharmacyId: pharmacy._id });
+    const { search, filter } = req.query;
 
-    const lowStock = allMedicines.filter(m => m.quantity > 0 && m.quantity <= m.minThreshold);
-    const outOfStock = allMedicines.filter(m => m.quantity === 0);
+    const lowStockAlerts = await MedicineStock.find({
+      pharmacyId: pharmacy._id,
+      quantity: { $gt: 0 }, 
+      $expr: { $lte: ["$quantity", "$minThreshold"] }
+    }).sort({ quantity: 1 });
+
+    let allMedicationsQuery = { pharmacyId: pharmacy._id };
+
+    if (filter === 'low') {
+      allMedicationsQuery.$expr = { $lte: ["$quantity", "$minThreshold"] };
+    } else if (filter === 'out') {
+      allMedicationsQuery.quantity = 0;
+    }
+
+    if (search) {
+      allMedicationsQuery.medicineName = { $regex: search, $options: 'i' };
+    }
+
+    const allMedications = await MedicineStock.find(allMedicationsQuery).sort({ createdAt: -1 });
 
     res.json({
-      totalItems: allMedicines.length,
-      lowStockCount: lowStock.length,
-      allMedicines,
-      lowStockAlerts: lowStock,
-      outOfStock
+      lowStockAlerts,
+      allMedications
     });
   } catch (err) {
     res.status(500).json({ message: err.message });
   }
 };
 
+// add medicine
+
 exports.addMedicine = async (req, res) => {
   try {
     const pharmacy = await Pharmacy.findOne({ userId: req.user._id });
-    const { medicineName, category, price, quantity, requiresPrescription } = req.body;
+    
+    const { 
+      medicineName, 
+      category, 
+      price, 
+      quantity, 
+      minThreshold, 
+      requiresPrescription 
+    } = req.body;
 
     const newMedicine = new MedicineStock({
       pharmacyId: pharmacy._id,
@@ -226,25 +253,18 @@ exports.addMedicine = async (req, res) => {
       category,
       price,
       quantity,
-      requiresPrescription
+      minThreshold,
+      requiresPrescription: requiresPrescription || false
     });
 
     await newMedicine.save();
-
-    if (quantity <= (minThreshold || 5)) {
-      await Notification.create({
-        recipient: req.user._id,
-        title: `Low stock alert — ${medicineName}`,
-        message: `${medicineName} (${quantity} left). Please restock soon.`,
-        type: 'low_stock', //
-        relatedId: newMedicine._id
-      });
-    }
-    res.status(201).json(newMedicine);
+    res.status(201).json({ message: 'Medicine added successfully', medicine: newMedicine });
   } catch (err) {
-    res.status(400).json({ message: err.message });
+    res.status(500).json({ message: err.message });
   }
 };
+
+
 
 exports.getPrescriptionDetails = async (req, res) => {
   try {

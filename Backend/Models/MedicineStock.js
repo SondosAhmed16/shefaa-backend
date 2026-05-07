@@ -26,10 +26,6 @@ const medicineStockSchema = new mongoose.Schema(
       type: String,
       required: true
     },
-    expirationDate: {
-      type: Date,
-      required: true
-    },
     requiresPrescription: {
       type: Boolean,
       default: false
