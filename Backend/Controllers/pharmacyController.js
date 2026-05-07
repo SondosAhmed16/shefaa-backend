@@ -421,55 +421,39 @@ exports.patientSearch = async (req, res) => {
   try {
     const { query } = req.query;
 
-    // ملاحظة: استبدلنا $geoNear مؤقتاً بـ $match للتأكد من وجود البيانات
-    const searchResults = await Pharmacy.aggregate([
+    const results = await Pharmacy.aggregate([
       {
-        // 1. ابحث عن اسم الصيدلية (بدون لوكيشن حالياً للتجربة)
-        $match: {
-          $or: [
-            { pharmacyName: { $regex: query || "", $options: "i" } }
-          ]
-        }
+        // ابحث عن كل الصيدليات مؤقتاً للتجربة
+        $match: {} 
       },
       {
-        // 2. الربط مع الأدوية - تأكدي جداً من اسم الكولكشن 'medicinestocks'
+        // الربط
         $lookup: {
-          from: "medicinestocks", 
+          from: "medicinestocks", // تأكدي 100% من الاسم في Compass
           localField: "_id",
           foreignField: "pharmacyId",
           as: "inventory"
         }
       },
       {
-        // 3. عرض النتائج عشان نشوف المخزن جواه إيه
+        // فلترة النتائج حسب اسم الصيدلية أو وجود الدواء في الـ inventory اللي رجع
+        $match: {
+          $or: [
+            { pharmacyName: { $regex: query || "", $options: "i" } },
+            { "inventory.medicineName": { $regex: query || "", $options: "i" } }
+          ]
+        }
+      },
+      {
         $project: {
           pharmacyName: 1,
-          totalInInventory: { $size: "$inventory" }, // هيقولنا فيه كام دواء مربوط
-          inventoryDetails: "$inventory", // هيعرض الأدوية نفسها للتأكد
-          isMedicineAvailable: {
-            $gt: [
-              {
-                $size: {
-                  $filter: {
-                    input: "$inventory",
-                    as: "item",
-                    cond: { 
-                      $and: [
-                        { $regexMatch: { input: "$$item.medicineName", regex: query || "", options: "i" } },
-                        { $gt: ["$$item.quantity", 0] }
-                      ]
-                    }
-                  }
-                }
-              },
-              0
-            ]
-          }
+          inventoryCount: { $size: "$inventory" }, // لو طلع 0 يبقى الربط فاشل
+          inventory: 1 // عشان نشوف الداتا اللي رجعت
         }
       }
     ]);
 
-    res.json(searchResults);
+    res.json(results);
   } catch (err) {
     res.status(500).json({ message: err.message });
   }
