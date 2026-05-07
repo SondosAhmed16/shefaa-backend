@@ -8,7 +8,13 @@ const patientSchema = new mongoose.Schema(
       required: true,
       unique: true,
     },
-    address: { type: String, default: "" },
+    address: {
+      addressText: String,
+      location: {
+        type: { type: String, default: "Point" },
+        coordinates: [Number] // [longitude, latitude]
+      }
+    },
     age: { type: Number, default: 1, min: 1, max: 120 },
     gender: { type: String, enum: ["male", "female", ""], default: "" },
     medications: [{

@@ -2,17 +2,17 @@ const mongoose = require("mongoose");
 
 const pharmacySchema = new mongoose.Schema(
   {
-    userId: { 
-      type: mongoose.Schema.Types.ObjectId, 
-      ref: "User", 
-      required: true, 
-      unique: true 
+    userId: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "User",
+      required: true,
+      unique: true
     },
-    
-    pharmacyName: { 
-      type: String, 
-      required: true 
-    }, 
+
+   /* pharmacyName: {
+      type: String,
+      required: true
+    },*/
 
     commercialRegisterNumber: {
       type: String,
@@ -21,48 +21,70 @@ const pharmacySchema = new mongoose.Schema(
       trim: true
     },
     medicalLicencePdf: {
-      type: String 
+      type: String
     },
 
-    rating: { 
-      type: Number, 
-      default: 4.8 
-    }, 
-workingHours: [
+    rating: {
+      type: Number,
+      default: 4.8
+    },
+    workingHours: [
       {
-        days: { type: String, required: true }, 
-        time: { type: String, required: true }  
+        days: { type: String, required: true },
+        time: { type: String, required: true }
       }
     ],
-    phone: { 
-      type: String 
+    phone: {
+      type: String
     },
-    about: { 
-      type: String 
-    },
-
-    deliveryAvailable: { 
-      type: Boolean, 
-      default: true 
-    },
-    openNow: { 
-      type: Boolean, 
-      default: true 
-    },
-    prescriptionOnly: { 
-      type: Boolean, 
-      default: false 
+    about: {
+      type: String
     },
 
-    addresses: [
-      {
-        addressText: { type: String, required: true },
-        location: {
-          type: { type: String, enum: ["Point"], default: "Point" },
-          coordinates: { type: [Number], required: true }, 
-        },
-      },
+    deliveryAvailable: {
+      type: Boolean,
+      default: true
+    },
+    openNow: {
+      type: Boolean,
+      default: true
+    },
+    prescriptionOnly: {
+      type: Boolean,
+      default: false
+    },
+
+    deliveryTime: {
+      type: String,
+      default: "1 h"
+    },
+    deliveryArea: [
+      { type: String }
     ],
+    paymentMethods: [
+      {
+        type: String,
+        enum: ["Cash", "Visa", "Fawry", "Vodafone Cash"],
+        default: ["Cash"]
+      }
+    ],
+    licenseExpiry: {
+      type: String,
+      default: " "
+    },
+
+addresses: [
+  {
+    addressText: { type: String, required: true },
+    location: {
+      type: { type: String, enum: ["Point"], default: "Point" },
+      coordinates: { 
+        type: [Number], 
+        required: true 
+      },
+    },
+  },
+],
   },
   { timestamps: true }
 );

@@ -3,6 +3,8 @@ const MedicineStock = require('../Models/MedicineStock');
 const Order = require('../Models/Order');
 const Prescription = require('../Models/Prescription');
 const Notification = require('../Models/Notification');
+const Patient = require('../Models/Patients');
+const mongoose = require('mongoose');
 
 // Helper to get Pharmacy Profile by User ID
 const getPharmacyByUserId = async (userId) => {
@@ -114,25 +116,87 @@ exports.getDashboardStats = async (req, res) => {
   }
 };
 
+// get profile
+exports.getProfile = async (req, res) => {
+  try {
+    const pharmacy = await Pharmacy.findOne({ userId: req.user._id });
+
+    if (!pharmacy) {
+      return res.status(404).json({ message: 'Pharmacy profile not found' });
+    }
+
+    res.json(pharmacy);
+  } catch (err) {
+    res.status(500).json({ message: err.message });
+  }
+};
+
 // UPDATE PROFILE 
 
 exports.updateProfileSettings = async (req, res) => {
   try {
-    const { deliveryAvailable, openNow, prescriptionOnly } = req.body;
+    const {
+      deliveryAvailable,
+      openNow,
+      prescriptionOnly,
+      deliveryTime,
+      deliveryArea,
+      paymentMethods,
+      phone,
+      about,
+      workingHours,
+      commercialRegisterNumber,
+      addressText,
+      lat,
+      lng
+    } = req.body;
+
+
+    let updateData = {
+      deliveryAvailable,
+      openNow,
+      prescriptionOnly,
+      deliveryTime,
+      deliveryArea,
+      paymentMethods,
+      phone,
+      about,
+      workingHours,
+      commercialRegisterNumber,
+    };
+
+
+    if (addressText && lat && lng) {
+      updateData.addresses = [{
+        addressText,
+        location: {
+          type: "Point",
+          coordinates: [parseFloat(lng), parseFloat(lat)] // [Longitude, Latitude]
+        }
+      }];
+    }
+
     const updatedPharmacy = await Pharmacy.findOneAndUpdate(
       { userId: req.user._id },
-      { deliveryAvailable, openNow, prescriptionOnly },
-      { new: true }
+      updateData,
+      { new: true, runValidators: true }
     );
+
+
+
+    if (!updatedPharmacy) return res.status(404).json({ message: 'Pharmacy not found' });
+
     res.json(updatedPharmacy);
   } catch (err) {
     res.status(500).json({ message: err.message });
   }
 };
 
+
+
 // get new perciptions
 
-exports.getNewPrescriptions = async (req, res) => {
+/*exports.getNewPrescriptions = async (req, res) => {
   try {
     const pharmacy = await Pharmacy.findOne({ userId: req.user._id });
 
@@ -147,33 +211,61 @@ exports.getNewPrescriptions = async (req, res) => {
   } catch (err) {
     res.status(500).json({ message: err.message });
   }
-};
+};*/
+
+// get inventory
 
 exports.getInventory = async (req, res) => {
   try {
-    const pharmacy = await Pharmacy.findOne({ userId: req.user._id });
+    const pharmacy = await getPharmacyByUserId(req.user._id);
+    if (!pharmacy) return res.status(404).json({ message: 'Pharmacy not found' });
 
-    const allMedicines = await MedicineStock.find({ pharmacyId: pharmacy._id });
+    const { search, filter } = req.query;
 
-    const lowStock = allMedicines.filter(m => m.quantity > 0 && m.quantity <= m.minThreshold);
-    const outOfStock = allMedicines.filter(m => m.quantity === 0);
+    const lowStockAlerts = await MedicineStock.find({
+      pharmacyId: pharmacy._id,
+      quantity: { $gt: 0 },
+      $expr: { $lte: ["$quantity", "$minThreshold"] }
+    }).sort({ quantity: 1 });
+
+    let allMedicationsQuery = { pharmacyId: pharmacy._id };
+
+    if (filter === 'low') {
+      allMedicationsQuery.quantity = { $gt: 0 };
+      allMedicationsQuery.$expr = { $lte: ["$quantity", "$minThreshold"] };
+    } else if (filter === 'out') {
+      allMedicationsQuery.quantity = 0;
+    }
+
+    if (search) {
+      allMedicationsQuery.medicineName = { $regex: search, $options: 'i' };
+    }
+
+    const allMedications = await MedicineStock.find(allMedicationsQuery).sort({ createdAt: -1 });
 
     res.json({
-      totalItems: allMedicines.length,
-      lowStockCount: lowStock.length,
-      allMedicines,
-      lowStockAlerts: lowStock,
-      outOfStock
+      lowStockAlerts,
+      allMedications
     });
   } catch (err) {
     res.status(500).json({ message: err.message });
   }
 };
 
+// add medicine
+
 exports.addMedicine = async (req, res) => {
   try {
     const pharmacy = await Pharmacy.findOne({ userId: req.user._id });
-    const { medicineName, category, price, quantity, requiresPrescription } = req.body;
+
+    const {
+      medicineName,
+      category,
+      price,
+      quantity,
+      minThreshold,
+      requiresPrescription
+    } = req.body;
 
     const newMedicine = new MedicineStock({
       pharmacyId: pharmacy._id,
@@ -181,27 +273,20 @@ exports.addMedicine = async (req, res) => {
       category,
       price,
       quantity,
-      requiresPrescription
+      minThreshold,
+      requiresPrescription: requiresPrescription || false
     });
 
     await newMedicine.save();
-
-    if (quantity <= (minThreshold || 5)) {
-      await Notification.create({
-        recipient: req.user._id,
-        title: `Low stock alert — ${medicineName}`,
-        message: `${medicineName} (${quantity} left). Please restock soon.`,
-        type: 'low_stock', //
-        relatedId: newMedicine._id
-      });
-    }
-    res.status(201).json(newMedicine);
+    res.status(201).json({ message: 'Medicine added successfully', medicine: newMedicine });
   } catch (err) {
-    res.status(400).json({ message: err.message });
+    res.status(500).json({ message: err.message });
   }
 };
 
-exports.getPrescriptionDetails = async (req, res) => {
+
+
+/*exports.getPrescriptionDetails = async (req, res) => {
   try {
     const { id } = req.params;
     const pharmacy = await Pharmacy.findOne({ userId: req.user._id });
@@ -289,7 +374,8 @@ exports.findAlternative = async (req, res) => {
   } catch (err) {
     res.status(500).json({ message: err.message });
   }
-};
+};*/
+
 
 exports.getOrders = async (req, res) => {
   try {
@@ -333,48 +419,80 @@ exports.updateOrderStatus = async (req, res) => {
   }
 };
 
-
-exports.searchWithAvailability = async (req, res) => {
+exports.patientSearch = async (req, res) => {
   try {
-    const { lng, lat, query } = req.query;
+    let { query, lat, lng } = req.query;
 
-    if (!lng || !lat) {
-      return res.status(400).json({ message: "Location coordinates are required." });
+    // 1. تحديد موقع المريض (من الطلب أو البروفايل)
+    if (!lat || !lng) {
+      const patientProfile = await Patient.findOne({ userId: req.user._id });
+      if (patientProfile?.address?.location) {
+        lng = patientProfile.address.location.coordinates[0];
+        lat = patientProfile.address.location.coordinates[1];
+      }
     }
 
-    const results = await Pharmacy.aggregate([
+    const longitude = parseFloat(lng || 0);
+    const latitude = parseFloat(lat || 0);
+
+    // 2. الـ Aggregation Pipeline
+    const searchResults = await Pharmacy.aggregate([
       {
+        // البحث الجغرافي
         $geoNear: {
-          near: { type: "Point", coordinates: [parseFloat(lng), parseFloat(lat)] },
+          near: { type: "Point", coordinates: [longitude, latitude] },
           distanceField: "distance",
-          spherical: true,
-          distanceMultiplier: 0.001,
-          maxDistance: 10000
+          maxDistance: 25000, // 25 كيلو
+          spherical: true
         }
       },
       {
+        // الربط الذكي: بيحل مشكلة الـ String vs ObjectId
         $lookup: {
-          from: "medicinestocks",
-          localField: "_id",
-          foreignField: "pharmacyId",
+          from: "medicinestocks", 
+          let: { pharmacy_id: "$_id" }, // بنأخد الـ ID بتاع الصيدلية
+          pipeline: [
+            {
+              $match: {
+                $expr: {
+                  $and: [
+                    // هنا بنحول الـ pharmacyId اللي في جدول الأدوية لـ ObjectId عشان يقارنه صح
+                    { $eq: ["$pharmacyId", { $toObjectId: "$$pharmacy_id" }] },
+                    { $gt: ["$quantity", 0] }
+                  ]
+                }
+              }
+            }
+          ],
           as: "inventory"
         }
       },
       {
-        $addFields: {
-          isAvailable: {
+        // فلترة النتائج النهائية: لازم الاسم يطابق أو يكون فيه أدوية في الـ inventory
+        $match: {
+          $or: [
+            { pharmacyName: { $regex: query || "", $options: "i" } },
+            { "inventory.medicineName": { $regex: query || "", $options: "i" } }
+          ]
+        }
+      },
+      {
+        // تجهيز البيانات للـ UI
+        $project: {
+          pharmacyName: 1,
+          rating: 1,
+          deliveryAvailable: 1,
+          distance: 1,
+          totalMedicinesCount: { $size: "$inventory" },
+          // فحص هل الدواء اللي المريض كتبه موجود فعلاً؟
+          isMedicineAvailable: {
             $gt: [
               {
                 $size: {
                   $filter: {
                     input: "$inventory",
                     as: "item",
-                    cond: {
-                      $and: [
-                        { $regexMatch: { input: "$$item.medicineName", regex: query || "", options: "i" } },
-                        { $gt: ["$$item.quantity", 0] }
-                      ]
-                    }
+                    cond: { $regexMatch: { input: "$$item.medicineName", regex: query || "", options: "i" } }
                   }
                 }
               },
@@ -383,24 +501,16 @@ exports.searchWithAvailability = async (req, res) => {
           }
         }
       },
-      {
-        $project: {
-          pharmacyName: 1,
-          rating: 1,
-          openNow: 1,
-          deliveryAvailable: 1,
-          distance: { $round: ["$distance", 1] },
-          isAvailable: 1,
-          "addresses.addressText": 1
-        }
-      }
+      { $sort: { isMedicineAvailable: -1, distance: 1 } }
     ]);
 
-    res.json(results);
+    res.json(searchResults);
   } catch (err) {
+    console.error("Search Error:", err);
     res.status(500).json({ message: err.message });
   }
 };
+
 
 exports.getOrderTracking = async (req, res) => {
   try {

@@ -9,11 +9,9 @@ const { runValidation } = require('../middleware/validate');
 
 router.get('/dashboard-stats', auth, pharmacyController.getDashboardStats);
 
-router.get('/profile', auth, async (req, res) => {
-    const profile = await Pharmacy.findOne({ userId: req.user._id });
-    res.json(profile);
+router.get('/profile', auth, pharmacyController.getProfile);
 
-});router.patch('/settings', auth, pharmacyController.updateProfileSettings);
+router.patch('/settings', auth, pharmacyController.updateProfileSettings);
 
 router.get('/inventory', auth, pharmacyController.getInventory); 
 
@@ -23,19 +21,19 @@ router.post('/inventory/add', auth, pharmacyController.addMedicine);
 
 //router.delete('/inventory/delete/:id', auth, pharmacyController.deleteMedicine);
 
-router.get('/prescriptions', auth, pharmacyController.getNewPrescriptions);
+//router.get('/prescriptions', auth, pharmacyController.getNewPrescriptions);
 
-router.get('/prescriptions/:id', auth, pharmacyController.getPrescriptionDetails);
+//router.get('/prescriptions/:id', auth, pharmacyController.getPrescriptionDetails);
 
-router.post('/prescriptions/confirm', auth, pharmacyController.confirmPrescriptionOrder);
+//router.post('/prescriptions/confirm', auth, pharmacyController.confirmPrescriptionOrder);
 
-router.get('/inventory/alternatives', auth, pharmacyController.findAlternative);
+//router.get('/inventory/alternatives', auth, pharmacyController.findAlternative);
 
 router.get('/orders', auth, pharmacyController.getOrders);
 
 router.patch('/orders/:orderId/status', auth, pharmacyController.updateOrderStatus);
 
-router.get('/patient/search', auth, pharmacyController.searchWithAvailability);
+router.get('/patient/search', auth, pharmacyController.patientSearch);
 
 router.get('/orders/track/:orderId', auth, pharmacyController.getOrderTracking);
 
