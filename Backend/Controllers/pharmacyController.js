@@ -3,7 +3,7 @@ const MedicineStock = require('../Models/MedicineStock');
 const Order = require('../Models/Order');
 const Prescription = require('../Models/Prescription');
 const Notification = require('../Models/Notification');
-
+const Patient = require('../Models/Patients');
 // Helper to get Pharmacy Profile by User ID
 const getPharmacyByUserId = async (userId) => {
   return await Pharmacy.findOne({ userId });
@@ -177,7 +177,7 @@ exports.updateProfileSettings = async (req, res) => {
 
 // get new perciptions
 
-exports.getNewPrescriptions = async (req, res) => {
+/*exports.getNewPrescriptions = async (req, res) => {
   try {
     const pharmacy = await Pharmacy.findOne({ userId: req.user._id });
 
@@ -192,7 +192,7 @@ exports.getNewPrescriptions = async (req, res) => {
   } catch (err) {
     res.status(500).json({ message: err.message });
   }
-};
+};*/
 
 // get inventory
 
@@ -267,7 +267,7 @@ exports.addMedicine = async (req, res) => {
 
 
 
-exports.getPrescriptionDetails = async (req, res) => {
+/*exports.getPrescriptionDetails = async (req, res) => {
   try {
     const { id } = req.params;
     const pharmacy = await Pharmacy.findOne({ userId: req.user._id });
@@ -355,7 +355,8 @@ exports.findAlternative = async (req, res) => {
   } catch (err) {
     res.status(500).json({ message: err.message });
   }
-};
+};*/
+
 
 exports.getOrders = async (req, res) => {
   try {
@@ -400,42 +401,51 @@ exports.updateOrderStatus = async (req, res) => {
 };
 
 
-exports.searchWithAvailability = async (req, res) => {
+exports.patientSearch = async (req, res) => {
   try {
-    const { lng, lat, query } = req.query;
+    let { query, lat, lng } = req.query;
 
-    if (!lng || !lat) {
-      return res.status(400).json({ message: "Location coordinates are required." });
+    if (!lat || !lng) {
+      const patientProfile = await Patient.findOne({ userId: req.user._id });
+      if (patientProfile?.address?.location) {
+        lng = patientProfile.address.location.coordinates[0];
+        lat = patientProfile.address.location.coordinates[1];
+      }
     }
 
-    const results = await Pharmacy.aggregate([
+    const searchResults = await Pharmacy.aggregate([
       {
         $geoNear: {
-          near: { type: "Point", coordinates: [parseFloat(lng), parseFloat(lat)] },
+          near: { type: "Point", coordinates: [parseFloat(lng || 0), parseFloat(lat || 0)] },
           distanceField: "distance",
-          spherical: true,
-          distanceMultiplier: 0.001,
-          maxDistance: 10000
+          maxDistance: 2000, // 
+          query: { pharmacyName: { $regex: query || "", $options: "i" } }, 
+          spherical: true
         }
       },
       {
         $lookup: {
-          from: "medicinestocks",
+          from: "medicinestocks", 
           localField: "_id",
           foreignField: "pharmacyId",
           as: "inventory"
         }
       },
       {
-        $addFields: {
-          isAvailable: {
+        $project: {
+          pharmacyName: 1,
+          rating: 1,
+          deliveryAvailable: 1,
+          distance: 1,
+          totalMedicinesCount: { $size: "$inventory" },
+          isMedicineAvailable: {
             $gt: [
               {
                 $size: {
                   $filter: {
                     input: "$inventory",
                     as: "item",
-                    cond: {
+                    cond: { 
                       $and: [
                         { $regexMatch: { input: "$$item.medicineName", regex: query || "", options: "i" } },
                         { $gt: ["$$item.quantity", 0] }
@@ -448,26 +458,14 @@ exports.searchWithAvailability = async (req, res) => {
             ]
           }
         }
-      },
-      {
-        $project: {
-          pharmacyName: 1,
-          rating: 1,
-          openNow: 1,
-          deliveryAvailable: 1,
-          distance: { $round: ["$distance", 1] },
-          isAvailable: 1,
-          "addresses.addressText": 1
-        }
       }
     ]);
 
-    res.json(results);
+    res.json(searchResults);
   } catch (err) {
     res.status(500).json({ message: err.message });
   }
 };
-
 exports.getOrderTracking = async (req, res) => {
   try {
     const { orderId } = req.params;

@@ -73,15 +73,18 @@ const pharmacySchema = new mongoose.Schema(
       default: " "
     },
 
-    addresses: [
-      {
-        addressText: { type: String, required: true },
-        location: {
-          type: { type: String, enum: ["Point"], default: "Point" },
-          coordinates: { type: [Number], required: true },
-        },
+addresses: [
+  {
+    addressText: { type: String, required: true },
+    location: {
+      type: { type: String, enum: ["Point"], default: "Point" },
+      coordinates: { 
+        type: [Number], 
+        required: true 
       },
-    ],
+    },
+  },
+],
   },
   { timestamps: true }
 );

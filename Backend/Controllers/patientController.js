@@ -20,7 +20,9 @@ exports.getProfile = async (req, res) => {
 exports.updateProfile = async (req, res) => {
   try {
     const {
-      address, phoneNumber, age, gender,
+      addressText,
+      lng,
+      lat, phoneNumber, age, gender,
       bloodType, allergies, height, weight,
       chronicConditions
     } = req.body;
@@ -37,10 +39,18 @@ exports.updateProfile = async (req, res) => {
       });
     }
 
+    const updatedAddress = {
+      addressText,
+      location: {
+        type: "Point",
+        coordinates: [parseFloat(lng), parseFloat(lat)] // [Long, Lat]
+      }
+    };
+
     const patient = await Patient.findOneAndUpdate(
       { userId: req.user._id },
       {
-        address, phoneNumber, age, gender,
+        address: updatedAddress, phoneNumber, age, gender,
         bloodType, allergies, height, weight,
         chronicConditions
       },
@@ -175,7 +185,7 @@ exports.addMedication = async (req, res) => {
 
     const patient = await Patient.findOneAndUpdate(
       { userId: req.user._id },
-      { $push: { medications: req.body } }, 
+      { $push: { medications: req.body } },
       { new: true }
     );
 
@@ -329,12 +339,12 @@ exports.getMyMedications = async (req, res) => {
       const expectedDoses = diffDays * med.timesPerDay;
       const takenDoses = med.adherenceHistory.filter(h => h.status === 'taken').length;
 
-      const medAdherence = expectedDoses > 0 
-        ? Math.round((takenDoses / expectedDoses) * 100) 
+      const medAdherence = expectedDoses > 0
+        ? Math.round((takenDoses / expectedDoses) * 100)
         : 0;
 
       const finalMedAdherence = medAdherence > 100 ? 100 : medAdherence;
-      
+
       totalAdherenceSum += finalMedAdherence;
 
       return {
@@ -353,8 +363,8 @@ exports.getMyMedications = async (req, res) => {
     });
 
     const activeCount = medicationsList.length;
-    const avgAdherence = activeCount > 0 
-      ? Math.round(totalAdherenceSum / activeCount) 
+    const avgAdherence = activeCount > 0
+      ? Math.round(totalAdherenceSum / activeCount)
       : 0;
 
     res.json({
@@ -362,7 +372,7 @@ exports.getMyMedications = async (req, res) => {
         avgAdherence: `${avgAdherence}%`,
         activeMedications: activeCount
       },
-      medications: medicationsList 
+      medications: medicationsList
     });
 
   } catch (err) {
