@@ -419,41 +419,80 @@ exports.updateOrderStatus = async (req, res) => {
 
 exports.patientSearch = async (req, res) => {
   try {
-    const { query } = req.query;
+    let { query, lat, lng } = req.query;
 
-    const results = await Pharmacy.aggregate([
+    // 1. تحديد إحداثيات المريض (إما مبعوثة في الطلب أو من بروفايله)
+    if (!lat || !lng) {
+      const patientProfile = await Patient.findOne({ userId: req.user._id });
+      if (patientProfile?.address?.location) {
+        lng = patientProfile.address.location.coordinates[0];
+        lat = patientProfile.address.location.coordinates[1];
+      }
+    }
+
+    // تأكدي من تحويل القيم لأرقام
+    const longitude = parseFloat(lng || 0);
+    const latitude = parseFloat(lat || 0);
+
+    // 2. استخدام الـ Aggregation لجلب الصيدليات مع حالة الأدوية
+    const searchResults = await Pharmacy.aggregate([
       {
-        // ابحث عن كل الصيدليات مؤقتاً للتجربة
-        $match: {} 
+        // البحث الجغرافي - ترتيب الصيدليات من الأقرب للأبعد
+        $geoNear: {
+          near: { type: "Point", coordinates: [longitude, latitude] },
+          distanceField: "distance",
+          maxDistance: 20000, // البحث في نطاق 20 كيلو متر
+          spherical: true,
+          // تصفية أولية باسم الصيدلية لو المريض باحث باسمها
+          query: query ? { pharmacyName: { $regex: query, $options: "i" } } : {}
+        }
       },
       {
-        // الربط
+        // الربط مع كولكشن الأدوية
         $lookup: {
-          from: "medicinestocks", // تأكدي 100% من الاسم في Compass
+          from: "medicinestocks", // تأكدي إن ده اسم الكولكشن في Compass
           localField: "_id",
           foreignField: "pharmacyId",
           as: "inventory"
         }
       },
       {
-        // فلترة النتائج حسب اسم الصيدلية أو وجود الدواء في الـ inventory اللي رجع
-        $match: {
-          $or: [
-            { pharmacyName: { $regex: query || "", $options: "i" } },
-            { "inventory.medicineName": { $regex: query || "", $options: "i" } }
-          ]
+        // تشكيل البيانات النهائية المطلوبة للـ UI
+        $project: {
+          pharmacyName: 1,
+          rating: 1,
+          deliveryAvailable: 1,
+          distance: 1,
+          totalMedicinesCount: { $size: "$inventory" },
+          // فحص توافر الدواء المطلوب داخل الصيدلية
+          isMedicineAvailable: {
+            $gt: [
+              {
+                $size: {
+                  $filter: {
+                    input: "$inventory",
+                    as: "item",
+                    cond: { 
+                      $and: [
+                        { $regexMatch: { input: "$$item.medicineName", regex: query || "", options: "i" } },
+                        { $gt: ["$$item.quantity", 0] }
+                      ]
+                    }
+                  }
+                }
+              },
+              0
+            ]
+          }
         }
       },
       {
-        $project: {
-          pharmacyName: 1,
-          inventoryCount: { $size: "$inventory" }, // لو طلع 0 يبقى الربط فاشل
-          inventory: 1 // عشان نشوف الداتا اللي رجعت
-        }
+        // لو المريض باحث بدواء معين، نظهر الصيدليات اللي عندها الدواء ده أولاً
+        $sort: { isMedicineAvailable: -1, distance: 1 }
       }
     ]);
 
-    res.json(results);
+    res.json(searchResults);
   } catch (err) {
     res.status(500).json({ message: err.message });
   }
