@@ -421,11 +421,18 @@ exports.patientSearch = async (req, res) => {
   try {
     const { query } = req.query;
 
-    const testSearch = await Pharmacy.aggregate([
+    // ملاحظة: استبدلنا $geoNear مؤقتاً بـ $match للتأكد من وجود البيانات
+    const searchResults = await Pharmacy.aggregate([
       {
-        $match: { pharmacyName: { $regex: query || "", $options: "i" } }
+        // 1. ابحث عن اسم الصيدلية (بدون لوكيشن حالياً للتجربة)
+        $match: {
+          $or: [
+            { pharmacyName: { $regex: query || "", $options: "i" } }
+          ]
+        }
       },
       {
+        // 2. الربط مع الأدوية - تأكدي جداً من اسم الكولكشن 'medicinestocks'
         $lookup: {
           from: "medicinestocks", 
           localField: "_id",
@@ -434,13 +441,35 @@ exports.patientSearch = async (req, res) => {
         }
       },
       {
-        $addFields: {
-          inventoryCount: { $size: "$inventory" } // هيقولنا فيه كام دواء مربوط بالصيدلية دي
+        // 3. عرض النتائج عشان نشوف المخزن جواه إيه
+        $project: {
+          pharmacyName: 1,
+          totalInInventory: { $size: "$inventory" }, // هيقولنا فيه كام دواء مربوط
+          inventoryDetails: "$inventory", // هيعرض الأدوية نفسها للتأكد
+          isMedicineAvailable: {
+            $gt: [
+              {
+                $size: {
+                  $filter: {
+                    input: "$inventory",
+                    as: "item",
+                    cond: { 
+                      $and: [
+                        { $regexMatch: { input: "$$item.medicineName", regex: query || "", options: "i" } },
+                        { $gt: ["$$item.quantity", 0] }
+                      ]
+                    }
+                  }
+                }
+              },
+              0
+            ]
+          }
         }
       }
     ]);
 
-    res.json(testSearch);
+    res.json(searchResults);
   } catch (err) {
     res.status(500).json({ message: err.message });
   }
