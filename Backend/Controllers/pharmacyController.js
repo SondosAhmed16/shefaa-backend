@@ -133,9 +133,9 @@ exports.getProfile = async (req, res) => {
 
 exports.updateProfileSettings = async (req, res) => {
   try {
-    const { 
-      deliveryAvailable, 
-      openNow, 
+    const {
+      deliveryAvailable,
+      openNow,
       prescriptionOnly,
       deliveryTime,
       deliveryArea,
@@ -144,27 +144,44 @@ exports.updateProfileSettings = async (req, res) => {
       about,
       workingHours,
       commercialRegisterNumber,
-      licenseExpiry 
+      addressText,
+      lat,
+      lng
     } = req.body;
+
+
+    let updateData = {
+      deliveryAvailable,
+      openNow,
+      prescriptionOnly,
+      deliveryTime,
+      deliveryArea,
+      paymentMethods,
+      phone,
+      about,
+      workingHours,
+      commercialRegisterNumber,
+    };
+
+
+    if (addressText && lat && lng) {
+      updateData.addresses = [{
+        addressText,
+        location: {
+          type: "Point",
+          coordinates: [parseFloat(lng), parseFloat(lat)] // [Longitude, Latitude]
+        }
+      }];
+    }
 
     const updatedPharmacy = await Pharmacy.findOneAndUpdate(
       { userId: req.user._id },
-      { 
-        deliveryAvailable, 
-        openNow, 
-        prescriptionOnly,
-        deliveryTime,
-        deliveryArea,
-        paymentMethods,
-        phone,
-        about,
-        workingHours,
-        commercialRegisterNumber,
-        licenseExpiry
-      },
+      updateData,
       { new: true, runValidators: true }
     );
-    
+
+
+
     if (!updatedPharmacy) return res.status(404).json({ message: 'Pharmacy not found' });
 
     res.json(updatedPharmacy);
@@ -205,17 +222,17 @@ exports.getInventory = async (req, res) => {
 
     const lowStockAlerts = await MedicineStock.find({
       pharmacyId: pharmacy._id,
-      quantity: { $gt: 0 }, 
+      quantity: { $gt: 0 },
       $expr: { $lte: ["$quantity", "$minThreshold"] }
     }).sort({ quantity: 1 });
 
     let allMedicationsQuery = { pharmacyId: pharmacy._id };
 
     if (filter === 'low') {
-      allMedicationsQuery.quantity = { $gt: 0 }; 
+      allMedicationsQuery.quantity = { $gt: 0 };
       allMedicationsQuery.$expr = { $lte: ["$quantity", "$minThreshold"] };
     } else if (filter === 'out') {
-      allMedicationsQuery.quantity = 0; 
+      allMedicationsQuery.quantity = 0;
     }
 
     if (search) {
@@ -238,14 +255,14 @@ exports.getInventory = async (req, res) => {
 exports.addMedicine = async (req, res) => {
   try {
     const pharmacy = await Pharmacy.findOne({ userId: req.user._id });
-    
-    const { 
-      medicineName, 
-      category, 
-      price, 
-      quantity, 
-      minThreshold, 
-      requiresPrescription 
+
+    const {
+      medicineName,
+      category,
+      price,
+      quantity,
+      minThreshold,
+      requiresPrescription
     } = req.body;
 
     const newMedicine = new MedicineStock({
@@ -419,13 +436,13 @@ exports.patientSearch = async (req, res) => {
           near: { type: "Point", coordinates: [parseFloat(lng || 0), parseFloat(lat || 0)] },
           distanceField: "distance",
           maxDistance: 2000, // 
-          query: { pharmacyName: { $regex: query || "", $options: "i" } }, 
+          query: { pharmacyName: { $regex: query || "", $options: "i" } },
           spherical: true
         }
       },
       {
         $lookup: {
-          from: "medicinestocks", 
+          from: "medicinestocks",
           localField: "_id",
           foreignField: "pharmacyId",
           as: "inventory"
@@ -445,7 +462,7 @@ exports.patientSearch = async (req, res) => {
                   $filter: {
                     input: "$inventory",
                     as: "item",
-                    cond: { 
+                    cond: {
                       $and: [
                         { $regexMatch: { input: "$$item.medicineName", regex: query || "", options: "i" } },
                         { $gt: ["$$item.quantity", 0] }
