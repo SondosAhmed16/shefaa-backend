@@ -417,72 +417,36 @@ exports.updateOrderStatus = async (req, res) => {
   }
 };
 
-
 exports.patientSearch = async (req, res) => {
   try {
-    let { query, lat, lng } = req.query;
+    const { query } = req.query;
 
-    if (!lat || !lng) {
-      const patientProfile = await Patient.findOne({ userId: req.user._id });
-      if (patientProfile?.address?.location) {
-        lng = patientProfile.address.location.coordinates[0];
-        lat = patientProfile.address.location.coordinates[1];
-      }
-    }
-
-    const searchResults = await Pharmacy.aggregate([
+    const testSearch = await Pharmacy.aggregate([
       {
-        $geoNear: {
-          near: { type: "Point", coordinates: [parseFloat(lng || 0), parseFloat(lat || 0)] },
-          distanceField: "distance",
-          maxDistance: 2000, // 
-          query: { pharmacyName: { $regex: query || "", $options: "i" } },
-          spherical: true
-        }
+        $match: { pharmacyName: { $regex: query || "", $options: "i" } }
       },
       {
         $lookup: {
-          from: "medicinestocks",
+          from: "medicinestocks", 
           localField: "_id",
           foreignField: "pharmacyId",
           as: "inventory"
         }
       },
       {
-        $project: {
-          pharmacyName: 1,
-          rating: 1,
-          deliveryAvailable: 1,
-          distance: 1,
-          totalMedicinesCount: { $size: "$inventory" },
-          isMedicineAvailable: {
-            $gt: [
-              {
-                $size: {
-                  $filter: {
-                    input: "$inventory",
-                    as: "item",
-                    cond: {
-                      $and: [
-                        { $regexMatch: { input: "$$item.medicineName", regex: query || "", options: "i" } },
-                        { $gt: ["$$item.quantity", 0] }
-                      ]
-                    }
-                  }
-                }
-              },
-              0
-            ]
-          }
+        $addFields: {
+          inventoryCount: { $size: "$inventory" } // هيقولنا فيه كام دواء مربوط بالصيدلية دي
         }
       }
     ]);
 
-    res.json(searchResults);
+    res.json(testSearch);
   } catch (err) {
     res.status(500).json({ message: err.message });
   }
 };
+
+
 exports.getOrderTracking = async (req, res) => {
   try {
     const { orderId } = req.params;
