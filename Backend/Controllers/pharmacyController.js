@@ -212,9 +212,10 @@ exports.getInventory = async (req, res) => {
     let allMedicationsQuery = { pharmacyId: pharmacy._id };
 
     if (filter === 'low') {
+      allMedicationsQuery.quantity = { $gt: 0 }; 
       allMedicationsQuery.$expr = { $lte: ["$quantity", "$minThreshold"] };
     } else if (filter === 'out') {
-      allMedicationsQuery.quantity = 0;
+      allMedicationsQuery.quantity = 0; 
     }
 
     if (search) {
