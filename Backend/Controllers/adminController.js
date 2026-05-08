@@ -845,21 +845,21 @@ exports.getAppointmentSpecializations = async (req, res) => {
     const result = await Appointment.aggregate([
       {
         $lookup: {
-          from: 'doctors',
-          localField: 'doctorId',
+          from: 'doctors',        // اسم الـ collection في MongoDB
+          localField: 'doctor',   // ← اتغير من 'doctorId' لـ 'doctor'
           foreignField: '_id',
-          as: 'doctor',
+          as: 'doctorData',
         },
       },
-      { $unwind: '$doctor' },           // ← السطر اللي اتغير
+      { $unwind: '$doctorData' },
       {
         $match: {
-          'doctor.specialization': { $exists: true, $ne: null, $ne: '' },
+          'doctorData.specialization': { $exists: true, $ne: null, $ne: '' },
         },
       },
       {
         $group: {
-          _id:   '$doctor.specialization',
+          _id:   '$doctorData.specialization',
           count: { $sum: 1 },
         },
       },
@@ -875,11 +875,7 @@ exports.getAppointmentSpecializations = async (req, res) => {
       percentage:     total > 0 ? parseFloat(((r.count / total) * 100).toFixed(1)) : 0,
     }));
 
-    res.json({
-      total,
-      count: specializations.length,
-      specializations,
-    });
+    res.json({ total, count: specializations.length, specializations });
   } catch (err) {
     logger.error('Error fetching appointment specializations: ' + err.message);
     res.status(500).json({ message: 'Error fetching appointment specializations', detail: err.message });
