@@ -37,4 +37,19 @@ router.get('/recent-activity', adminController.getRecentActivity);
 router.get('/registrations-per-month', adminController.getRegistrationsPerMonth);
 router.get('/top-specializations', adminController.getTopSpecializations);
 
+router.get('/labs', adminController.getLabs);
+ 
+// ── NEW: Finance ─────────────────────────────────────────────────────────────
+router.get('/finance/summary',              adminController.getFinanceSummary);
+router.get('/finance/transactions',         adminController.getTransactions);
+router.post('/finance/transactions',        adminController.createTransaction);
+router.get('/finance/revenue-per-month',    adminController.getRevenuePerMonth);
+ 
+// ── NEW: Settings ─────────────────────────────────────────────────────────────
+router.get('/settings',                     adminController.getSettings);
+router.patch('/settings',                   adminController.updateSettings);
+ 
+// ── NEW: Global search ────────────────────────────────────────────────────────
+router.get('/search',                       adminController.globalSearch);
+
 module.exports = router;

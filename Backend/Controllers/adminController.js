@@ -510,3 +510,339 @@ exports.getTopSpecializations = async (req, res) => {
     res.status(500).json({ message: 'Error fetching top specializations' });
   }
 };
+
+/**
+ * adminController.additions.js
+ *
+ * Paste these exports into your existing adminController.js
+ * (after the last existing export).
+ *
+ * New endpoints covered:
+ *   GET  /admin/labs
+ *   GET  /admin/finance/summary
+ *   GET  /admin/finance/transactions
+ *   POST /admin/finance/transactions          ← create a manual transaction
+ *   GET  /admin/settings
+ *   PATCH /admin/settings
+ *   GET  /admin/search?q=&roles=&limit=
+ */
+
+const Transaction = require('../Models/Transaction'); // ← add this require at the top of your controller
+
+// ─── LABS ─────────────────────────────────────────────────────────────────────
+
+/**
+ * GET /admin/labs
+ * Returns all labs with their linked user data.
+ */
+exports.getLabs = async (req, res) => {
+  try {
+    const [labs, total] = await Promise.all([
+      Lab.find().populate('userId', '-password').lean(),
+      Lab.countDocuments(),
+    ]);
+    res.json({ total, labs });
+  } catch (err) {
+    logger.error('Error fetching labs: ' + err.message);
+    res.status(500).json({ message: 'Error fetching labs' });
+  }
+};
+
+// ─── FINANCE ─────────────────────────────────────────────────────────────────
+
+/**
+ * GET /admin/finance/summary
+ *
+ * Returns:
+ *  - totalRevenue        total completed transaction amounts
+ *  - revenueToday        completed today
+ *  - revenueThisMonth    completed in current calendar month
+ *  - byType              breakdown per transaction type
+ *  - byStatus            count per status
+ *  - recentTransactions  last N completed (default 5)
+ */
+exports.getFinanceSummary = async (req, res) => {
+  try {
+    const todayStart     = startOfDay();
+    const todayEnd       = endOfDay();
+    const monthStart     = new Date(new Date().getFullYear(), new Date().getMonth(), 1);
+    const monthEnd       = endOfDay(new Date(new Date().getFullYear(), new Date().getMonth() + 1, 0));
+
+    const [
+      totalRevenue,
+      revenueToday,
+      revenueThisMonth,
+      byType,
+      byStatus,
+      recentTransactions,
+    ] = await Promise.all([
+      // Total completed revenue
+      Transaction.aggregate([
+        { $match: { status: 'completed' } },
+        { $group: { _id: null, total: { $sum: '$amount' } } },
+      ]),
+
+      // Today completed revenue
+      Transaction.aggregate([
+        { $match: { status: 'completed', createdAt: { $gte: todayStart, $lte: todayEnd } } },
+        { $group: { _id: null, total: { $sum: '$amount' } } },
+      ]),
+
+      // This month completed revenue
+      Transaction.aggregate([
+        { $match: { status: 'completed', createdAt: { $gte: monthStart, $lte: monthEnd } } },
+        { $group: { _id: null, total: { $sum: '$amount' } } },
+      ]),
+
+      // Breakdown by type (completed only)
+      Transaction.aggregate([
+        { $match: { status: 'completed' } },
+        { $group: { _id: '$type', total: { $sum: '$amount' }, count: { $sum: 1 } } },
+        { $sort: { total: -1 } },
+      ]),
+
+      // Count by status
+      Transaction.aggregate([
+        { $group: { _id: '$status', count: { $sum: 1 } } },
+      ]),
+
+      // Recent 5 transactions (any status)
+      Transaction.find()
+        .sort({ createdAt: -1 })
+        .limit(5)
+        .populate('payer', 'name email role')
+        .populate('recipient', 'name email role')
+        .lean(),
+    ]);
+
+    res.json({
+      totalRevenue:     totalRevenue[0]?.total     ?? 0,
+      revenueToday:     revenueToday[0]?.total     ?? 0,
+      revenueThisMonth: revenueThisMonth[0]?.total ?? 0,
+      byType:           byType.map((b) => ({ type: b._id, total: b.total, count: b.count })),
+      byStatus:         byStatus.map((b) => ({ status: b._id, count: b.count })),
+      recentTransactions,
+    });
+  } catch (err) {
+    logger.error('Error fetching finance summary: ' + err.message);
+    res.status(500).json({ message: 'Error fetching finance summary' });
+  }
+};
+
+/**
+ * GET /admin/finance/transactions?status=&type=&page=1&limit=20
+ *
+ * Paginated, filterable list of all transactions.
+ */
+exports.getTransactions = async (req, res) => {
+  try {
+    const { status, type, page = 1, limit = 20 } = req.query;
+    const filter = {};
+    if (status) filter.status = status;
+    if (type)   filter.type   = type;
+
+    const skip  = (parseInt(page) - 1) * parseInt(limit);
+    const total = await Transaction.countDocuments(filter);
+
+    const transactions = await Transaction.find(filter)
+      .sort({ createdAt: -1 })
+      .skip(skip)
+      .limit(parseInt(limit))
+      .populate('payer',     'name email role')
+      .populate('recipient', 'name email role')
+      .lean();
+
+    res.json({
+      total,
+      page:  parseInt(page),
+      pages: Math.ceil(total / parseInt(limit)),
+      transactions,
+    });
+  } catch (err) {
+    logger.error('Error fetching transactions: ' + err.message);
+    res.status(500).json({ message: 'Error fetching transactions' });
+  }
+};
+
+/**
+ * POST /admin/finance/transactions
+ *
+ * Create a manual transaction (e.g. manual payout or adjustment).
+ * Body: { payer?, recipient?, amount, currency?, type, status?, note?, relatedModel?, relatedId? }
+ */
+exports.createTransaction = async (req, res) => {
+  try {
+    const { payer, recipient, amount, currency, type, status, note, relatedModel, relatedId } = req.body;
+
+    if (!amount || !type) {
+      return res.status(400).json({ message: 'amount and type are required' });
+    }
+
+    const tx = await Transaction.create({
+      payer:        payer        || null,
+      recipient:    recipient    || null,
+      amount,
+      currency:     currency     || 'EGP',
+      type,
+      status:       status       || 'pending',
+      note:         note         || '',
+      relatedModel: relatedModel || null,
+      relatedId:    relatedId    || null,
+    });
+
+    logger.info(`Admin created manual transaction: ${tx._id} — ${type} ${amount}`);
+    res.status(201).json({ message: 'Transaction created', transaction: tx });
+  } catch (err) {
+    logger.error('Error creating transaction: ' + err.message);
+    res.status(500).json({ message: 'Error creating transaction' });
+  }
+};
+
+/**
+ * GET /admin/finance/revenue-per-month?year=2025
+ *
+ * Monthly revenue breakdown (completed transactions) for the given year.
+ * Returns a 12-month array similar to /registrations-per-month.
+ */
+exports.getRevenuePerMonth = async (req, res) => {
+  try {
+    const year = parseInt(req.query.year) || new Date().getFullYear();
+
+    const result = await Transaction.aggregate([
+      {
+        $match: {
+          status: 'completed',
+          createdAt: {
+            $gte: new Date(`${year}-01-01T00:00:00.000Z`),
+            $lte: new Date(`${year}-12-31T23:59:59.999Z`),
+          },
+        },
+      },
+      {
+        $group: {
+          _id:   { $month: '$createdAt' },
+          total: { $sum: '$amount' },
+          count: { $sum: 1 },
+        },
+      },
+      { $sort: { _id: 1 } },
+    ]);
+
+    const MONTHS = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+    const monthly = MONTHS.map((month, i) => {
+      const found = result.find((r) => r._id === i + 1);
+      return { month, total: found ? found.total : 0, count: found ? found.count : 0 };
+    });
+
+    const yearTotal = monthly.reduce((s, m) => s + m.total, 0);
+
+    res.json({ year, yearTotal, monthly });
+  } catch (err) {
+    logger.error('Error fetching revenue per month: ' + err.message);
+    res.status(500).json({ message: 'Error fetching revenue per month' });
+  }
+};
+
+// ─── SETTINGS ────────────────────────────────────────────────────────────────
+// Uses a single "singleton" document in a Settings collection.
+// If you don't want a separate model, swap the require with your preferred store.
+
+const PlatformSettings = require('../Models/PlatformSettings'); // ← create this model (see below)
+
+const DEFAULT_SETTINGS = {
+  maintenance:    false,
+  registrations:  true,
+  email:          true,
+  sms:            true,
+  ai:             true,
+  docLicense:     true,
+  pharmaLicense:  true,
+  patientId:      false,
+  twoFa:          true,
+};
+
+/**
+ * GET /admin/settings
+ * Returns current platform settings (creates defaults if none exist yet).
+ */
+exports.getSettings = async (req, res) => {
+  try {
+    let settings = await PlatformSettings.findOne();
+    if (!settings) {
+      settings = await PlatformSettings.create(DEFAULT_SETTINGS);
+    }
+    res.json(settings);
+  } catch (err) {
+    logger.error('Error fetching settings: ' + err.message);
+    res.status(500).json({ message: 'Error fetching settings' });
+  }
+};
+
+/**
+ * PATCH /admin/settings
+ * Body: partial settings object — only provided keys are updated.
+ * Returns the updated settings document.
+ */
+exports.updateSettings = async (req, res) => {
+  try {
+    const allowed = Object.keys(DEFAULT_SETTINGS);
+    const updates = {};
+    allowed.forEach((key) => {
+      if (req.body[key] !== undefined) updates[key] = req.body[key];
+    });
+
+    if (Object.keys(updates).length === 0) {
+      return res.status(400).json({ message: 'No valid settings keys provided' });
+    }
+
+    const settings = await PlatformSettings.findOneAndUpdate(
+      {},
+      { $set: updates },
+      { upsert: true, new: true, runValidators: true }
+    );
+
+    logger.info(`Admin updated settings: ${JSON.stringify(updates)}`);
+    res.json({ message: 'Settings updated', settings });
+  } catch (err) {
+    logger.error('Error updating settings: ' + err.message);
+    res.status(500).json({ message: 'Error updating settings' });
+  }
+};
+
+// ─── SEARCH ──────────────────────────────────────────────────────────────────
+
+/**
+ * GET /admin/search?q=ahmed&roles=doctor,patient&limit=20
+ *
+ * Full-text search across users by name or email.
+ * Optional `roles` comma-separated filter.
+ */
+exports.globalSearch = async (req, res) => {
+  try {
+    const { q, roles, limit = 20 } = req.query;
+
+    if (!q || q.trim().length < 2) {
+      return res.status(400).json({ message: 'Query must be at least 2 characters' });
+    }
+
+    const regex  = new RegExp(q.trim(), 'i');
+    const filter = {
+      $or: [{ name: regex }, { email: regex }],
+    };
+
+    if (roles) {
+      const roleList = roles.split(',').map((r) => r.trim()).filter(Boolean);
+      if (roleList.length) filter.role = { $in: roleList };
+    }
+
+    const users = await User.find(filter)
+      .select('-password')
+      .limit(parseInt(limit))
+      .lean();
+
+    res.json({ total: users.length, query: q, users });
+  } catch (err) {
+    logger.error('Error in global search: ' + err.message);
+    res.status(500).json({ message: 'Error performing search' });
+  }
+};
