@@ -361,27 +361,40 @@ exports.getPlatformHealth = async (req, res) => {
 exports.getRecentActivity = async (req, res) => {
   try {
     const limit = parseInt(req.query.limit) || 20;
-    const since = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000); // last 7 days
+    const since = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000);
 
-    // Recent appointments (booked & cancelled)
-    const recentAppointments = await Appointment.find({ createdAt: { $gte: since } })
-      .sort({ createdAt: -1 })
-      .limit(limit)
-      .populate('patientId', 'name')
-      .populate('doctorId', 'name specialization')
-      .lean();
+    // ── Appointments ──────────────────────────────────────────────────────────
+    let appointmentEvents = [];
+    try {
+      const recentAppointments = await Appointment.find({ createdAt: { $gte: since } })
+        .sort({ createdAt: -1 })
+        .limit(limit)
+        .lean();   // ← no populate yet; we'll do it safely below
 
-    const appointmentEvents = recentAppointments.map((apt) => ({
-      type:      apt.status === 'cancelled' ? 'appointment_cancelled' : 'appointment_booked',
-      event:     apt.status === 'cancelled' ? 'Appointment cancelled' : 'New booking',
-      entity:    apt.doctorId?.name || 'Unknown doctor',
-      user:      apt.patientId?.name || 'Unknown patient',
-      status:    apt.status === 'cancelled' ? 'Cancelled' : 'Confirmed',
-      statusType: apt.status === 'cancelled' ? 'red' : 'green',
-      createdAt: apt.createdAt,
-    }));
+      // Try to populate — if field names are wrong this won't crash the whole route
+      const populated = await Appointment.find({ createdAt: { $gte: since } })
+        .sort({ createdAt: -1 })
+        .limit(limit)
+        .populate('patientId', 'name')   // ← change to 'patient' if that's your field name
+        .populate('doctorId',  'name specialization') // ← change to 'doctor' if needed
+        .lean()
+        .catch(() => recentAppointments); // fallback to unpopulated if populate fails
 
-    // Recent new users (non-patient roles for significance; include all if you prefer)
+      appointmentEvents = populated.map((apt) => ({
+        type:       apt.status === 'cancelled' ? 'appointment_cancelled' : 'appointment_booked',
+        event:      apt.status === 'cancelled' ? 'Appointment cancelled' : 'New booking',
+        entity:     apt.doctorId?.name || apt.doctor?.name || 'Unknown doctor',
+        user:       apt.patientId?.name || apt.patient?.name || 'Unknown patient',
+        status:     apt.status === 'cancelled' ? 'Cancelled' : 'Confirmed',
+        statusType: apt.status === 'cancelled' ? 'red' : 'green',
+        createdAt:  apt.createdAt,
+      }));
+    } catch (aptErr) {
+      logger.error('Appointments sub-query failed: ' + aptErr.message);
+      // continue with empty array — don't crash the whole route
+    }
+
+    // ── Users ─────────────────────────────────────────────────────────────────
     const recentUsers = await User.find({ createdAt: { $gte: since } })
       .sort({ createdAt: -1 })
       .limit(limit)
@@ -391,34 +404,31 @@ exports.getRecentActivity = async (req, res) => {
     const userEvents = recentUsers.map((u) => ({
       type:       'new_user',
       event:      `${u.role.charAt(0).toUpperCase() + u.role.slice(1)} registration`,
-      entity:     u.name,
+      entity:     u.name || u.email || 'Unknown',
       user:       '—',
       status:     u.isVerified ? 'Verified' : 'Pending',
       statusType: u.isVerified ? 'green' : 'amber',
       createdAt:  u.createdAt,
     }));
 
-    // Merge, sort by newest first, slice to limit
+    // ── Merge & format ────────────────────────────────────────────────────────
     const feed = [...appointmentEvents, ...userEvents]
       .sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt))
       .slice(0, limit)
       .map((item) => ({
         ...item,
         time: new Date(item.createdAt).toLocaleTimeString('en-US', {
-          hour:   '2-digit',
-          minute: '2-digit',
-          hour12: true,
+          hour: '2-digit', minute: '2-digit', hour12: true,
         }),
         date: new Date(item.createdAt).toLocaleDateString('en-GB', {
-          day:   '2-digit',
-          month: 'short',
+          day: '2-digit', month: 'short',
         }),
       }));
 
     res.json({ total: feed.length, activity: feed });
   } catch (err) {
     logger.error('Error fetching recent activity: ' + err.message);
-    res.status(500).json({ message: 'Error fetching recent activity' });
+    res.status(500).json({ message: 'Error fetching recent activity', detail: err.message });
   }
 };
 
