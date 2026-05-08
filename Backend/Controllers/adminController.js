@@ -843,33 +843,26 @@ exports.globalSearch = async (req, res) => {
 exports.getAppointmentSpecializations = async (req, res) => {
   try {
     const result = await Appointment.aggregate([
-      // Join appointments with doctors collection
       {
         $lookup: {
-          from: 'doctors',        // ← must match your MongoDB collection name exactly
-          localField: 'doctorId', // ← change to 'doctor' if that's your Appointment field name
+          from: 'doctors',
+          localField: 'doctorId',
           foreignField: '_id',
           as: 'doctor',
         },
       },
-      { $unwind: { path: '$doctor', preserveNullAndEmpty: false } },
-
-      // Only include appointments that actually have a specialization
+      { $unwind: '$doctor' },           // ← السطر اللي اتغير
       {
         $match: {
           'doctor.specialization': { $exists: true, $ne: null, $ne: '' },
         },
       },
-
-      // Group by specialization and count bookings
       {
         $group: {
           _id:   '$doctor.specialization',
           count: { $sum: 1 },
         },
       },
-
-      // Sort from most booked to least
       { $sort: { count: -1 } },
     ]);
 
@@ -883,8 +876,8 @@ exports.getAppointmentSpecializations = async (req, res) => {
     }));
 
     res.json({
-      total,                        // total appointments counted
-      count: specializations.length, // number of unique specializations
+      total,
+      count: specializations.length,
       specializations,
     });
   } catch (err) {
