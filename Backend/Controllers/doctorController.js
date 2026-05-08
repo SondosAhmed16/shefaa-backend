@@ -266,3 +266,33 @@ exports.getDoctorDashboard = async (req, res) => {
     res.status(500).json({ message: err.message });
   }
 };
+
+// Get clinics by doctor id
+exports.getDoctorClinics = async (req, res) => {
+  try {
+    const { doctorId } = req.params;
+
+    // Check if doctor exists
+    const doctor = await Doctor.findById(doctorId);
+
+    if (!doctor) {
+      return res.status(404).json({
+        message: "Doctor not found"
+      });
+    }
+
+    // Get all clinics for this doctor
+    const clinics = await Clinic.find({ doctorId });
+
+    res.status(200).json({
+      doctorId,
+      totalClinics: clinics.length,
+      clinics
+    });
+
+  } catch (err) {
+    res.status(500).json({
+      message: err.message
+    });
+  }
+};

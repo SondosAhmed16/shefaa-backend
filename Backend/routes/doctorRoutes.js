@@ -47,4 +47,6 @@ router.get('/search-doctors', doctorController.searchDoctors);
 router.get('/doctorDashboard', auth, authorizeRoles('doctor'), doctorController.getDoctorDashboard);
 router.post('/add-medical-record', auth, authorizeRoles('doctor'), runValidation, doctorController.addMedicalRecord);
 
+
+router.get('/:doctorId/clinics', auth, authorizeRoles('doctor','patient'), doctorController.getDoctorClinics);
 module.exports = router;
