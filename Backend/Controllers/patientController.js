@@ -39,21 +39,32 @@ exports.updateProfile = async (req, res) => {
       });
     }
 
-    const updatedAddress = {
-      addressText,
-      location: {
-        type: "Point",
-        coordinates: [parseFloat(lng), parseFloat(lat)] // [Long, Lat]
-      }
-    };
+    const updateFields = {};
+
+    if (phoneNumber !== undefined) updateFields.phoneNumber = phoneNumber;
+    if (age !== undefined) updateFields.age = age;
+    if (gender !== undefined) updateFields.gender = gender;
+    if (bloodType !== undefined) updateFields.bloodType = bloodType;
+    if (allergies !== undefined) updateFields.allergies = allergies;
+    if (height !== undefined) updateFields.height = height;
+    if (weight !== undefined) updateFields.weight = weight;
+    if (chronicConditions !== undefined) updateFields.chronicConditions = chronicConditions;
+
+    if (addressText !== undefined || lng !== undefined || lat !== undefined) {
+      updateFields.address = {
+        ...(addressText !== undefined && { addressText }),
+        ...(lng !== undefined && lat !== undefined && {
+          location: {
+            type: "Point",
+            coordinates: [parseFloat(lng), parseFloat(lat)]
+          }
+        })
+      };
+    }
 
     const patient = await Patient.findOneAndUpdate(
       { userId: req.user._id },
-      {
-        address: updatedAddress, phoneNumber, age, gender,
-        bloodType, allergies, height, weight,
-        chronicConditions
-      },
+      { $set: updateFields },
       { new: true, runValidators: true }
     );
 
