@@ -7,6 +7,9 @@ const Appointment = require('../Models/Appointment');
 const Review = require('../Models/Review');
 const logger = require('../config/loggerConfig');
 const { sendEmail } = require('../utils/sendEmail');
+// Add this at the top with other requires
+const Transaction = require('../Models/Transaction');
+const PlatformSettings = require('../Models/PlatformSettings');
 const os = require('os');
 
 // ─── HELPERS ────────────────────────────────────────────────────────────────
@@ -527,26 +530,6 @@ exports.getTopSpecializations = async (req, res) => {
  *   GET  /admin/search?q=&roles=&limit=
  */
 
-const Transaction = require('../Models/Transaction'); // ← add this require at the top of your controller
-
-// ─── LABS ─────────────────────────────────────────────────────────────────────
-
-/**
- * GET /admin/labs
- * Returns all labs with their linked user data.
- */
-exports.getLabs = async (req, res) => {
-  try {
-    const [labs, total] = await Promise.all([
-      Lab.find().populate('userId', '-password').lean(),
-      Lab.countDocuments(),
-    ]);
-    res.json({ total, labs });
-  } catch (err) {
-    logger.error('Error fetching labs: ' + err.message);
-    res.status(500).json({ message: 'Error fetching labs' });
-  }
-};
 
 // ─── FINANCE ─────────────────────────────────────────────────────────────────
 
@@ -747,7 +730,6 @@ exports.getRevenuePerMonth = async (req, res) => {
 // Uses a single "singleton" document in a Settings collection.
 // If you don't want a separate model, swap the require with your preferred store.
 
-const PlatformSettings = require('../Models/PlatformSettings'); // ← create this model (see below)
 
 const DEFAULT_SETTINGS = {
   maintenance:    false,

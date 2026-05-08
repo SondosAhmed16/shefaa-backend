@@ -9,9 +9,10 @@ router.use(authorizeRoles('admin'));
 
 router.get('/stats', adminController.getStats);
 
-router.get('/users', adminController.getAllUsers);
 
 router.get('/users/pending', adminController.getPendingUsers);
+
+router.get('/users', adminController.getAllUsers);
 
 router.patch('/users/activate/:id', adminController.activateUser);
 
@@ -36,8 +37,6 @@ router.get('/platform-health', adminController.getPlatformHealth);
 router.get('/recent-activity', adminController.getRecentActivity);
 router.get('/registrations-per-month', adminController.getRegistrationsPerMonth);
 router.get('/top-specializations', adminController.getTopSpecializations);
-
-router.get('/labs', adminController.getLabs);
  
 // ── NEW: Finance ─────────────────────────────────────────────────────────────
 router.get('/finance/summary',              adminController.getFinanceSummary);
