@@ -838,3 +838,57 @@ exports.globalSearch = async (req, res) => {
     res.status(500).json({ message: 'Error performing search' });
   }
 };
+
+
+exports.getAppointmentSpecializations = async (req, res) => {
+  try {
+    const result = await Appointment.aggregate([
+      // Join appointments with doctors collection
+      {
+        $lookup: {
+          from: 'doctors',        // ← must match your MongoDB collection name exactly
+          localField: 'doctorId', // ← change to 'doctor' if that's your Appointment field name
+          foreignField: '_id',
+          as: 'doctor',
+        },
+      },
+      { $unwind: { path: '$doctor', preserveNullAndEmpty: false } },
+
+      // Only include appointments that actually have a specialization
+      {
+        $match: {
+          'doctor.specialization': { $exists: true, $ne: null, $ne: '' },
+        },
+      },
+
+      // Group by specialization and count bookings
+      {
+        $group: {
+          _id:   '$doctor.specialization',
+          count: { $sum: 1 },
+        },
+      },
+
+      // Sort from most booked to least
+      { $sort: { count: -1 } },
+    ]);
+
+    const total = result.reduce((sum, r) => sum + r.count, 0);
+
+    const specializations = result.map((r, i) => ({
+      rank:           i + 1,
+      specialization: r._id,
+      count:          r.count,
+      percentage:     total > 0 ? parseFloat(((r.count / total) * 100).toFixed(1)) : 0,
+    }));
+
+    res.json({
+      total,                        // total appointments counted
+      count: specializations.length, // number of unique specializations
+      specializations,
+    });
+  } catch (err) {
+    logger.error('Error fetching appointment specializations: ' + err.message);
+    res.status(500).json({ message: 'Error fetching appointment specializations', detail: err.message });
+  }
+};

@@ -50,5 +50,5 @@ router.patch('/settings',                   adminController.updateSettings);
  
 // ── NEW: Global search ────────────────────────────────────────────────────────
 router.get('/search',                       adminController.globalSearch);
-
+router.get('/appointments/specializations', adminController.getAppointmentSpecializations);
 module.exports = router;
