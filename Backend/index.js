@@ -21,6 +21,7 @@ const appointmentRoutes = require('./routes/appointmentRoutes.js');
 const reviewRoutes = require('./routes/reviewRoutes.js');
 const adminRoutes = require('./routes/adminRoutes.js');
 const LabReportRoutes = require('./routes/LabReportRoutes');
+const chatboot = require('./routes/chatbootRoutes.js');
 const app = express();
 const cors = require('cors');
 
@@ -64,6 +65,7 @@ app.use('/api/appointments', appointmentRoutes);
 app.use('/api/reviews', reviewRoutes);
 app.use('/api/admin', adminRoutes);
 app.use('/api/labReport', LabReportRoutes);
+app.use('/api/chatboot', chatboot);
 
 const seedAdmin = async () => {
   try {
