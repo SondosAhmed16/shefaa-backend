@@ -108,19 +108,19 @@ const createAppointmentTransaction = async ({
   const platformFeeAmount = parseFloat((amount * PLATFORM_FEE_RATE).toFixed(2));
 
   await Transaction.create({
-    payer: patientUserId,
-    recipient: doctorUserId,
+    payer:             patientUserId,
+    recipient:         doctorUserId,
     amount,
-    currency: "EGP",
-    type: "appointment_fee",
-    status: "completed",
+    currency:          "EGP",
+    type:              "appointment_fee",
+    status:            "completed",
     paymentMethod,
-    platformFeeRate: PLATFORM_FEE_RATE,
+    platformFeeRate:   PLATFORM_FEE_RATE,
     platformFeeAmount,
-    platformFeePaid: false,           // doctor hasn't paid the app yet
-    relatedModel: "Appointment",
-    relatedId: appointmentId,
-    note: `Appointment with Dr. ${doctorName}`,
+    platformFeePaid:   false,           // doctor hasn't paid the app yet
+    relatedModel:      "Appointment",
+    relatedId:         appointmentId,
+    note:              `Appointment with Dr. ${doctorName}`,
   });
 };
 
@@ -161,7 +161,7 @@ exports.bookAppointment = async (req, res) => {
 
     if (!["prePay", "atClinic"].includes(paymentOption)) {
       return res.status(400).json({
-        message: 'paymentOption must be "prePay" or "atClinic".',
+        message: 'paymentOption must be "online" or "at-clinic".',
       });
     }
 
@@ -313,7 +313,8 @@ exports.bookAppointment = async (req, res) => {
 
     // ── 12. Determine payment status ──────────────
     // Card passed validation above → mark as paid immediately
-    const resolvedPaymentStatus = paymentOption === "prePay" ? "paid-online" : "pending"; // ✅
+    const resolvedPaymentStatus =
+      paymentOption === "prePay" ? "paid-online" : "pending";
 
     // ── 13. Create appointment ────────────────────
     const appointment = await Appointment.create({
@@ -337,12 +338,12 @@ exports.bookAppointment = async (req, res) => {
 
       try {
         await createAppointmentTransaction({
-          patientUserId: req.user._id,
-          doctorUserId: doctorProfile.userId._id,
-          amount: clinic.price,
-          paymentMethod: "online",
-          appointmentId: appointment._id,
-          doctorName: doctorProfile.userId.name,
+          patientUserId:  req.user._id,
+          doctorUserId:   doctorProfile.userId._id,
+          amount:         clinic.price,
+          paymentMethod:  "online",
+          appointmentId:  appointment._id,
+          doctorName:     doctorProfile.userId.name,
         });
       } catch (txErr) {
         // Don't fail the booking — just log
@@ -354,8 +355,9 @@ exports.bookAppointment = async (req, res) => {
     await Notification.create({
       recipient: req.user.id,
       title: "Appointment Booked",
-      message: `Your appointment at ${clinic.name} on ${date} at ${timeChosed} has been confirmed.${paymentOption === "online" ? " Payment received online." : ""
-        }`,
+      message: `Your appointment at ${clinic.name} on ${date} at ${timeChosed} has been confirmed.${
+        paymentOption === "prePay" ? " Payment received online." : ""
+      }`,
       type: "appointment",
     });
 
@@ -364,8 +366,8 @@ exports.bookAppointment = async (req, res) => {
       appointment,
       ...(paymentOption === "prePay" && {
         paymentInfo: {
-          status: "paid-online",
-          amount: clinic.price,
+          status:  "paid-online",
+          amount:  clinic.price,
           currency: "EGP",
         },
       }),
@@ -708,11 +710,11 @@ exports.markAppointmentAsPaid = async (req, res) => {
       try {
         await createAppointmentTransaction({
           patientUserId: patientProfile.userId._id,
-          doctorUserId: doctorProfile.userId._id,
-          amount: clinic.price,
+          doctorUserId:  doctorProfile.userId._id,
+          amount:        clinic.price,
           paymentMethod: "cash",
           appointmentId: appointment._id,
-          doctorName: doctorProfile.userId.name,
+          doctorName:    doctorProfile.userId.name,
         });
       } catch (txErr) {
         // Non-blocking — appointment is already saved as paid
@@ -736,9 +738,9 @@ exports.markAppointmentAsPaid = async (req, res) => {
       data: appointment,
       ...(clinic && {
         transactionInfo: {
-          amount: clinic.price,
-          platformFee: parseFloat((clinic.price * 0.015).toFixed(2)),
-          currency: "EGP",
+          amount:           clinic.price,
+          platformFee:      parseFloat((clinic.price * 0.015).toFixed(2)),
+          currency:         "EGP",
         },
       }),
     });
@@ -764,7 +766,7 @@ exports.getDoctorFeeSummary = async (req, res) => {
     }
 
     const now = new Date();
-    const year = parseInt(req.query.year, 10) || now.getFullYear();
+    const year  = parseInt(req.query.year,  10) || now.getFullYear();
     const month = parseInt(req.query.month, 10) || (now.getMonth() + 1);
 
     if (month < 1 || month > 12) {
@@ -786,11 +788,11 @@ exports.getDoctorFeeSummary = async (req, res) => {
       success: true,
       year,
       month,
-      totalAppointments: summary.count,
-      totalRevenue: summary.totalRevenue,
-      platformFeeOwed: summary.totalFee,
-      currency: "EGP",
-      feeRate: "1.5%",
+      totalAppointments:  summary.count,
+      totalRevenue:       summary.totalRevenue,
+      platformFeeOwed:    summary.totalFee,
+      currency:           "EGP",
+      feeRate:            "1.5%",
     });
 
   } catch (error) {
@@ -956,12 +958,12 @@ exports.updatePrescription = async (req, res) => {
       return res.status(403).json({ success: false, message: "You are not authorized to edit this prescription." });
     }
 
-    if (diagnosis !== undefined) prescription.diagnosis = diagnosis;
-    if (medicines !== undefined) prescription.medicines = medicines;
-    if (labTests !== undefined) prescription.labTests = labTests;
-    if (imaging !== undefined) prescription.imaging = imaging;
-    if (nextVisit !== undefined) prescription.nextVisit = nextVisit;
-    if (notes !== undefined) prescription.notes = notes;
+    if (diagnosis  !== undefined) prescription.diagnosis  = diagnosis;
+    if (medicines  !== undefined) prescription.medicines  = medicines;
+    if (labTests   !== undefined) prescription.labTests   = labTests;
+    if (imaging    !== undefined) prescription.imaging    = imaging;
+    if (nextVisit  !== undefined) prescription.nextVisit  = nextVisit;
+    if (notes      !== undefined) prescription.notes      = notes;
 
     await prescription.save();
 

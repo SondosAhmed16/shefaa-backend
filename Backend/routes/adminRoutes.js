@@ -3,6 +3,7 @@ const router = express.Router();
 const adminController = require('../Controllers/adminController');
 const { auth } = require('../middleware/auth');
 const { authorizeRoles } = require('../middleware/role'); 
+const billingController = require('../controllers/billingController');
 
 router.use(auth);
 router.use(authorizeRoles('admin'));
@@ -51,4 +52,13 @@ router.patch('/settings',                   adminController.updateSettings);
 // ── NEW: Global search ────────────────────────────────────────────────────────
 router.get('/search',                       adminController.globalSearch);
 router.get('/appointments/specializations', adminController.getAppointmentSpecializations);
+
+
+
+// Billing routes
+router.get('/billing/summary',               billingController.getBillingSummary);
+router.get('/billing/records',               billingController.getBillingRecords);
+router.patch('/billing/records/:id/pay',     billingController.markPaid);
+router.patch('/billing/records/:id/suspend', billingController.suspendForNonPayment);
+router.post('/billing/generate',             billingController.generateMonthlyBilling);
 module.exports = router;

@@ -5,6 +5,7 @@ const { auth } = require('../middleware/auth');
 const { authorizeRoles } = require('../middleware/role');
 
 router.post('/', auth, authorizeRoles('patient'), appointmentController.bookAppointment);
+router.get("/fee-summary", auth, authorizeRoles('doctor', 'admin'), appointmentController.getDoctorFeeSummary);
 router.get('/my', auth, authorizeRoles('patient','doctor'), appointmentController.getMyAppointments);
 router.patch('/:id/cancel', auth, authorizeRoles('patient','doctor'), appointmentController.cancelAppointment);
 router.post('/:id/blockPatient', auth, authorizeRoles('doctor'), appointmentController.blockPatientForNoShow);
@@ -14,4 +15,5 @@ router.get("/:appointmentId/getPrescription", auth, authorizeRoles('doctor','pat
 router.patch("/:id/complete", auth, authorizeRoles('doctor'), appointmentController.completeAppointment);
 router.get("/:id/getPreviousPrescription", auth, authorizeRoles('doctor'), appointmentController.getPreviousPrescription);
 router.patch("/:id/updatePrescription", auth, authorizeRoles('doctor'), appointmentController.updatePrescription);
+router.patch("/:id/reschedule", auth, authorizeRoles('patient'), appointmentController.rescheduleAppointment);
 module.exports = router;

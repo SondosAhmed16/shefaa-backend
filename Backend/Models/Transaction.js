@@ -1,100 +1,103 @@
-const mongoose = require('mongoose');
+const mongoose = require("mongoose");
 
-/**
- * Transaction Model
- * Tracks all financial movements on the platform.
- *
- * type:
- *   - 'appointment_fee'  → patient pays for a booking
- *   - 'lab_test_fee'     → patient pays for a lab test
- *   - 'pharmacy_order'   → patient pays for a pharmacy order
- *   - 'refund'           → money returned to patient
- *   - 'payout'           → platform pays out a doctor / pharmacy / lab
- *
- * status:
- *   - 'pending'   → created but not confirmed
- *   - 'completed' → money moved successfully
- *   - 'failed'    → payment gateway rejected
- *   - 'refunded'  → completed then reversed
- */
 const transactionSchema = new mongoose.Schema(
   {
-    // ── Who is involved ───────────────────────────────────────────────────────
     payer: {
       type: mongoose.Schema.Types.ObjectId,
-      ref: 'User',
-      default: null,          // null for platform-initiated payouts
+      ref: "User",
+      required: true,
     },
     recipient: {
       type: mongoose.Schema.Types.ObjectId,
-      ref: 'User',
-      default: null,          // null when money goes to platform wallet
+      ref: "User",
+      required: true,
     },
-
-    // ── What it's linked to ───────────────────────────────────────────────────
-    relatedModel: {
-      type: String,
-      enum: ['Appointment', 'Order', 'LabTest', null],
-      default: null,
-    },
-    relatedId: {
-      type: mongoose.Schema.Types.ObjectId,
-      default: null,
-    },
-
-    // ── Money ─────────────────────────────────────────────────────────────────
     amount: {
       type: Number,
       required: true,
-      min: 0,
     },
     currency: {
       type: String,
-      default: 'EGP',
-      uppercase: true,
-      trim: true,
+      default: "EGP",
     },
-
-    // ── Classification ────────────────────────────────────────────────────────
     type: {
       type: String,
-      enum: ['appointment_fee', 'lab_test_fee', 'pharmacy_order', 'refund', 'payout'],
+      enum: ["appointment_fee"],
       required: true,
     },
     status: {
       type: String,
-      enum: ['pending', 'completed', 'failed', 'refunded'],
-      default: 'pending',
+      enum: ["pending", "completed", "failed", "refunded"],
+      default: "pending",
     },
 
-    // ── Gateway details (optional — fill when a real gateway is wired) ────────
-    gatewayTxId: {
-      type: String,
-      default: null,          // e.g. Stripe charge id, Fawry ref, etc.
-      trim: true,
+    // ── Platform Fee ──────────────────────────────────────────────────────────
+    // 1.5% of the clinic session price — what the doctor owes the app this month
+    platformFeeRate: {
+      type: Number,
+      default: 0.015, // 1.5%
     },
-    gatewayResponse: {
-      type: mongoose.Schema.Types.Mixed,
-      default: null,
+    platformFeeAmount: {
+      type: Number,
+      default: 0,
+    },
+    platformFeePaid: {
+      type: Boolean,
+      default: false,
     },
 
-    // ── Human-readable note ───────────────────────────────────────────────────
-    note: {
+    // ── Payment method ────────────────────────────────────────────────────────
+    paymentMethod: {
       type: String,
-      trim: true,
-      default: '',
+      enum: ["cash", "online"],
+      default: "cash",
     },
+
+    // ── Relation ──────────────────────────────────────────────────────────────
+    relatedModel: {
+      type: String,
+      enum: ["Appointment"],
+    },
+    relatedId: {
+      type: mongoose.Schema.Types.ObjectId,
+      refPath: "relatedModel",
+    },
+
+    note: { type: String },
   },
-  {
-    timestamps: true,         // createdAt + updatedAt
-  }
+  { timestamps: true }
 );
 
-// ── Indexes for common admin queries ──────────────────────────────────────────
-transactionSchema.index({ status: 1, createdAt: -1 });
-transactionSchema.index({ type: 1, createdAt: -1 });
-transactionSchema.index({ payer: 1 });
-transactionSchema.index({ recipient: 1 });
-transactionSchema.index({ createdAt: -1 });
+// ── Monthly summary helper ────────────────────────────────────────────────────
+// Returns total platformFeeAmount owed by a doctor for a given month.
+// Usage: await Transaction.monthlyFeeOwed(doctorUserId, year, month)
+transactionSchema.statics.monthlyFeeOwed = async function (
+  doctorUserId,
+  year,
+  month
+) {
+  const start = new Date(year, month - 1, 1);
+  const end = new Date(year, month, 1);
 
-module.exports = mongoose.model('Transaction', transactionSchema);
+  const result = await this.aggregate([
+    {
+      $match: {
+        recipient: new mongoose.Types.ObjectId(doctorUserId),
+        status: "completed",
+        createdAt: { $gte: start, $lt: end },
+      },
+    },
+    {
+      $group: {
+        _id: null,
+        totalFee: { $sum: "$platformFeeAmount" },
+        totalRevenue: { $sum: "$amount" },
+        count: { $sum: 1 },
+      },
+    },
+  ]);
+
+  return result[0] ?? { totalFee: 0, totalRevenue: 0, count: 0 };
+};
+
+module.exports = mongoose.model("Transaction", transactionSchema);
