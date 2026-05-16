@@ -3,7 +3,7 @@ const router = express.Router();
 const adminController = require('../Controllers/adminController');
 const { auth } = require('../middleware/auth');
 const { authorizeRoles } = require('../middleware/role'); 
-const billingController = require('../controllers/billingController');
+const billingController = require('../Controllers/billingController');
 
 router.use(auth);
 router.use(authorizeRoles('admin'));
