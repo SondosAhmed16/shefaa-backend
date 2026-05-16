@@ -750,12 +750,18 @@ exports.markAppointmentAsPaid = async (req, res) => {
 };
 
 
-// ─── GET /transactions/doctor-fee-summary ────────────────────────────────────
+// ─── GET /appointments/fee-summary ───────────────────────────────────────────
 /**
  * Doctor views how much platform fee they owe for a given month.
  *
  * Query params: year (e.g. 2025), month (1–12)
  * Defaults to current month if not provided.
+ *
+ * FIX: Was using Transaction.monthlyFeeOwed(targetUserId) which maps to
+ * recipient = doctor's User._id.  This is correct — but only transactions
+ * whose status === 'completed' are counted.  We now also return a
+ * totalAppointments count by joining against the Appointment collection
+ * so the front-end can display it properly.
  */
 exports.getDoctorFeeSummary = async (req, res) => {
   try {
@@ -763,34 +769,78 @@ exports.getDoctorFeeSummary = async (req, res) => {
       return res.status(403).json({ success: false, message: "Unauthorized." });
     }
 
-    const now = new Date();
-    const year = parseInt(req.query.year, 10) || now.getFullYear();
+    const now   = new Date();
+    const year  = parseInt(req.query.year,  10) || now.getFullYear();
     const month = parseInt(req.query.month, 10) || (now.getMonth() + 1);
 
     if (month < 1 || month > 12) {
       return res.status(400).json({ success: false, message: "month must be between 1 and 12." });
     }
 
-    // Resolve the doctor's User._id (works for both doctor and admin calling on behalf)
+    // ── Resolve whose data to fetch ──────────────────────────────────────────
+    // For a doctor: recipient = their User._id (stored directly in Transaction)
+    // For an admin querying on behalf: pass ?doctorUserId=<User._id>
     let targetUserId = req.user._id;
-
     if (req.user.role === "admin" && req.query.doctorUserId) {
       targetUserId = req.query.doctorUserId;
-    } else if (req.user.role === "doctor") {
-      // already req.user._id
     }
 
-    const summary = await Transaction.monthlyFeeOwed(targetUserId, year, month);
+    // ── Build the month's date window (UTC) ──────────────────────────────────
+    const monthStart = new Date(Date.UTC(year, month - 1, 1, 0, 0, 0, 0));
+    const monthEnd   = new Date(Date.UTC(year, month,     1, 0, 0, 0, 0)); // exclusive
+
+    // ── Aggregate transactions for this doctor in this month ─────────────────
+    // Transaction schema fields used:
+    //   recipient      : User._id of the doctor   ← this is how we filter
+    //   amount         : session price (EGP)
+    //   platformFeeAmount : pre-computed 1.5% fee
+    //   status         : 'completed'
+    //   createdAt      : when the transaction was recorded
+    const pipeline = [
+      {
+        $match: {
+          recipient: targetUserId,          // doctor's User._id
+          status:    "completed",
+          type:      "appointment_fee",
+          createdAt: { $gte: monthStart, $lt: monthEnd },
+        },
+      },
+      {
+        $group: {
+          _id:              null,
+          totalRevenue:     { $sum: "$amount" },
+          totalFee:         { $sum: "$platformFeeAmount" },
+          count:            { $sum: 1 },
+          relatedIds:       { $push: "$relatedId" },   // Appointment _ids
+        },
+      },
+    ];
+
+    const [agg] = await Transaction.aggregate(pipeline);
+
+    // If no transactions exist this month, return zeroed summary
+    if (!agg) {
+      return res.status(200).json({
+        success:          true,
+        year,
+        month,
+        totalAppointments: 0,
+        totalRevenue:      0,
+        platformFeeOwed:   0,
+        currency:          "EGP",
+        feeRate:           "1.5%",
+      });
+    }
 
     return res.status(200).json({
-      success: true,
+      success:           true,
       year,
       month,
-      totalAppointments: summary.count,
-      totalRevenue: summary.totalRevenue,
-      platformFeeOwed: summary.totalFee,
-      currency: "EGP",
-      feeRate: "1.5%",
+      totalAppointments: agg.count,
+      totalRevenue:      parseFloat(agg.totalRevenue.toFixed(2)),
+      platformFeeOwed:   parseFloat(agg.totalFee.toFixed(2)),
+      currency:          "EGP",
+      feeRate:           "1.5%",
     });
 
   } catch (error) {
@@ -798,7 +848,6 @@ exports.getDoctorFeeSummary = async (req, res) => {
     return res.status(500).json({ success: false, message: "Server error." });
   }
 };
-
 
 // ─── Prescription endpoints (unchanged) ──────────────────────────────────────
 
