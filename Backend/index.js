@@ -38,8 +38,7 @@ app.use(cors({
 }));
 
 
-// Handle preflight for ALL routes
-app.options("/(.*)", cors());
+
 // 1. Security Middlewares
 securityMiddleware(app); 
 
