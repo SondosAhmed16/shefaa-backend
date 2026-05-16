@@ -461,7 +461,7 @@ exports.getMyAppointments = async (req, res) => {
           select: "userId address age gender height weight bloodType allergies chronicConditions isBlocked",
           populate: { path: "userId", model: "User", select: "name email phoneNumber" },
         })
-        .populate("clinic", "name address")
+        .populate("clinic", "name address price")
         .populate("prescription")
         .sort({ date: -1 });
 
