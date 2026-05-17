@@ -12,6 +12,9 @@ const getPharmacyByUserId = async (userId) => {
   return await Pharmacy.findOne({ userId });
 };
 
+// Alias used throughout the controller
+const getPharmacy = getPharmacyByUserId;
+
 /*exports.updateMedicine = async (req, res) => {
   try {
     const { id } = req.params;
