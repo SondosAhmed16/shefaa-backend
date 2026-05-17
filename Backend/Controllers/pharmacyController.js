@@ -1318,8 +1318,9 @@ exports.deleteDeliveryMan = async (req, res) => {
 
 
 exports.updateProfile = async (req, res) => {
-  try {
-    const pharmacy = await getPharmacy(req.user.id);
+   try {
+    const userId = req.user._id || req.user.id; // ← safe fallback
+    const pharmacy = await getPharmacy(userId);
     if (!pharmacy) {
       return res.status(404).json({ success: false, message: "Pharmacy not found" });
     }
@@ -1342,9 +1343,9 @@ exports.updateProfile = async (req, res) => {
     });
 
     // اسم الصيدلية موجود في User model مش Pharmacy
-    if (req.body.name !== undefined) {
+     if (req.body.name !== undefined) {
       await User.findByIdAndUpdate(
-        req.user.id,
+        userId,                                  // ← use userId here too
         { $set: { name: req.body.name.trim() } },
         { runValidators: true }
       );
@@ -1358,13 +1359,13 @@ exports.updateProfile = async (req, res) => {
     }
 
     const updatedPharmacy = await Pharmacy.findOneAndUpdate(
-      { userId: req.user.id },
+      { userId },                                // ← and here
       { $set: pharmacyUpdates },
       { new: true, runValidators: true }
     );
 
     // جيب الاسم من User عشان نرجعه في الـ response
-    const user = await User.findById(req.user.id).select("name");
+    const user = await User.findById(userId).select("name"); 
 
     return res.status(200).json({
       success: true,
