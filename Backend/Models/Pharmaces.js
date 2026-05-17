@@ -9,10 +9,10 @@ const pharmacySchema = new mongoose.Schema(
       unique: true
     },
 
-   /* pharmacyName: {
-      type: String,
-      required: true
-    },*/
+    /* pharmacyName: {
+       type: String,
+       required: true
+     },*/
 
     commercialRegisterNumber: {
       type: String,
@@ -60,31 +60,36 @@ const pharmacySchema = new mongoose.Schema(
     },
     deliveryArea: [
       { type: String }
-    ],
-    paymentMethods: [
-      {
-        type: String,
-        enum: ["Cash", "Visa", "Fawry", "Vodafone Cash"],
-        default: ["Cash"]
-      }
-    ],
+    ], paymentMethods: [{
+      type: String,
+      enum: [
+        "Cash",
+        "Visa",
+        "Mastercard",
+        "Instapay",
+        "Meeza",           // ← add this
+        "Vodafone Cash",
+        "Etisalat Cash",
+        "Orange Cash",
+      ]
+    }],
     licenseExpiry: {
       type: String,
       default: " "
     },
 
-addresses: [
-  {
-    addressText: { type: String, required: true },
-    location: {
-      type: { type: String, enum: ["Point"], default: "Point" },
-      coordinates: { 
-        type: [Number], 
-        required: true 
+    addresses: [
+      {
+        addressText: { type: String, required: true },
+        location: {
+          type: { type: String, enum: ["Point"], default: "Point" },
+          coordinates: {
+            type: [Number],
+            required: true
+          },
+        },
       },
-    },
-  },
-],
+    ],
   },
   { timestamps: true }
 );
