@@ -9,34 +9,31 @@ const { runValidation } = require('../middleware/validate');
 
 router.get('/dashboard-stats', auth, pharmacyController.getDashboardStats);
 
-router.get('/profile', auth, pharmacyController.getProfile);
-
-router.patch('/settings', auth, pharmacyController.updateProfileSettings);
-
-router.get('/inventory', auth, pharmacyController.getInventory); 
-
-router.post('/inventory/add', auth, pharmacyController.addMedicine);
-
-//router.put('/inventory/update/:id', auth, pharmacyController.updateMedicine);
-
-//router.delete('/inventory/delete/:id', auth, pharmacyController.deleteMedicine);
-
-//router.get('/prescriptions', auth, pharmacyController.getNewPrescriptions);
-
-//router.get('/prescriptions/:id', auth, pharmacyController.getPrescriptionDetails);
-
-//router.post('/prescriptions/confirm', auth, pharmacyController.confirmPrescriptionOrder);
-
-//router.get('/inventory/alternatives', auth, pharmacyController.findAlternative);
-
-router.get('/orders', auth, pharmacyController.getOrders);
-
-router.patch('/orders/:orderId/status', auth, pharmacyController.updateOrderStatus);
-
 router.get('/patient/search', auth, pharmacyController.patientSearch);
 
 router.get('/orders/track/:orderId', auth, pharmacyController.getOrderTracking);
 
 //router.get('/search', pharmacyController.searchMedicines); 
 
+/////////////////////////////////////////////////////////////////////
+router.get('/profile', auth, authorizeRoles('pharmacy'), pharmacyController.getProfile);
+router.get('/orders',                            auth, authorizeRoles('pharmacy'), pharmacyController.getOrders);
+router.patch('/orders/:orderId/accept',          auth, authorizeRoles('pharmacy'), pharmacyController.acceptOrder);
+router.patch('/orders/:orderId/ready',           auth, authorizeRoles('pharmacy'), pharmacyController.markOrderReady);
+router.get('/inventory',                    auth, authorizeRoles('pharmacy'), pharmacyController.getInventory);
+router.get('/inventory/search',             auth, authorizeRoles('pharmacy'), pharmacyController.searchMedicines);
+router.get('/inventory/low-stock',          auth, authorizeRoles('pharmacy'), pharmacyController.getLowStockAlerts);
+router.patch('/inventory/:id/restock',      auth, authorizeRoles('pharmacy'), pharmacyController.restockMedicine);
+router.post('/inventory/add',               auth, authorizeRoles('pharmacy'), pharmacyController.addMedicine);
+router.put('/inventory/:id',                auth, authorizeRoles('pharmacy'), pharmacyController.updateMedicine);
+router.get('/delivery-men',              auth, authorizeRoles('pharmacy'), pharmacyController.getDeliveryMen);
+router.get('/delivery-men/search',       auth, authorizeRoles('pharmacy'), pharmacyController.searchDeliveryMen);
+router.get('/delivery-men/available',    auth, authorizeRoles('pharmacy'), pharmacyController.getAvailableDeliveryMen);
+router.get('/delivery-men/busy',         auth, authorizeRoles('pharmacy'), pharmacyController.getBusyDeliveryMen);
+router.post('/delivery-men',             auth, authorizeRoles('pharmacy'), pharmacyController.addDeliveryMan);
+router.put('/delivery-men/:id',          auth, authorizeRoles('pharmacy'), pharmacyController.updateDeliveryMan);
+router.delete('/delivery-men/:id',       auth, authorizeRoles('pharmacy'), pharmacyController.deleteDeliveryMan);
+router.patch('/profile',                   auth, authorizeRoles('pharmacy'), pharmacyController.updateProfile);
+router.patch('/settings/status',           auth, authorizeRoles('pharmacy'), pharmacyController.toggleOpenStatus);
+router.patch('/settings/delivery',         auth, authorizeRoles('pharmacy'), pharmacyController.toggleDeliveryService);
 module.exports = router;
