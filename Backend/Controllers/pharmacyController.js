@@ -4,7 +4,7 @@ const Order = require('../Models/Order');
 const Prescription = require('../Models/Prescription');
 const Notification = require('../Models/Notification');
 const Patient = require('../Models/Patients');
-const DeliveryMan=require('../Models/DeliveryMan')
+const DeliveryMan = require('../Models/DeliveryMan')
 const User = require('../Models/Users');
 const mongoose = require('mongoose');
 
@@ -264,7 +264,7 @@ exports.patientSearch = async (req, res) => {
       {
         // الربط الذكي: بيحل مشكلة الـ String vs ObjectId
         $lookup: {
-          from: "medicinestocks", 
+          from: "medicinestocks",
           let: { pharmacy_id: "$_id" }, // بنأخد الـ ID بتاع الصيدلية
           pipeline: [
             {
@@ -385,36 +385,36 @@ exports.getProfile = async (req, res) => {
       success: true,
       data: {
         // Hero section
-        pharmacyName:             req.user.name,         // اسمه جاي من User model
+        pharmacyName: req.user.name,         // اسمه جاي من User model
         commercialRegisterNumber: pharmacy.commercialRegisterNumber,
-        licenseExpiry:            pharmacy.licenseExpiry,
-        rating:                   pharmacy.rating,
-        about:                    pharmacy.about,
+        licenseExpiry: pharmacy.licenseExpiry,
+        rating: pharmacy.rating,
+        about: pharmacy.about,
 
         // Badges
-        openNow:           pharmacy.openNow,
+        openNow: pharmacy.openNow,
         deliveryAvailable: pharmacy.deliveryAvailable,
 
         // Stats bar (3 أرقام تحت الـ hero)
         stats: {
-          rating:        pharmacy.rating,
+          rating: pharmacy.rating,
           totalMedicines,
           totalOrders
         },
 
         // Pharmacy Details section
-        phone:          pharmacy.phone,
-        workingHours:   pharmacy.workingHours,    // [{ days, time }]
-        addresses:      pharmacy.addresses,        // [{ addressText, location }]
-        deliveryArea:   pharmacy.deliveryArea,     // ["Maadi", "Degla", ...]
+        phone: pharmacy.phone,
+        workingHours: pharmacy.workingHours,    // [{ days, time }]
+        addresses: pharmacy.addresses,        // [{ addressText, location }]
+        deliveryArea: pharmacy.deliveryArea,     // ["Maadi", "Degla", ...]
         paymentMethods: pharmacy.paymentMethods,   // ["Cash", "Visa", ...]
-        deliveryTime:   pharmacy.deliveryTime,
+        deliveryTime: pharmacy.deliveryTime,
 
         // Account Settings toggles
         settings: {
-          deliveryAvailable:   pharmacy.deliveryAvailable,
-          openNow:             pharmacy.openNow,
-          prescriptionOnly:    pharmacy.prescriptionOnly
+          deliveryAvailable: pharmacy.deliveryAvailable,
+          openNow: pharmacy.openNow,
+          prescriptionOnly: pharmacy.prescriptionOnly
         }
       }
     });
@@ -472,7 +472,7 @@ exports.getOrders = async (req, res) => {
         statusCounts: counts,         // { New: 5, Preparing: 2, ... }
         pagination: {
           total,
-          page:       Number(page),
+          page: Number(page),
           totalPages: Math.ceil(total / Number(limit))
         }
       }
@@ -492,7 +492,7 @@ exports.acceptOrder = async (req, res) => {
     }
 
     const order = await Order.findOne({
-      _id:        req.params.orderId,
+      _id: req.params.orderId,
       pharmacyId: pharmacy._id
     });
 
@@ -510,9 +510,9 @@ exports.acceptOrder = async (req, res) => {
 
     order.status = "Preparing";
     order.statusHistory.push({
-      status:    "Preparing",
+      status: "Preparing",
       changedAt: new Date(),
-      note:      "Order accepted by pharmacy"
+      note: "Order accepted by pharmacy"
     });
 
     await order.save();
@@ -521,7 +521,7 @@ exports.acceptOrder = async (req, res) => {
       success: true,
       message: "Order accepted successfully",
       data: {
-        orderId:   order._id,
+        orderId: order._id,
         newStatus: order.status
       }
     });
@@ -540,7 +540,7 @@ exports.markOrderReady = async (req, res) => {
     }
 
     const order = await Order.findOne({
-      _id:        req.params.orderId,
+      _id: req.params.orderId,
       pharmacyId: pharmacy._id
     });
 
@@ -568,9 +568,9 @@ exports.markOrderReady = async (req, res) => {
       }
 
       const deliveryMan = await DeliveryMan.findOne({
-        _id:        deliveryManId,
+        _id: deliveryManId,
         pharmacyId: pharmacy._id,
-        isActive:   true
+        isActive: true
       });
 
       if (!deliveryMan) {
@@ -590,8 +590,8 @@ exports.markOrderReady = async (req, res) => {
       // لو كان معين لأوردر تاني قبل كده، شيل الأوردر ده من assignedOrders بتاعه
       if (order.deliveryManId) {
         await DeliveryMan.findByIdAndUpdate(order.deliveryManId, {
-          $pull:  { assignedOrders: order._id },
-          $set:   { status: "Available" }          // هنرجعه Available مبدئياً
+          $pull: { assignedOrders: order._id },
+          $set: { status: "Available" }          // هنرجعه Available مبدئياً
         });
       }
 
@@ -606,11 +606,11 @@ exports.markOrderReady = async (req, res) => {
     // ── Mark as Ready ───────────────────────────────────────────────────
     order.status = "Ready";
     order.statusHistory.push({
-      status:    "Ready",
+      status: "Ready",
       changedAt: new Date(),
-      note:      order.orderType === "Delivery"
-                   ? "Order ready — rider assigned"
-                   : "Order ready for pickup"
+      note: order.orderType === "Delivery"
+        ? "Order ready — rider assigned"
+        : "Order ready for pickup"
     });
 
     await order.save();
@@ -622,8 +622,8 @@ exports.markOrderReady = async (req, res) => {
       success: true,
       message: "Order marked as ready",
       data: {
-        orderId:     order._id,
-        newStatus:   order.status,
+        orderId: order._id,
+        newStatus: order.status,
         deliveryMan: order.deliveryManId ?? null
       }
     });
@@ -645,7 +645,7 @@ exports.getInventory = async (req, res) => {
 
     const baseFilter = { pharmacyId: pharmacy._id };
 
-    if (filter === "instock")    baseFilter.inStock = true;
+    if (filter === "instock") baseFilter.inStock = true;
     if (filter === "outofstock") baseFilter.inStock = false;
 
     const skip = (Number(page) - 1) * Number(limit);
@@ -678,12 +678,12 @@ exports.getInventory = async (req, res) => {
         lowStockItems,
         summary: {
           total,
-          lowStockCount:  lowStockItems.length,
+          lowStockCount: lowStockItems.length,
           outOfStockCount
         },
         pagination: {
           total,
-          page:       Number(page),
+          page: Number(page),
           totalPages: Math.ceil(total / Number(limit))
         }
       }
@@ -730,8 +730,8 @@ exports.searchMedicines = async (req, res) => {
         pharmacyId: pharmacy._id,
         $or: [
           { medicineName: regex },
-          { genericName:  regex },
-          { category:     regex }
+          { genericName: regex },
+          { category: regex }
         ]
       };
     }
@@ -751,7 +751,7 @@ exports.searchMedicines = async (req, res) => {
         query: q,
         pagination: {
           total,
-          page:       Number(page),
+          page: Number(page),
           totalPages: Math.ceil(total / Number(limit))
         }
       }
@@ -807,7 +807,7 @@ exports.restockMedicine = async (req, res) => {
     }
 
     const medicine = await MedicineStock.findOne({
-      _id:        req.params.id,
+      _id: req.params.id,
       pharmacyId: pharmacy._id
     });
 
@@ -829,12 +829,12 @@ exports.restockMedicine = async (req, res) => {
       success: true,
       message: `${medicine.medicineName} restocked successfully`,
       data: {
-        medicineId:       medicine._id,
-        medicineName:     medicine.medicineName,
+        medicineId: medicine._id,
+        medicineName: medicine.medicineName,
         previousQuantity,
-        addedQuantity:    Number(quantity),
-        currentQuantity:  medicine.quantity,
-        inStock:          medicine.inStock
+        addedQuantity: Number(quantity),
+        currentQuantity: medicine.quantity,
+        inStock: medicine.inStock
       }
     });
 
@@ -881,7 +881,7 @@ exports.addMedicine = async (req, res) => {
 
     // منعرفش نضيف نفس الدواء مرتين في نفس الصيدلية
     const existing = await MedicineStock.findOne({
-      pharmacyId:  pharmacy._id,
+      pharmacyId: pharmacy._id,
       medicineName: medicineName.trim()
     });
 
@@ -894,16 +894,16 @@ exports.addMedicine = async (req, res) => {
 
     const medicine = await MedicineStock.create({
       pharmacyId: pharmacy._id,
-      medicineName:         medicineName.trim(),
-      genericName:          genericName?.trim(),
+      medicineName: medicineName.trim(),
+      genericName: genericName?.trim(),
       category,
       dosageForm,
       manufacturer,
       barcode,
-      price:                Number(price),
-      quantity:             Number(quantity) || 0,
-      minThreshold:         minThreshold !== undefined ? Number(minThreshold) : 5,
-      inStock:              inStock !== undefined ? inStock : true,
+      price: Number(price),
+      quantity: Number(quantity) || 0,
+      minThreshold: minThreshold !== undefined ? Number(minThreshold) : 5,
+      inStock: inStock !== undefined ? inStock : true,
       requiresPrescription: requiresPrescription || false,
       expiryDate,
       indications,
@@ -1021,12 +1021,12 @@ exports.getDeliveryMen = async (req, res) => {
         summary: {
           total,
           available: counts.Available,
-          busy:      counts.Busy,
-          offline:   counts.Offline
+          busy: counts.Busy,
+          offline: counts.Offline
         },
         pagination: {
           total,
-          page:       Number(page),
+          page: Number(page),
           totalPages: Math.ceil(total / Number(limit))
         }
       }
@@ -1056,14 +1056,14 @@ exports.searchDeliveryMen = async (req, res) => {
     }
 
     const regex = new RegExp(q.trim(), "i");
-    const skip  = (Number(page) - 1) * Number(limit);
+    const skip = (Number(page) - 1) * Number(limit);
 
     const searchFilter = {
       pharmacyId: pharmacy._id,
-      isActive:   true,
+      isActive: true,
       $or: [
-        { name:    regex },
-        { phones:  regex },   // phones هو array فـ mongoose بيعمل $elemMatch تلقائي
+        { name: regex },
+        { phones: regex },   // phones هو array فـ mongoose بيعمل $elemMatch تلقائي
         { vehicle: regex }
       ]
     };
@@ -1084,7 +1084,7 @@ exports.searchDeliveryMen = async (req, res) => {
         query: q,
         pagination: {
           total,
-          page:       Number(page),
+          page: Number(page),
           totalPages: Math.ceil(total / Number(limit))
         }
       }
@@ -1105,8 +1105,8 @@ exports.getAvailableDeliveryMen = async (req, res) => {
 
     const deliveryMen = await DeliveryMan.find({
       pharmacyId: pharmacy._id,
-      isActive:   true,
-      status:     "Available"
+      isActive: true,
+      status: "Available"
     }).select("name phones vehicle status rating totalDeliveries");
 
     return res.status(200).json({
@@ -1133,8 +1133,8 @@ exports.getBusyDeliveryMen = async (req, res) => {
 
     const deliveryMen = await DeliveryMan.find({
       pharmacyId: pharmacy._id,
-      isActive:   true,
-      status:     "Busy"
+      isActive: true,
+      status: "Busy"
     })
       .populate("assignedOrders", "orderNumber status totalPrice createdAt")
       .select("name phones vehicle status rating totalDeliveries assignedOrders");
@@ -1172,8 +1172,8 @@ exports.addDeliveryMan = async (req, res) => {
     // منعرفش نضيف نفس الرقم مرتين في نفس الصيدلية
     const existingPhone = await DeliveryMan.findOne({
       pharmacyId: pharmacy._id,
-      isActive:   true,
-      phones:     { $in: phones }
+      isActive: true,
+      phones: { $in: phones }
     });
 
     if (existingPhone) {
@@ -1185,11 +1185,11 @@ exports.addDeliveryMan = async (req, res) => {
 
     const deliveryMan = await DeliveryMan.create({
       pharmacyId: pharmacy._id,
-      name:       name.trim(),
-      email:      email?.trim().toLowerCase(),
+      name: name.trim(),
+      email: email?.trim().toLowerCase(),
       phones,
       vehicle,
-      status:     status || "Available",
+      status: status || "Available",
       address,
       notes
     });
@@ -1235,9 +1235,9 @@ exports.updateDeliveryMan = async (req, res) => {
     if (updates.phones) {
       const existingPhone = await DeliveryMan.findOne({
         pharmacyId: pharmacy._id,
-        isActive:   true,
-        _id:        { $ne: req.params.id },   // مش نفس الـ document
-        phones:     { $in: updates.phones }
+        isActive: true,
+        _id: { $ne: req.params.id },   // مش نفس الـ document
+        phones: { $in: updates.phones }
       });
 
       if (existingPhone) {
@@ -1283,9 +1283,9 @@ exports.deleteDeliveryMan = async (req, res) => {
     }
 
     const deliveryMan = await DeliveryMan.findOne({
-      _id:        req.params.id,
+      _id: req.params.id,
       pharmacyId: pharmacy._id,
-      isActive:   true
+      isActive: true
     });
 
     if (!deliveryMan) {
@@ -1302,7 +1302,7 @@ exports.deleteDeliveryMan = async (req, res) => {
 
     // Soft delete — بنحتفظ بالـ record للـ history
     deliveryMan.isActive = false;
-    deliveryMan.status   = "Offline";
+    deliveryMan.status = "Offline";
     await deliveryMan.save();
 
     return res.status(200).json({
@@ -1318,7 +1318,7 @@ exports.deleteDeliveryMan = async (req, res) => {
 
 
 exports.updateProfile = async (req, res) => {
-   try {
+  try {
     const userId = req.user._id || req.user.id; // ← safe fallback
     const pharmacy = await getPharmacy(userId);
     if (!pharmacy) {
@@ -1343,7 +1343,7 @@ exports.updateProfile = async (req, res) => {
     });
 
     // اسم الصيدلية موجود في User model مش Pharmacy
-     if (req.body.name !== undefined) {
+    if (req.body.name !== undefined) {
       await User.findByIdAndUpdate(
         userId,                                  // ← use userId here too
         { $set: { name: req.body.name.trim() } },
@@ -1358,14 +1358,34 @@ exports.updateProfile = async (req, res) => {
       });
     }
 
+    // Before the Pharmacy.findOneAndUpdate call, sanitize addresses
+    if (pharmacyUpdates.addresses) {
+      pharmacyUpdates.addresses = pharmacyUpdates.addresses.map(addr => {
+        // Only include location if coordinates are valid numbers
+        const coords = addr.location?.coordinates;
+        const hasValidCoords =
+          Array.isArray(coords) &&
+          coords.length === 2 &&
+          coords.every(c => typeof c === "number" && isFinite(c));
+
+        if (hasValidCoords) {
+          return addr; // keep as-is
+        }
+
+        // Drop the location field entirely — just save the text
+        const { location, ...addrWithoutLocation } = addr;
+        return addrWithoutLocation;
+      });
+    }
+
     const updatedPharmacy = await Pharmacy.findOneAndUpdate(
-      { userId },                                // ← and here
+      { userId: req.user.id },
       { $set: pharmacyUpdates },
       { new: true, runValidators: true }
     );
 
     // جيب الاسم من User عشان نرجعه في الـ response
-    const user = await User.findById(userId).select("name"); 
+    const user = await User.findById(userId).select("name");
 
     return res.status(200).json({
       success: true,
@@ -1414,7 +1434,7 @@ exports.toggleOpenStatus = async (req, res) => {
       success: true,
       message: openNow ? "Pharmacy is now Open" : "Pharmacy is now Closed",
       data: {
-        openNow:           updatedPharmacy.openNow,
+        openNow: updatedPharmacy.openNow,
         deliveryAvailable: updatedPharmacy.deliveryAvailable
       }
     });
@@ -1461,7 +1481,7 @@ exports.toggleDeliveryService = async (req, res) => {
         ? "Delivery service is now enabled"
         : "Delivery service is now disabled",
       data: {
-        openNow:           updatedPharmacy.openNow,
+        openNow: updatedPharmacy.openNow,
         deliveryAvailable: updatedPharmacy.deliveryAvailable
       }
     });
