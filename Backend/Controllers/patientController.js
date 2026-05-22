@@ -2,6 +2,8 @@ const Patient = require('../Models/Patients');
 const Appointment = require('../Models/Appointment');
 const MedicalRecord = require('../Models/MedicalRecord');
 const Notification = require('../Models/Notification');
+const Pharmacy = require('../Models/Pharmaces');
+const MedicineStock = require('../Models/MedicineStock');
 const User = require('../Models/Users');
 const getPatientByUserId = async (userId) => {
   return await Patient.findOne({ userId: userId });
@@ -388,5 +390,120 @@ exports.getMyMedications = async (req, res) => {
 
   } catch (err) {
     res.status(500).json({ message: err.message });
+  }
+};
+
+
+// for pharmecies 
+exports.searchPharmaciesAndMedicines = async (req, res) => {
+  try {
+    const { query, type } = req.query; // type: 'pharmacy' أو 'medicine'
+    
+    const patient = await Patient.findOne({ userId: req.user.id });
+    if (!patient || !patient.address || !patient.address.location || !patient.address.location.coordinates) {
+      return res.status(400).json({
+        success: false,
+        message: "Patient location is required to calculate distance. Please update your profile location."
+      });
+    }
+
+    const [longitude, latitude] = patient.address.location.coordinates;
+
+    let pipeline = [
+      {
+        $geoNear: {
+          near: { type: "Point", coordinates: [longitude, latitude] },
+          distanceField: "distance", 
+          spherical: true,
+          query: { openNow: true } 
+        }
+      },
+      {
+        $lookup: {
+          from: "users", 
+          localField: "userId",
+          foreignField: "_id",
+          as: "userInfo"
+        }
+      },
+      { $unwind: "$userInfo" }
+    ];
+
+    if (type === 'pharmacy' && query) {
+      pipeline.push({
+        $match: {
+          "userInfo.name": { $regex: query, $options: "i" }
+        }
+      });
+    } else if (type === 'medicine' && query) {
+      
+      const matchingStocks = await MedicineStock.find({
+        $or: [
+          { medicineName: { $regex: query, $options: "i" } },
+          { genericName: { $regex: query, $options: "i" } }
+        ],
+        quantity: { $gt: 0 },
+        inStock: true
+      }).select('pharmacyId');
+
+      const pharmacyIds = matchingStocks.map(stock => stock.pharmacyId);
+
+      pipeline.push({
+        $match: {
+          _id: { $in: pharmacyIds }
+        }
+      });
+    }
+
+    pipeline.push({
+      $lookup: {
+        from: "medicinestocks", 
+        let: { pharmacyId: "$_id" },
+        pipeline: [
+          {
+            $match: {
+              $expr: { $eq: ["$pharmacyId", "$$pharmacyId"] },
+              quantity: { $gt: 0 },
+              inStock: true
+            }
+          },
+          { $count: "availableCount" }
+        ],
+        as: "medicineCountArray"
+      }
+    });
+
+    pipeline.push({
+      $project: {
+        _id: 1,
+        pharmacyName: "$userInfo.name",
+        phone: 1,
+        rating: 1,
+        deliveryTime: 1,
+        addresses: 1,
+        distanceKm: {
+          $round: [{ $divide: ["$distance", 1000] }, 1]
+        },
+        availableMedicinesCount: {
+          $ifNull: [{ $arrayElemAt: ["$medicineCountArray.availableCount", 0] }, 0]
+        }
+      }
+    });
+
+    const results = await Pharmacy.aggregate(pipeline);
+
+    return res.status(200).json({
+      success: true,
+      count: results.length,
+      data: results
+    });
+
+  } catch (error) {
+    console.error("Error in Patient Pharmacy Search:", error);
+    return res.status(500).json({
+      success: false,
+      message: "Internal server error",
+      error: error.message
+    });
   }
 };
