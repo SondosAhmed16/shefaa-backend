@@ -28,6 +28,26 @@ const pharmacySchema = new mongoose.Schema(
       type: Number,
       default: 4.8
     },
+    
+    alwaysOpen: {
+      type: Boolean,
+      default: false
+    },
+    deliveryFee: {
+      type: Number,
+      default: 0
+    },
+    minimumOrder: {
+      type: Number,
+      default: 0
+    },
+    totalReviews: {
+      type: Number,
+      default: 0 
+    },
+    services: [
+      { type: String } 
+    ],
     workingHours: [
       {
         days: { type: String, required: true },

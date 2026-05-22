@@ -41,7 +41,10 @@ router.delete('/medications/:medId', auth, authorizeRoles('patient'), patientCon
 router.get('/my-medications', auth, patientController.getMyMedications);
 
 // pharmacies
+
 router.get('/pharmacies/search', auth, authorizeRoles('patient'), patientController.searchPharmaciesAndMedicines);
+
+router.get('/pharmacies/:id/profile', auth, authorizeRoles('patient'), patientController.getPharmacyProfileForPatient);
 
 
 

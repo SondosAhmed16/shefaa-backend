@@ -1,6 +1,7 @@
 const Review = require('../Models/Review');
 const Doctor = require('../Models/Doctors'); 
 const Patient = require('../Models/Patients'); 
+const Pharmacy = require('../Models/Pharmaces')
 const { body, validationResult } = require('express-validator');
 const logger = require('../config/loggerConfig'); 
 
@@ -163,7 +164,16 @@ exports.deleteReview = async (req, res) => {
 exports.addPharmacyReview = async (req, res) => {
   try {
     const { pharmacyId, rating, comment } = req.body;
-    const patientProfile = await Patient.findOne({ userId: req.user._id });
+    
+    const patientProfile = await Patient.findOne({ userId: req.user._id || req.user.id });
+    if (!patientProfile) {
+      return res.status(404).json({ message: 'Patient profile not found.' });
+    }
+
+    const existingReview = await Review.findOne({ pharmacyId, patientId: patientProfile._id });
+    if (existingReview) {
+      return res.status(400).json({ message: 'You have already reviewed this pharmacy.' });
+    }
 
     const review = new Review({
       patientId: patientProfile._id,
@@ -171,14 +181,19 @@ exports.addPharmacyReview = async (req, res) => {
       rating,
       comment
     });
-
     await review.save();
     
     const reviews = await Review.find({ pharmacyId });
-    const avgRating = reviews.reduce((sum, r) => sum + r.rating, 0) / reviews.length;
-    await Pharmacy.findByIdAndUpdate(pharmacyId, { rating: avgRating });
+    const totalReviews = reviews.length; 
+    
+    const avgRating = reviews.reduce((sum, r) => sum + r.rating, 0) / totalReviews;
 
-    res.status(201).json({ message: 'Review added', review });
+    await Pharmacy.findByIdAndUpdate(pharmacyId, { 
+      rating: Number(avgRating.toFixed(1)), 
+      totalReviews: totalReviews 
+    });
+
+    res.status(201).json({ message: 'Review added successfully', review });
   } catch (err) {
     res.status(500).json({ message: err.message });
   }

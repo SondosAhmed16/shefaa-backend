@@ -507,3 +507,60 @@ exports.searchPharmaciesAndMedicines = async (req, res) => {
     });
   }
 };
+
+exports.getPharmacyProfileForPatient = async (req, res) => {
+  try {
+    const { id } = req.params; 
+
+    const pharmacy = await Pharmacy.findById(id).populate('userId', 'name');
+    
+    if (!pharmacy) {
+      return res.status(404).json({
+        success: false,
+        message: "Pharmacy not found"
+      });
+    }
+
+    const availableMedicinesCount = await MedicineStock.countDocuments({
+      pharmacyId: id,
+      quantity: { $gt: 0 },
+      inStock: true
+    });
+
+    const profileData = {
+      _id: pharmacy._id,
+      pharmacyName: pharmacy.userId ? pharmacy.userId.name : " Not exist pharmacy ",
+      openNow: pharmacy.openNow,
+      alwaysOpen: pharmacy.alwaysOpen || false, 
+      
+      rating: pharmacy.rating || 0, 
+      totalReviews: pharmacy.totalReviews || 0,
+      
+      deliveryTime: pharmacy.deliveryTime,
+      deliveryFee: pharmacy.deliveryFee || 0,
+      minimumOrder: pharmacy.minimumOrder || 0,
+      phone: pharmacy.phone,
+      about: pharmacy.about,
+      services: pharmacy.services || [], 
+      workingHours: pharmacy.workingHours,
+      
+      addressText: pharmacy.addresses.length > 0 ? pharmacy.addresses[0].addressText : "",
+      location: pharmacy.addresses.length > 0 ? pharmacy.addresses[0].location : null,
+      
+      availableMedicinesCount: availableMedicinesCount
+    };
+
+    return res.status(200).json({
+      success: true,
+      data: profileData
+    });
+
+  } catch (error) {
+    console.error("Error fetching pharmacy profile for patient:", error);
+    return res.status(500).json({
+      success: false,
+      message: "Internal server error",
+      error: error.message
+    });
+  }
+};

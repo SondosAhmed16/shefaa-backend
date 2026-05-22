@@ -14,4 +14,6 @@ router.put('/:id', auth, reviewController.updateReview);
 
 router.delete('/:id', auth, reviewController.deleteReview);
 
+router.post('/pharmacy', auth, reviewController.addPharmacyReview);
+
 module.exports = router;
