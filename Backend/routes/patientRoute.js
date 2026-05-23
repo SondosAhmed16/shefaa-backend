@@ -46,6 +46,8 @@ router.get('/pharmacies/search', auth, authorizeRoles('patient'), patientControl
 
 router.get('/pharmacies/:id/profile', auth, authorizeRoles('patient'), patientController.getPharmacyProfileForPatient);
 
+router.get('/pharmacies/:id/medicines', auth, authorizeRoles('patient'), patientController.getPharmacyMedicinesForPatient);
 
+router.get('/medicines/:medId', auth, authorizeRoles('patient'), patientController.getMedicineDetailsForPatient);
 
 module.exports = router;

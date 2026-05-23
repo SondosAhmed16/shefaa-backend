@@ -398,7 +398,7 @@ exports.getMyMedications = async (req, res) => {
 exports.searchPharmaciesAndMedicines = async (req, res) => {
   try {
     const { query, type } = req.query; // type: 'pharmacy' أو 'medicine'
-    
+
     const patient = await Patient.findOne({ userId: req.user.id });
     if (!patient || !patient.address || !patient.address.location || !patient.address.location.coordinates) {
       return res.status(400).json({
@@ -413,14 +413,14 @@ exports.searchPharmaciesAndMedicines = async (req, res) => {
       {
         $geoNear: {
           near: { type: "Point", coordinates: [longitude, latitude] },
-          distanceField: "distance", 
+          distanceField: "distance",
           spherical: true,
-          query: { openNow: true } 
+          query: { openNow: true }
         }
       },
       {
         $lookup: {
-          from: "users", 
+          from: "users",
           localField: "userId",
           foreignField: "_id",
           as: "userInfo"
@@ -436,7 +436,7 @@ exports.searchPharmaciesAndMedicines = async (req, res) => {
         }
       });
     } else if (type === 'medicine' && query) {
-      
+
       const matchingStocks = await MedicineStock.find({
         $or: [
           { medicineName: { $regex: query, $options: "i" } },
@@ -457,7 +457,7 @@ exports.searchPharmaciesAndMedicines = async (req, res) => {
 
     pipeline.push({
       $lookup: {
-        from: "medicinestocks", 
+        from: "medicinestocks",
         let: { pharmacyId: "$_id" },
         pipeline: [
           {
@@ -510,10 +510,10 @@ exports.searchPharmaciesAndMedicines = async (req, res) => {
 
 exports.getPharmacyProfileForPatient = async (req, res) => {
   try {
-    const { id } = req.params; 
+    const { id } = req.params;
 
     const pharmacy = await Pharmacy.findById(id).populate('userId', 'name');
-    
+
     if (!pharmacy) {
       return res.status(404).json({
         success: false,
@@ -531,22 +531,22 @@ exports.getPharmacyProfileForPatient = async (req, res) => {
       _id: pharmacy._id,
       pharmacyName: pharmacy.userId ? pharmacy.userId.name : " Not exist pharmacy ",
       openNow: pharmacy.openNow,
-      alwaysOpen: pharmacy.alwaysOpen || false, 
-      
-      rating: pharmacy.rating || 0, 
+      alwaysOpen: pharmacy.alwaysOpen || false,
+
+      rating: pharmacy.rating || 0,
       totalReviews: pharmacy.totalReviews || 0,
-      
+
       deliveryTime: pharmacy.deliveryTime,
       deliveryFee: pharmacy.deliveryFee || 0,
       minimumOrder: pharmacy.minimumOrder || 0,
       phone: pharmacy.phone,
       about: pharmacy.about,
-      services: pharmacy.services || [], 
+      services: pharmacy.services || [],
       workingHours: pharmacy.workingHours,
-      
+
       addressText: pharmacy.addresses.length > 0 ? pharmacy.addresses[0].addressText : "",
       location: pharmacy.addresses.length > 0 ? pharmacy.addresses[0].location : null,
-      
+
       availableMedicinesCount: availableMedicinesCount
     };
 
@@ -562,5 +562,119 @@ exports.getPharmacyProfileForPatient = async (req, res) => {
       message: "Internal server error",
       error: error.message
     });
+  }
+};
+
+exports.getPharmacyMedicinesForPatient = async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { category } = req.query;
+
+    const pharmacy = await Pharmacy.findById(id).populate('userId', 'name');
+    if (!pharmacy) {
+      return res.status(404).json({ success: false, message: "Pharmacy not found" });
+    }
+
+    const totalMedicinesCount = await MedicineStock.countDocuments({
+      pharmacyId: id,
+      quantity: { $gt: 0 },
+      inStock: true
+    });
+
+    let filter = {
+      pharmacyId: id,
+      quantity: { $gt: 0 },
+      inStock: true
+    };
+
+    if (category && category !== 'all') {
+      filter.category = { $regex: new RegExp(`^${category}$`, 'i') };
+    }
+
+    const medicines = await MedicineStock.find(filter).select(
+      'medicineName category price requiresPrescription quantity dosageForm'
+    );
+
+    const mostOrderedMedicines = await MedicineStock.find({
+      pharmacyId: id,
+      quantity: { $gt: 0 },
+      inStock: true
+    })
+      .sort({ quantity: -1 })
+      .limit(5)
+      .select('medicineName category price requiresPrescription dosageForm');
+
+    return res.status(200).json({
+      success: true,
+      data: {
+        pharmacyInfo: {
+          name: pharmacy.userId ? pharmacy.userId.name : "Not exist pharmacy",
+          totalMedicinesAvailable: totalMedicinesCount
+        },
+        mostOrdered: mostOrderedMedicines,
+        allMedicines: medicines
+      }
+    });
+
+  } catch (error) {
+    console.error("Error fetching pharmacy medicines:", error);
+    return res.status(500).json({
+      success: false,
+      message: "Internal server error",
+      error: error.message
+    });
+  }
+};
+
+exports.getMedicineDetailsForPatient = async (req, res) => {
+  try {
+    const { medId } = req.params;
+
+    const medicine = await MedicineStock.findById(medId).populate({
+      path: 'pharmacyId',
+      populate: { path: 'userId', select: 'name' }
+    });
+
+    if (!medicine) {
+      return res.status(404).json({ success: false, message: "Medicine not found" });
+    }
+
+    const medicineDetails = {
+      _id: medicine._id,
+      medicineName: medicine.medicineName,
+      category: medicine.category,
+      price: medicine.price,
+      dosageForm: medicine.dosageForm, 
+      requiresPrescription: medicine.requiresPrescription,
+      
+      inStock: medicine.inStock && medicine.quantity > 0, 
+      availableQuantity: medicine.quantity, 
+
+      medicineInfo: {
+        brandName: medicine.medicineName,
+        concentration: medicine.concentration || "N/A", 
+        form: medicine.dosageForm,
+        manufacturer: medicine.manufacturer || "N/A",
+        prescription: medicine.requiresPrescription ? "Required" : "Not Required",
+        shelf: medicine.notes || "General Shelf" 
+      },
+
+      usageInstructions: {
+        indications: medicine.indications || "No description available",
+        sideEffects: medicine.sideEffects || "None reported",
+        dosageInstructions: medicine.dosageInstructions || "Take as directed by your doctor."
+      },
+
+      pharmacyName: medicine.pharmacyId?.userId?.name || "Unknown Pharmacy"
+    };
+
+    return res.status(200).json({
+      success: true,
+      data: medicineDetails
+    });
+
+  } catch (error) {
+    console.error("Error fetching medicine details:", error);
+    return res.status(500).json({ success: false, message: "Internal server error" });
   }
 };
