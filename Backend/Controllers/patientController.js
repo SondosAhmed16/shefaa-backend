@@ -3,6 +3,7 @@ const Appointment = require('../Models/Appointment');
 const MedicalRecord = require('../Models/MedicalRecord');
 const Notification = require('../Models/Notification');
 const Pharmacy = require('../Models/Pharmaces');
+const Order = require('../Models/Order');
 const MedicineStock = require('../Models/MedicineStock');
 const User = require('../Models/Users');
 const getPatientByUserId = async (userId) => {
@@ -508,17 +509,15 @@ exports.searchPharmaciesAndMedicines = async (req, res) => {
   }
 };
 
+
+// 1. جلب البيانات الأساسية لبروفايل الصيدلية للبيشنت
 exports.getPharmacyProfileForPatient = async (req, res) => {
   try {
     const { id } = req.params;
 
-    const pharmacy = await Pharmacy.findById(id).populate('userId', 'name');
-
+    const pharmacy = await Pharmacy.findById(id).populate('userId', 'name email');
     if (!pharmacy) {
-      return res.status(404).json({
-        success: false,
-        message: "Pharmacy not found"
-      });
+      return res.status(404).json({ success: false, message: "Pharmacy not found" });
     }
 
     const availableMedicinesCount = await MedicineStock.countDocuments({
@@ -529,13 +528,11 @@ exports.getPharmacyProfileForPatient = async (req, res) => {
 
     const profileData = {
       _id: pharmacy._id,
-      pharmacyName: pharmacy.userId ? pharmacy.userId.name : " Not exist pharmacy ",
+      pharmacyName: pharmacy.userId ? pharmacy.userId.name : "Unknown Pharmacy",
       openNow: pharmacy.openNow,
       alwaysOpen: pharmacy.alwaysOpen || false,
-
       rating: pharmacy.rating || 0,
       totalReviews: pharmacy.totalReviews || 0,
-
       deliveryTime: pharmacy.deliveryTime,
       deliveryFee: pharmacy.deliveryFee || 0,
       minimumOrder: pharmacy.minimumOrder || 0,
@@ -543,58 +540,58 @@ exports.getPharmacyProfileForPatient = async (req, res) => {
       about: pharmacy.about,
       services: pharmacy.services || [],
       workingHours: pharmacy.workingHours,
-
       addressText: pharmacy.addresses.length > 0 ? pharmacy.addresses[0].addressText : "",
       location: pharmacy.addresses.length > 0 ? pharmacy.addresses[0].location : null,
-
       availableMedicinesCount: availableMedicinesCount
     };
 
-    return res.status(200).json({
-      success: true,
-      data: profileData
-    });
-
-  } catch (error) {
-    console.error("Error fetching pharmacy profile for patient:", error);
-    return res.status(500).json({
-      success: false,
-      message: "Internal server error",
-      error: error.message
-    });
+    return res.status(200).json({ success: true, data: profileData });
+  } catch (err) {
+    return res.status(500).json({ success: false, message: err.message });
   }
 };
 
+// 2. جلب أدوية الصيدلية للبيشنت (مع التصنيفات والبحث والـ Pagination)
 exports.getPharmacyMedicinesForPatient = async (req, res) => {
   try {
     const { id } = req.params;
-    const { category } = req.query;
+    const { category, search, page = 1, limit = 10 } = req.query;
 
-    const pharmacy = await Pharmacy.findById(id).populate('userId', 'name');
+    const pharmacy = await Pharmacy.findById(id);
     if (!pharmacy) {
       return res.status(404).json({ success: false, message: "Pharmacy not found" });
     }
 
-    const totalMedicinesCount = await MedicineStock.countDocuments({
-      pharmacyId: id,
-      quantity: { $gt: 0 },
-      inStock: true
-    });
-
+    // بناء الفلتر الأساسي
     let filter = {
       pharmacyId: id,
       quantity: { $gt: 0 },
       inStock: true
     };
 
+    // الفلترة بالتصنيف (إذا لم تكن 'all')
     if (category && category !== 'all') {
       filter.category = { $regex: new RegExp(`^${category}$`, 'i') };
     }
 
-    const medicines = await MedicineStock.find(filter).select(
-      'medicineName category price requiresPrescription quantity dosageForm'
-    );
+    // البحث باسم الدواء أو الاسم العلمي
+    if (search) {
+      filter.$or = [
+        { medicineName: { $regex: search, $options: 'i' } },
+        { genericName: { $regex: search, $options: 'i' } }
+      ];
+    }
 
+    // حساب الـ Pagination
+    const skip = (parseInt(page) - 1) * parseInt(limit);
+    const totalMedicines = await MedicineStock.countDocuments(filter);
+
+    const medicines = await MedicineStock.find(filter)
+      .select('medicineName category price requiresPrescription quantity dosageForm genericName')
+      .skip(skip)
+      .limit(parseInt(limit));
+
+    // جلب الـ الأكثر مبيعاً أو الأكثر توفراً كـ اقتراحات (Top 5)
     const mostOrderedMedicines = await MedicineStock.find({
       pharmacyId: id,
       quantity: { $gt: 0 },
@@ -607,24 +604,101 @@ exports.getPharmacyMedicinesForPatient = async (req, res) => {
     return res.status(200).json({
       success: true,
       data: {
-        pharmacyInfo: {
-          name: pharmacy.userId ? pharmacy.userId.name : "Not exist pharmacy",
-          totalMedicinesAvailable: totalMedicinesCount
-        },
+        medicines,
         mostOrdered: mostOrderedMedicines,
-        allMedicines: medicines
+        pagination: {
+          total: totalMedicines,
+          page: parseInt(page),
+          pages: Math.ceil(totalMedicines / parseInt(limit))
+        }
       }
     });
-
-  } catch (error) {
-    console.error("Error fetching pharmacy medicines:", error);
-    return res.status(500).json({
-      success: false,
-      message: "Internal server error",
-      error: error.message
-    });
+  } catch (err) {
+    return res.status(500).json({ success: false, message: err.message });
   }
 };
+
+/*exports.checkoutCart = async (req, res) => {
+  try {
+    const { pharmacyId, items, orderType, paymentMethod, deliveryAddress } = req.body;
+
+    const pharmacy = await Pharmacy.findById(pharmacyId);
+    if (!pharmacy) {
+      return res.status(404).json({ success: false, message: "Pharmacy not found" });
+    }
+
+    if (!pharmacy.openNow) {
+      return res.status(400).json({ success: false, message: "Cannot place order, pharmacy is currently closed" });
+    }
+
+    let subtotal = 0;
+    let validatedItems = [];
+
+    // التحقق من المخزون والأسعار لكل دواء في الكارت
+    for (const item of items) {
+      const stock = await MedicineStock.findOne({ _id: item.medicineId, pharmacyId });
+      if (!stock || !stock.inStock || stock.quantity < item.quantity) {
+        return res.status(400).json({
+          success: false,
+          message: `Medicine ${stock ? stock.medicineName : 'Unknown'} is out of stock or insufficient quantity`
+        });
+      }
+
+      subtotal += stock.price * item.quantity;
+      validatedItems.push({
+        medicineId: item.medicineId,
+        quantity: item.quantity,
+        price: stock.price // تسجيل السعر الحالي
+      });
+    }
+
+    // التحقق من الحد الأدنى للطلب للصيدلية
+    if (subtotal < pharmacy.minimumOrder) {
+      return res.status(400).json({
+        success: false,
+        message: `Order total must be at least ${pharmacy.minimumOrder} EGP for this pharmacy`
+      });
+    }
+
+    const deliveryFee = orderType === "Delivery" ? (pharmacy.deliveryFee || 0) : 0;
+    const totalPrice = subtotal + deliveryFee;
+
+    // توليد رقم طلب فريد
+    const orderNumber = `PHX-${Math.floor(1000 + Math.random() * 9000)}`;
+
+    const newOrder = new Order({
+      pharmacyId,
+      userId: req.user._id, // من الـ auth middleware
+      orderNumber,
+      orderType,
+      items: validatedItems,
+      subtotal,
+      deliveryFee,
+      totalPrice,
+      paymentMethod,
+      deliveryAddress: orderType === "Delivery" ? deliveryAddress : undefined,
+      statusHistory: [{ status: "New", note: "Order placed successfully" }]
+    });
+
+    await newOrder.save();
+
+    // تحديث المخزون (خصم الكميات المحجوزة)
+    for (const item of validatedItems) {
+      await MedicineStock.findByIdAndUpdate(item.medicineId, {
+        $inc: { quantity: -item.quantity }
+      });
+    }
+
+    return res.status(201).json({
+      success: true,
+      message: "Order placed successfully!",
+      order: newOrder
+    });
+
+  } catch (err) {
+    return res.status(500).json({ success: false, message: err.message });
+  }
+};*/
 
 exports.getMedicineDetailsForPatient = async (req, res) => {
   try {
@@ -644,19 +718,19 @@ exports.getMedicineDetailsForPatient = async (req, res) => {
       medicineName: medicine.medicineName,
       category: medicine.category,
       price: medicine.price,
-      dosageForm: medicine.dosageForm, 
+      dosageForm: medicine.dosageForm,
       requiresPrescription: medicine.requiresPrescription,
-      
-      inStock: medicine.inStock && medicine.quantity > 0, 
-      availableQuantity: medicine.quantity, 
+
+      inStock: medicine.inStock && medicine.quantity > 0,
+      availableQuantity: medicine.quantity,
 
       medicineInfo: {
         brandName: medicine.medicineName,
-        concentration: medicine.concentration || "N/A", 
+        concentration: medicine.concentration || "N/A",
         form: medicine.dosageForm,
         manufacturer: medicine.manufacturer || "N/A",
         prescription: medicine.requiresPrescription ? "Required" : "Not Required",
-        shelf: medicine.notes || "General Shelf" 
+        shelf: medicine.notes || "General Shelf"
       },
 
       usageInstructions: {
@@ -676,5 +750,141 @@ exports.getMedicineDetailsForPatient = async (req, res) => {
   } catch (error) {
     console.error("Error fetching medicine details:", error);
     return res.status(500).json({ success: false, message: "Internal server error" });
+  }
+};
+
+
+
+exports.createOrder = async (req, res) => {
+  try {
+    const userId = req.user._id; // أو req.user.id حسب الـ auth middleware عندك
+    const {
+      pharmacyId,
+      items,
+      orderType, // "Delivery" أو "Pickup"
+      paymentMethod, // "Cash" أو "Visa" أو "Vodafone Cash" إلخ
+      deliveryAddressDetails // كائن يحتوي على (fullName, phone, city, street)
+    } = req.body;
+
+    // 1. التأكد من وجود الصيدلية
+    const pharmacy = await Pharmacy.findById(pharmacyId);
+    if (!pharmacy) {
+      return res.status(404).json({ success: false, message: "Pharmacy not found" });
+    }
+
+    // 2. حساب إجمالي الأدوية (Subtotal) والتأكد من الـ Stock
+    let subtotal = 0;
+    const orderItems = [];
+
+    for (const item of items) {
+      const medicine = await MedicineStock.findOne({ _id: item.medicineId, pharmacyId });
+      if (!medicine || medicine.quantity < item.quantity || !medicine.inStock) {
+        return res.status(400).json({
+          success: false,
+          message: `Medicine ${item.medicineName || 'requested'} is out of stock or unavailable.`
+        });
+      }
+
+      const itemPrice = medicine.price;
+      subtotal += itemPrice * item.quantity;
+
+      orderItems.push({
+        medicineId: medicine._id,
+        quantity: item.quantity,
+        price: itemPrice // كـ snapshot لو السعر اتغير بعدين
+      });
+    }
+
+    // 3. تحديد مصاريف التوصيل وعنوان الشحن بناءً على نوع الأوردر
+    let deliveryFee = 0;
+    let finalShippingAddress = null;
+
+    if (orderType === "Delivery") {
+      // التوصيل العادي: بناخد الفيس اللي حطاها الصيدلية
+      deliveryFee = pharmacy.deliveryFee || 0;
+
+      // التأكد من أن البيشنت بعت بيانات العنوان بالكامل
+      if (!deliveryAddressDetails || !deliveryAddressDetails.streetAddress) {
+        return res.status(400).json({
+          success: false,
+          message: "Delivery address details are required for Delivery orders."
+        });
+      }
+
+      finalShippingAddress = {
+        fullName: deliveryAddressDetails.fullName,
+        phoneNumber: deliveryAddressDetails.phoneNumber,
+        cityDistrict: deliveryAddressDetails.cityDistrict,
+        streetAddress: deliveryAddressDetails.streetAddress,
+        // لو حابة تخزني الـ coordinates الجغرافية بتاعة العميل كمان:
+        location: deliveryAddressDetails.location || null
+      };
+    } else if (orderType === "Pickup") {
+      // البيشنت هينزل يستلم بنفسه: التوصيل مجاني ومفيش عنوان شحن للمريض
+      deliveryFee = 0;
+      finalShippingAddress = null;
+    } else {
+      return res.status(400).json({ success: false, message: "Invalid order type. Must be Delivery or Pickup." });
+    }
+
+    // 4. حساب التوتال النهائي
+    const discount = 0; // لو فيه برومو كود مستقبلاً
+    const totalPrice = subtotal + deliveryFee - discount;
+
+    // 5. توليد رقم الأوردر (مثال: SHF-123456)
+    const orderNumber = `SHF-${Math.floor(100000 + Math.random() * 900000)}`;
+
+    // 6. تحديد حالة الدفع المبدئية
+    // لو كاش أو عند الوصول بيبقى Pending لحد ما يستلم، لو فيزا بيبقى Pending لحد ما بوابة الدفع تأكد
+    const paymentStatus = "Pending";
+
+    // 7. حفظ الأوردر في قاعدة البيانات
+    const newOrder = new Order({
+      pharmacyId,
+      userId,
+      orderNumber,
+      orderType,
+      status: "New",
+      statusHistory: [{ status: "New", note: `Order placed successfully as ${orderType}` }],
+      items: orderItems,
+      subtotal,
+      deliveryFee,
+      discount,
+      totalPrice,
+      paymentMethod,
+      paymentStatus,
+      deliveryAddress: finalShippingAddress // هيتخزن بـ null لو Pickup
+    });
+
+    await newOrder.save();
+
+    // 8. خصم الكميات من الـ Stock فوراً لحجز الأدوية
+    for (const item of items) {
+      await MedicineStock.findByIdAndUpdate(item.medicineId, {
+        $inc: { quantity: -item.quantity }
+      });
+    }
+
+    // 9. الرد للفرونت إند بالبيانات المناسبة لكل سكرين
+    return res.status(201).json({
+      success: true,
+      message: "Order created successfully",
+      data: {
+        orderId: newOrder._id,
+        orderNumber: newOrder.orderNumber,
+        orderType: newOrder.orderType,
+        pharmacyName: pharmacy.userId?.name || "Shefaa Pharmacy", // تأكدي من الـ populate لـ userId في الـ route لو محتاجة الاسم
+        deliveryTime: orderType === "Delivery" ? (pharmacy.deliveryTime || "1 h") : "N/A (Pickup)",
+        itemsCount: orderItems.reduce((acc, item) => acc + item.quantity, 0),
+        subtotal: newOrder.subtotal,
+        deliveryFee: newOrder.deliveryFee,
+        totalPrice: newOrder.totalPrice,
+        paymentMethod: newOrder.paymentMethod
+      }
+    });
+
+  } catch (err) {
+    console.error("Error in createOrder:", err);
+    return res.status(500).json({ success: false, message: "Internal server error", error: err.message });
   }
 };

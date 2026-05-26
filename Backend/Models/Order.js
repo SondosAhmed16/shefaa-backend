@@ -12,27 +12,27 @@ const orderSchema = new mongoose.Schema(
       ref: "User",
       required: true
     },
-
+    shippingAddress: {
+      fullName: { type: String },
+      phone: { type: String },
+      cityDistrict: { type: String },
+      streetAddress: { type: String }
+    },
     orderNumber: {
       type: String,
       required: true,
-      unique: true
-      // generated: e.g. "PHX-1082"
+      unique: true // يتم توليده تلقائياً مثل: PHX-1082
     },
-
     orderType: {
       type: String,
-      enum: ["Delivery"],
+      enum: ["Delivery", "Pickup"],
       default: "Delivery"
     },
-
     status: {
       type: String,
       enum: ["New", "Preparing", "Ready", "Shipped", "Completed"],
       default: "New"
     },
-
-    // تاريخ كل تغيير في الستاتوس — بيظهر في الـ tracking timeline بتاع البيشنت
     statusHistory: [
       {
         status: { type: String },
@@ -40,7 +40,6 @@ const orderSchema = new mongoose.Schema(
         note: { type: String }
       }
     ],
-
     items: [
       {
         medicineId: {
@@ -49,18 +48,16 @@ const orderSchema = new mongoose.Schema(
           required: true
         },
         quantity: { type: Number, required: true },
-        price: { type: Number, required: true }   // snapshot وقت الطلب
+        price: { type: Number, required: true } // سعر الدواء وقت الشراء (Snapshot)
       }
     ],
-
-    subtotal:    { type: Number, required: true },
-    deliveryFee: { type: Number, default: 0 },     // 0 لو Pickup
-    discount:    { type: Number, default: 0 },     // من promo code
-    totalPrice:  { type: Number, required: true }, // subtotal + deliveryFee - discount
-
+    subtotal: { type: Number, required: true },
+    deliveryFee: { type: Number, default: 0 },     // 0 إذا كان Pickup
+    discount: { type: Number, default: 0 },     // من كود الخصم (Promo Code)
+    totalPrice: { type: Number, required: true }, // subtotal + deliveryFee - discount
     paymentMethod: {
       type: String,
-      enum: ["Cash", "Visa", "Fawry", "Vodafone Cash"],
+      enum: ["Cash", "Visa", "Fawry", "Vodafone Cash", "Instapay"],
       default: "Cash"
     },
     paymentStatus: {
@@ -68,29 +65,20 @@ const orderSchema = new mongoose.Schema(
       enum: ["Pending", "Paid"],
       default: "Pending"
     },
-
-    // Delivery info
     deliveryManId: {
       type: mongoose.Schema.Types.ObjectId,
       ref: "DeliveryMan",
       default: null
     },
-
     deliveryAddress: {
-      addressText: { type: String },               // "12 Nasr City St, Apt 3"
+      addressText: { type: String },
       location: {
         type: { type: String, enum: ["Point"], default: "Point" },
-        coordinates: { type: [Number] }            // [lng, lat]
+        coordinates: { type: [Number] } // [lng, lat]
       }
-    },
-
-    estimatedTime: { type: String }, 
-    deliveredAt: { type: Date },
-    confirmedByUserAt: { type: Date },
+    }
   },
   { timestamps: true }
 );
-
-orderSchema.index({ "deliveryAddress.location": "2dsphere" });
 
 module.exports = mongoose.model("Order", orderSchema);

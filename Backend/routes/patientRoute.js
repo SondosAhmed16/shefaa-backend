@@ -50,4 +50,6 @@ router.get('/pharmacies/:id/medicines', auth, authorizeRoles('patient'), patient
 
 router.get('/medicines/:medId', auth, authorizeRoles('patient'), patientController.getMedicineDetailsForPatient);
 
+router.post('/cart/checkout', auth, authorizeRoles('patient'), patientController.createOrder);
+
 module.exports = router;
