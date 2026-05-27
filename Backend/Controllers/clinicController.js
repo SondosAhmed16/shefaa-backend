@@ -536,29 +536,25 @@ exports.getClinicWithTodaySlots = async (req, res) => {
     if (!patient) return res.status(403).json({ message: "Patient profile not found." });
 
     // ── 2. Load clinic ──────────────────────────────────────────────────────
-    // Load full doc for internal schedule logic, but strip it from the response
     const clinic = await Clinic.findById(req.params.id).lean();
     if (!clinic) return res.status(404).json({ message: "Clinic not found." });
 
-    const { defaultSchedule: schedule, ...clinicInfo } = clinic; // separate them
+    const { defaultSchedule: schedule, ...clinicInfo } = clinic;  // ← schedule is declared HERE
 
     // ── 3. Resolve today in Cairo time ──────────────────────────────────────
     const nowLocal = new Date(
       new Date().toLocaleString("en-US", { timeZone: "Africa/Cairo" })
     );
 
-    const todayStr = nowLocal.toISOString().slice(0, 10); // "YYYY-MM-DD"
+    const todayStr = nowLocal.toISOString().slice(0, 10);
     const nowMins = nowLocal.getHours() * 60 + nowLocal.getMinutes();
-
-    // Build a UTC midnight Date that matches the Cairo calendar date so we can
-    // query Appointment.date (stored as UTC midnight) correctly.
     const todayUTC = new Date(`${todayStr}T00:00:00.000Z`);
 
     const DAYS = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];
     const dayName = DAYS[nowLocal.getDay()];
 
     // ── 4. Pull schedule info ───────────────────────────────────────────────
-    const schedule = clinic.defaultSchedule;
+    // ✅ DO NOT redeclare schedule here — it's already available from step 2
     const dayEntry = schedule?.days?.find((d) => d.day === dayName);
 
     const baseToday = { date: todayStr, day: dayName };
