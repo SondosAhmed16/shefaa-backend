@@ -888,3 +888,236 @@ exports.createOrder = async (req, res) => {
     return res.status(500).json({ success: false, message: "Internal server error", error: err.message });
   }
 };
+
+
+exports.processOnlinePayment = async (req, res) => {
+  try {
+    const { orderId, cardholderName, cardNumber, expiryDate, cvv } = req.body;
+
+    if (!cardholderName || !cardNumber || !expiryDate || !cvv) {
+      return res.status(400).json({
+        success: false,
+        message: "All card details (Name, Number, Expiry, CVV) are required."
+      });
+    }
+
+    const order = await Order.findById(orderId);
+    if (!order) {
+      return res.status(404).json({ success: false, message: "Order not found" });
+    }
+
+    if (order.paymentStatus === "Paid") {
+      return res.status(400).json({ success: false, message: "This order is already paid." });
+    }
+
+    order.paymentStatus = "Paid";
+    
+    order.statusHistory.push({
+      status: order.status,
+      note: "Payment completed successfully via Online Card"
+    });
+
+    await order.save();
+
+
+    const currentMonth = new Date().getMonth() + 1;
+    const currentYear = new Date().getFullYear();
+
+    await mongoose.model('BillingRecord').findOneAndUpdate(
+      { entity: order.pharmacyId, month: currentMonth, year: currentYear },
+      {
+        $inc: { 
+          totalRevenue: order.subtotal, 
+          activityCount: 1 
+        }
+      },
+      { upsert: true } 
+    );
+
+    return res.status(200).json({
+      success: true,
+      message: "Payment processed successfully! Your order is being prepared.",
+      data: {
+        orderNumber: order.orderNumber,
+        paymentStatus: order.paymentStatus,
+        totalPaid: order.totalPrice
+      }
+    });
+
+  } catch (err) {
+    console.error("Error in processOnlinePayment:", err);
+    return res.status(500).json({ success: false, message: "Internal server error", error: err.message });
+  }
+};
+
+
+exports.getPatientOrderTracking = async (req, res) => {
+  try {
+    const { orderId } = req.params;
+
+    const order = await Order.findById(orderId)
+      .populate({
+        path: 'pharmacyId',
+        populate: { path: 'userId', select: 'name' } 
+      })
+      .populate('deliveryManId') 
+      .populate('items.medicineId', 'medicineName'); 
+
+    if (!order) {
+      return res.status(404).json({ success: false, message: "Order not found" });
+    }
+
+    const timeline = {
+      orderConfirmed: {
+        title: "Order Confirmed",
+        description: "Your order was received and processed",
+        time: null,
+        isCompleted: false
+      },
+      pharmacyPreparing: {
+        title: "Pharmacy Preparing Order",
+        description: `Pharmacy [${order.pharmacyId?.userId?.name || 'Shefaa Pharmacy'}] is preparing your medications`,
+        time: null,
+        isCompleted: false
+      },
+      riderPickedUp: {
+        title: "Rider Picked Up Order",
+        description: order.deliveryManId 
+          ? `Rider [${order.deliveryManId.name}] picked up your order from the pharmacy` 
+          : "Rider is picking up your order soon",
+        time: null,
+        isCompleted: false
+      },
+      onTheWay: {
+        title: "On the Way",
+        description: order.status === "Shipped" 
+          ? `Rider is on the way to your location. Estimated arrival: ${order.pharmacyId?.deliveryTime || '30-45 mins'}`
+          : "Waiting for dispatch",
+        time: null,
+        isCompleted: false
+      }
+    };
+
+    order.statusHistory.forEach(historyItem => {
+      const formattedTime = new Date(historyItem.changedAt).toLocaleTimeString('en-US', {
+        hour: '2-digit',
+        minute: '2-digit',
+        hour12: true
+      });
+
+      if (historyItem.status === "New") {
+        timeline.orderConfirmed.isCompleted = true;
+        timeline.orderConfirmed.time = formattedTime;
+      }
+      if (historyItem.status === "Preparing" || historyItem.status === "Ready") {
+        timeline.pharmacyPreparing.isCompleted = true;
+        timeline.pharmacyPreparing.time = formattedTime;
+      }
+      if (historyItem.status === "Shipped") {
+        timeline.riderPickedUp.isCompleted = true;
+        timeline.riderPickedUp.time = formattedTime;
+        timeline.onTheWay.isCompleted = true;
+        timeline.onTheWay.time = formattedTime;
+      }
+    });
+
+    return res.status(200).json({
+      success: true,
+      data: {
+        // الجزء العلوي من الشاشة
+        orderNumber: order.orderNumber,
+        orderStatus: order.status, // New, Preparing, Ready, Shipped, Completed
+        
+        // كارت معلومات الطيار (Rider Info Card)
+        riderInfo: order.deliveryManId ? {
+          name: order.deliveryManId.name,
+          vehicle: order.deliveryManId.vehicle,
+          rating: order.deliveryManId.rating || 5.0,
+          totalDeliveries: order.deliveryManId.totalDeliveries || 0,
+          phones: order.deliveryManId.phones
+        } : null, // هيكون null لو لسه الصيدلية ما عينتش طيار للأوردر
+
+        // تايم لاين الحالات الأربعة (Order Status Timeline)
+        statusTimeline: timeline,
+
+        // محتويات الطلب والأسعار (Order Contents)
+        orderContents: {
+          items: order.items.map(item => ({
+            medicineId: item.medicineId?._id || item.medicineId,
+            medicineName: item.medicineId?.medicineName || "Medicine",
+            quantity: item.quantity,
+            price: item.price,
+            itemTotal: item.price * item.quantity
+          })),
+          summary: {
+            subtotal: order.subtotal,
+            deliveryFee: order.deliveryFee,
+            discount: order.discount || 0,
+            totalPrice: order.totalPrice,
+            paymentMethod: order.paymentMethod
+          }
+        }
+      }
+    });
+
+  } catch (err) {
+    console.error("Error in getPatientOrderTracking:", err);
+    return res.status(500).json({ success: false, message: "Internal server error", error: err.message });
+  }
+};
+
+
+exports.confirmOrderReceipt = async (req, res) => {
+  try {
+    const { orderId } = req.body;
+
+    const order = await Order.findById(orderId);
+    if (!order) {
+      return res.status(404).json({ success: false, message: "Order not found" });
+    }
+
+    if (order.status === "Completed") {
+      return res.status(400).json({ success: false, message: "Order is already marked as Completed." });
+    }
+
+    order.status = "Completed";
+    if (order.paymentMethod === "Cash") {
+      order.paymentStatus = "Paid";
+    }
+
+    order.statusHistory.push({
+      status: "Completed",
+      note: "Order receipt confirmed by the patient. All medications verified as Received."
+    });
+
+    await order.save();
+
+    if (order.deliveryManId) {
+      await mongoose.model('DeliveryMan').findByIdAndUpdate(order.deliveryManId, {
+        $inc: { totalDeliveries: 1 }, // تزويد عدد التوصيلات الناجحة للطيار بمقدار 1
+        $set: { status: "Available" }  // تحويل حالة الطيار إلى متاح لاستقبال أوردرات تانية
+      });
+    }
+
+    return res.status(200).json({
+      success: true,
+      message: "Order receipt confirmed successfully!",
+      data: {
+        orderId: order._id,
+        orderNumber: order.orderNumber,
+        status: order.status,
+        paymentStatus: order.paymentStatus,
+        verifiedItems: order.items.map(item => ({
+          medicineId: item.medicineId,
+          quantity: item.quantity,
+          price: item.price,
+          itemStatus: "Received" // ثابتة لكل الأدوية بناءً على تصميم شاشتك المرفقة
+        }))
+      }
+    });
+
+  } catch (err) {
+    console.error("Error in confirmOrderReceipt:", err);
+    return res.status(500).json({ success: false, message: "Internal server error", error: err.message });
+  }
+};

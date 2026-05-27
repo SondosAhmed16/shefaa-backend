@@ -4,6 +4,8 @@ const router = express.Router();
 const patientController = require('../Controllers/patientController');
 const appointmentController = require('../Controllers/appointmentController');
 const notificationController = require('../Controllers/notificationController');
+const reviewController = require('../Controllers/reviewController');
+
 
 const { auth } = require('../middleware/auth');
 const { authorizeRoles } = require('../middleware/role');
@@ -52,4 +54,11 @@ router.get('/medicines/:medId', auth, authorizeRoles('patient'), patientControll
 
 router.post('/cart/checkout', auth, authorizeRoles('patient'), patientController.createOrder);
 
+router.post('/cart/payment-online', auth, authorizeRoles('patient'), patientController.processOnlinePayment);
+
+router.get('/orders/track/:orderId', auth, authorizeRoles('patient'), patientController.getPatientOrderTracking);
+
+router.post('/orders/confirm-receipt', auth, authorizeRoles('patient'), patientController.confirmOrderReceipt);
+
+router.post('/pharmacies/review', auth, authorizeRoles('patient'), reviewController.addPharmacyReview);
 module.exports = router;
