@@ -21,4 +21,8 @@ router.delete('/:id', auth, authorizeRoles('doctor'), clinicController.deleteCli
 // GET /api/clinic/:id/day-slots?date=YYYY-MM-DD
 router.get('/:id/day-slots', auth, authorizeRoles('patient', 'doctor'), clinicController.getDaySlots);
 
+
+// routes/clinicRoutes.js
+router.get("/:id/today", auth, authorizeRoles('patient'), clinicController.getClinicWithTodaySlots);
+
 module.exports = router;

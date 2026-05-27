@@ -517,3 +517,194 @@ exports.getDaySlots = async (req, res) => {
     return res.status(500).json({ message: "Internal server error." });
   }
 };
+
+
+// controllers/clinicController.js  (add below your existing exports)
+
+// ─── GET Clinic + Today's Slots (patient-facing) ──────────────────────────────
+// GET /api/clinic/:id/today
+//
+// Returns the full clinic document merged with a live slot breakdown for today.
+// The date is resolved server-side in Africa/Cairo time so the client never
+// needs to pass a date param.
+// ─────────────────────────────────────────────────────────────────────────────
+
+exports.getClinicWithTodaySlots = async (req, res) => {
+  try {
+    // ── 1. Auth: patient only ───────────────────────────────────────────────
+    const patient = await Patient.findOne({ userId: req.user._id });
+    if (!patient) return res.status(403).json({ message: "Patient profile not found." });
+
+    // ── 2. Load clinic ──────────────────────────────────────────────────────
+    const clinic = await Clinic.findById(req.params.id).lean();
+    if (!clinic) return res.status(404).json({ message: "Clinic not found." });
+
+    // ── 3. Resolve today in Cairo time ──────────────────────────────────────
+    const nowLocal = new Date(
+      new Date().toLocaleString("en-US", { timeZone: "Africa/Cairo" })
+    );
+
+    const todayStr = nowLocal.toISOString().slice(0, 10); // "YYYY-MM-DD"
+    const nowMins  = nowLocal.getHours() * 60 + nowLocal.getMinutes();
+
+    // Build a UTC midnight Date that matches the Cairo calendar date so we can
+    // query Appointment.date (stored as UTC midnight) correctly.
+    const todayUTC = new Date(`${todayStr}T00:00:00.000Z`);
+
+    const DAYS    = ["Sunday","Monday","Tuesday","Wednesday","Thursday","Friday","Saturday"];
+    const dayName = DAYS[nowLocal.getDay()];
+
+    // ── 4. Pull schedule info ───────────────────────────────────────────────
+    const schedule = clinic.defaultSchedule;
+    const dayEntry = schedule?.days?.find((d) => d.day === dayName);
+
+    const baseToday = { date: todayStr, day: dayName };
+
+    // ── 5. Early exits: closed / locked states ──────────────────────────────
+    if (!dayEntry) {
+      return res.status(200).json({
+        clinic,
+        today: {
+          ...baseToday,
+          status:      "closed",
+          reason:      "Day not found in clinic schedule.",
+          totalSlots:  0,
+          breaks:      [],
+          slots:       [],
+        },
+      });
+    }
+
+    if (!dayEntry.isActive) {
+      return res.status(200).json({
+        clinic,
+        today: {
+          ...baseToday,
+          status:      "closed",
+          reason:      "Clinic is closed today.",
+          totalSlots:  0,
+          breaks:      dayEntry.breaks ?? [],
+          slots:       [],
+        },
+      });
+    }
+
+    if (dayEntry.isDayLocked) {
+      return res.status(200).json({
+        clinic,
+        today: {
+          ...baseToday,
+          status:       "day_locked",
+          reason:       "This day is fully locked.",
+          open:         dayEntry.open,
+          close:        dayEntry.close,
+          slotDuration: dayEntry.slotDuration ?? schedule.slotDuration,
+          totalSlots:   0,
+          breaks:       dayEntry.breaks ?? [],
+          slots:        [],
+        },
+      });
+    }
+
+    // ── 6. Resolve slot settings ────────────────────────────────────────────
+    const slotDuration   = dayEntry.slotDuration   ?? schedule.slotDuration;
+    const dailyCapacity  = dayEntry.dailyCapacity  ?? schedule.dailyCapacity;
+    const patientsPerSlot = dayEntry.patientsPerSlot ?? schedule.patientsPerSlot;
+
+    // ── 7. Generate raw slots ───────────────────────────────────────────────
+    const rawSlots = buildSlots({
+      open:         dayEntry.open,
+      close:        dayEntry.close,
+      slotDuration,
+      dailyCapacity,
+      breaks:       dayEntry.breaks ?? [],
+    });
+
+    // ── 8. Count active bookings per slot for today ─────────────────────────
+    const OCCUPYING_STATUSES = ["upcoming", "inProgress", "completed"];
+
+    const bookedAgg = await Appointment.aggregate([
+      {
+        $match: {
+          clinic: clinic._id,
+          date:   todayUTC,
+          status: { $in: OCCUPYING_STATUSES },
+        },
+      },
+      {
+        $group: {
+          _id:   "$slotStart",
+          count: { $sum: 1 },
+        },
+      },
+    ]);
+
+    const bookedPerSlot  = {};
+    let   totalBookedToday = 0;
+
+    for (const entry of bookedAgg) {
+      bookedPerSlot[entry._id]  = entry.count;
+      totalBookedToday         += entry.count;
+    }
+
+    // ── 9. Annotate slots ───────────────────────────────────────────────────
+    const slots = rawSlots.map((slot) => {
+      const bookedCount = bookedPerSlot[slot.startTime] ?? 0;
+      const slotFull    = bookedCount >= patientsPerSlot;
+      const dayFull     = totalBookedToday >= dailyCapacity;
+      const isPastSlot  = slot.end <= nowMins;
+
+      // "expired" = slot time has passed AND no bookings exist for it
+      const isExpired   = isPastSlot && bookedCount === 0;
+      const isAvailable = !slotFull && !dayFull && !isPastSlot;
+
+      return {
+        ...slot,
+        available:        isAvailable,
+        bookedCount,
+        patientsPerSlot,
+        remainingInSlot:  isAvailable ? Math.max(0, patientsPerSlot - bookedCount) : 0,
+        remainingInDay:   isAvailable ? Math.max(0, dailyCapacity - totalBookedToday) : 0,
+        ...(!isAvailable && {
+          reason: isExpired
+            ? "expired"
+            : slotFull
+              ? "Slot is fully booked."
+              : "Daily capacity reached.",
+        }),
+      };
+    });
+
+    // ── 10. Final response ──────────────────────────────────────────────────
+    const status = dayEntry.isBookingLocked ? "booking_locked" : "open";
+
+    return res.status(200).json({
+      clinic,                          // full clinic document
+      today: {
+        ...baseToday,
+        status,
+        ...(dayEntry.isBookingLocked && {
+          reason: "New bookings are locked for this day.",
+        }),
+        open:             dayEntry.open,
+        close:            dayEntry.close,
+        slotDuration,
+        dailyCapacity,
+        patientsPerSlot,
+        totalBookedToday,
+        totalSlots:       slots.length,
+        hasAppointments:  totalBookedToday > 0,
+        breaks:           (dayEntry.breaks ?? []).map((b) => ({
+          start: b.start,
+          end:   b.end,
+          label: b.label ?? "",
+        })),
+        slots,
+      },
+    });
+
+  } catch (err) {
+    console.error("getClinicWithTodaySlots error:", err);
+    return res.status(500).json({ message: "Internal server error." });
+  }
+};
