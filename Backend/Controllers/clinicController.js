@@ -536,8 +536,11 @@ exports.getClinicWithTodaySlots = async (req, res) => {
     if (!patient) return res.status(403).json({ message: "Patient profile not found." });
 
     // ── 2. Load clinic ──────────────────────────────────────────────────────
+    // Load full doc for internal schedule logic, but strip it from the response
     const clinic = await Clinic.findById(req.params.id).lean();
     if (!clinic) return res.status(404).json({ message: "Clinic not found." });
+
+    const { defaultSchedule: schedule, ...clinicInfo } = clinic; // separate them
 
     // ── 3. Resolve today in Cairo time ──────────────────────────────────────
     const nowLocal = new Date(
@@ -545,13 +548,13 @@ exports.getClinicWithTodaySlots = async (req, res) => {
     );
 
     const todayStr = nowLocal.toISOString().slice(0, 10); // "YYYY-MM-DD"
-    const nowMins  = nowLocal.getHours() * 60 + nowLocal.getMinutes();
+    const nowMins = nowLocal.getHours() * 60 + nowLocal.getMinutes();
 
     // Build a UTC midnight Date that matches the Cairo calendar date so we can
     // query Appointment.date (stored as UTC midnight) correctly.
     const todayUTC = new Date(`${todayStr}T00:00:00.000Z`);
 
-    const DAYS    = ["Sunday","Monday","Tuesday","Wednesday","Thursday","Friday","Saturday"];
+    const DAYS = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];
     const dayName = DAYS[nowLocal.getDay()];
 
     // ── 4. Pull schedule info ───────────────────────────────────────────────
@@ -566,11 +569,11 @@ exports.getClinicWithTodaySlots = async (req, res) => {
         clinic,
         today: {
           ...baseToday,
-          status:      "closed",
-          reason:      "Day not found in clinic schedule.",
-          totalSlots:  0,
-          breaks:      [],
-          slots:       [],
+          status: "closed",
+          reason: "Day not found in clinic schedule.",
+          totalSlots: 0,
+          breaks: [],
+          slots: [],
         },
       });
     }
@@ -580,11 +583,11 @@ exports.getClinicWithTodaySlots = async (req, res) => {
         clinic,
         today: {
           ...baseToday,
-          status:      "closed",
-          reason:      "Clinic is closed today.",
-          totalSlots:  0,
-          breaks:      dayEntry.breaks ?? [],
-          slots:       [],
+          status: "closed",
+          reason: "Clinic is closed today.",
+          totalSlots: 0,
+          breaks: dayEntry.breaks ?? [],
+          slots: [],
         },
       });
     }
@@ -594,30 +597,30 @@ exports.getClinicWithTodaySlots = async (req, res) => {
         clinic,
         today: {
           ...baseToday,
-          status:       "day_locked",
-          reason:       "This day is fully locked.",
-          open:         dayEntry.open,
-          close:        dayEntry.close,
+          status: "day_locked",
+          reason: "This day is fully locked.",
+          open: dayEntry.open,
+          close: dayEntry.close,
           slotDuration: dayEntry.slotDuration ?? schedule.slotDuration,
-          totalSlots:   0,
-          breaks:       dayEntry.breaks ?? [],
-          slots:        [],
+          totalSlots: 0,
+          breaks: dayEntry.breaks ?? [],
+          slots: [],
         },
       });
     }
 
     // ── 6. Resolve slot settings ────────────────────────────────────────────
-    const slotDuration   = dayEntry.slotDuration   ?? schedule.slotDuration;
-    const dailyCapacity  = dayEntry.dailyCapacity  ?? schedule.dailyCapacity;
+    const slotDuration = dayEntry.slotDuration ?? schedule.slotDuration;
+    const dailyCapacity = dayEntry.dailyCapacity ?? schedule.dailyCapacity;
     const patientsPerSlot = dayEntry.patientsPerSlot ?? schedule.patientsPerSlot;
 
     // ── 7. Generate raw slots ───────────────────────────────────────────────
     const rawSlots = buildSlots({
-      open:         dayEntry.open,
-      close:        dayEntry.close,
+      open: dayEntry.open,
+      close: dayEntry.close,
       slotDuration,
       dailyCapacity,
-      breaks:       dayEntry.breaks ?? [],
+      breaks: dayEntry.breaks ?? [],
     });
 
     // ── 8. Count active bookings per slot for today ─────────────────────────
@@ -627,44 +630,44 @@ exports.getClinicWithTodaySlots = async (req, res) => {
       {
         $match: {
           clinic: clinic._id,
-          date:   todayUTC,
+          date: todayUTC,
           status: { $in: OCCUPYING_STATUSES },
         },
       },
       {
         $group: {
-          _id:   "$slotStart",
+          _id: "$slotStart",
           count: { $sum: 1 },
         },
       },
     ]);
 
-    const bookedPerSlot  = {};
-    let   totalBookedToday = 0;
+    const bookedPerSlot = {};
+    let totalBookedToday = 0;
 
     for (const entry of bookedAgg) {
-      bookedPerSlot[entry._id]  = entry.count;
-      totalBookedToday         += entry.count;
+      bookedPerSlot[entry._id] = entry.count;
+      totalBookedToday += entry.count;
     }
 
     // ── 9. Annotate slots ───────────────────────────────────────────────────
     const slots = rawSlots.map((slot) => {
       const bookedCount = bookedPerSlot[slot.startTime] ?? 0;
-      const slotFull    = bookedCount >= patientsPerSlot;
-      const dayFull     = totalBookedToday >= dailyCapacity;
-      const isPastSlot  = slot.end <= nowMins;
+      const slotFull = bookedCount >= patientsPerSlot;
+      const dayFull = totalBookedToday >= dailyCapacity;
+      const isPastSlot = slot.end <= nowMins;
 
       // "expired" = slot time has passed AND no bookings exist for it
-      const isExpired   = isPastSlot && bookedCount === 0;
+      const isExpired = isPastSlot && bookedCount === 0;
       const isAvailable = !slotFull && !dayFull && !isPastSlot;
 
       return {
         ...slot,
-        available:        isAvailable,
+        available: isAvailable,
         bookedCount,
         patientsPerSlot,
-        remainingInSlot:  isAvailable ? Math.max(0, patientsPerSlot - bookedCount) : 0,
-        remainingInDay:   isAvailable ? Math.max(0, dailyCapacity - totalBookedToday) : 0,
+        remainingInSlot: isAvailable ? Math.max(0, patientsPerSlot - bookedCount) : 0,
+        remainingInDay: isAvailable ? Math.max(0, dailyCapacity - totalBookedToday) : 0,
         ...(!isAvailable && {
           reason: isExpired
             ? "expired"
@@ -679,24 +682,24 @@ exports.getClinicWithTodaySlots = async (req, res) => {
     const status = dayEntry.isBookingLocked ? "booking_locked" : "open";
 
     return res.status(200).json({
-      clinic,                          // full clinic document
+      clinic: clinicInfo,                          // full clinic document
       today: {
         ...baseToday,
         status,
         ...(dayEntry.isBookingLocked && {
           reason: "New bookings are locked for this day.",
         }),
-        open:             dayEntry.open,
-        close:            dayEntry.close,
+        open: dayEntry.open,
+        close: dayEntry.close,
         slotDuration,
         dailyCapacity,
         patientsPerSlot,
         totalBookedToday,
-        totalSlots:       slots.length,
-        hasAppointments:  totalBookedToday > 0,
-        breaks:           (dayEntry.breaks ?? []).map((b) => ({
+        totalSlots: slots.length,
+        hasAppointments: totalBookedToday > 0,
+        breaks: (dayEntry.breaks ?? []).map((b) => ({
           start: b.start,
-          end:   b.end,
+          end: b.end,
           label: b.label ?? "",
         })),
         slots,
