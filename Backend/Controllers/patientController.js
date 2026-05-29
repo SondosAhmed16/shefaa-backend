@@ -800,10 +800,8 @@ exports.createOrder = async (req, res) => {
     let finalShippingAddress = null;
 
     if (orderType === "Delivery") {
-      // التوصيل العادي: بناخد الفيس اللي حطاها الصيدلية
       deliveryFee = pharmacy.deliveryFee || 0;
 
-      // التأكد من أن البيشنت بعت بيانات العنوان بالكامل
       if (!deliveryAddressDetails || !deliveryAddressDetails.streetAddress) {
         return res.status(400).json({
           success: false,
@@ -812,12 +810,25 @@ exports.createOrder = async (req, res) => {
       }
 
       finalShippingAddress = {
+        addressText: `${deliveryAddressDetails.cityDistrict}, ${deliveryAddressDetails.streetAddress}`, // تجميع العنوان نصياً ليتوافق مع السكيما عندك
         fullName: deliveryAddressDetails.fullName,
         phoneNumber: deliveryAddressDetails.phoneNumber,
         cityDistrict: deliveryAddressDetails.cityDistrict,
         streetAddress: deliveryAddressDetails.streetAddress,
-        // لو حابة تخزني الـ coordinates الجغرافية بتاعة العميل كمان:
-        location: deliveryAddressDetails.location || null
+        
+        ...(deliveryAddressDetails.location &&
+          deliveryAddressDetails.location.coordinates &&
+          deliveryAddressDetails.location.coordinates.length === 2
+          ? {
+            location: {
+              type: "Point",
+              coordinates: [
+                Number(deliveryAddressDetails.location.coordinates[0]),
+                Number(deliveryAddressDetails.location.coordinates[1])
+              ]
+            }
+          }
+          : { location: undefined })
       };
     } else if (orderType === "Pickup") {
       // البيشنت هينزل يستلم بنفسه: التوصيل مجاني ومفيش عنوان شحن للمريض
@@ -911,7 +922,7 @@ exports.processOnlinePayment = async (req, res) => {
     }
 
     order.paymentStatus = "Paid";
-    
+
     order.statusHistory.push({
       status: order.status,
       note: "Payment completed successfully via Online Card"
@@ -926,12 +937,12 @@ exports.processOnlinePayment = async (req, res) => {
     await mongoose.model('BillingRecord').findOneAndUpdate(
       { entity: order.pharmacyId, month: currentMonth, year: currentYear },
       {
-        $inc: { 
-          totalRevenue: order.subtotal, 
-          activityCount: 1 
+        $inc: {
+          totalRevenue: order.subtotal,
+          activityCount: 1
         }
       },
-      { upsert: true } 
+      { upsert: true }
     );
 
     return res.status(200).json({
@@ -958,10 +969,10 @@ exports.getPatientOrderTracking = async (req, res) => {
     const order = await Order.findById(orderId)
       .populate({
         path: 'pharmacyId',
-        populate: { path: 'userId', select: 'name' } 
+        populate: { path: 'userId', select: 'name' }
       })
-      .populate('deliveryManId') 
-      .populate('items.medicineId', 'medicineName'); 
+      .populate('deliveryManId')
+      .populate('items.medicineId', 'medicineName');
 
     if (!order) {
       return res.status(404).json({ success: false, message: "Order not found" });
@@ -982,15 +993,15 @@ exports.getPatientOrderTracking = async (req, res) => {
       },
       riderPickedUp: {
         title: "Rider Picked Up Order",
-        description: order.deliveryManId 
-          ? `Rider [${order.deliveryManId.name}] picked up your order from the pharmacy` 
+        description: order.deliveryManId
+          ? `Rider [${order.deliveryManId.name}] picked up your order from the pharmacy`
           : "Rider is picking up your order soon",
         time: null,
         isCompleted: false
       },
       onTheWay: {
         title: "On the Way",
-        description: order.status === "Shipped" 
+        description: order.status === "Shipped"
           ? `Rider is on the way to your location. Estimated arrival: ${order.pharmacyId?.deliveryTime || '30-45 mins'}`
           : "Waiting for dispatch",
         time: null,
@@ -1027,7 +1038,7 @@ exports.getPatientOrderTracking = async (req, res) => {
         // الجزء العلوي من الشاشة
         orderNumber: order.orderNumber,
         orderStatus: order.status, // New, Preparing, Ready, Shipped, Completed
-        
+
         // كارت معلومات الطيار (Rider Info Card)
         riderInfo: order.deliveryManId ? {
           name: order.deliveryManId.name,
