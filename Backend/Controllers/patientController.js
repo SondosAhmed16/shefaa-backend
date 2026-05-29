@@ -1,3 +1,4 @@
+const mongoose = require('mongoose');
 const Patient = require('../Models/Patients');
 const Appointment = require('../Models/Appointment');
 const MedicalRecord = require('../Models/MedicalRecord');
@@ -815,7 +816,8 @@ exports.createOrder = async (req, res) => {
         phoneNumber: deliveryAddressDetails.phoneNumber,
         cityDistrict: deliveryAddressDetails.cityDistrict,
         streetAddress: deliveryAddressDetails.streetAddress,
-        
+
+
         ...(deliveryAddressDetails.location &&
           deliveryAddressDetails.location.coordinates &&
           deliveryAddressDetails.location.coordinates.length === 2
