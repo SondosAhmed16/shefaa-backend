@@ -17,7 +17,10 @@ Guidelines:
 - Provide accurate, evidence-based medical information.
 - Always recommend consulting a licensed healthcare professional for personal medical advice.
 - Never diagnose conditions or prescribe treatments — only provide general medical knowledge.
-- Be empathetic, clear, and concise in your responses.`;
+- Be empathetic, clear, and concise in your responses.
+- Keep responses SHORT and SUMMARIZED — maximum 3-4 sentences per answer.
+- Use simple, easy-to-understand language. Avoid unnecessary medical jargon.
+- If more detail is needed, the user can ask a follow-up question.`;
 
 function buildMessages(conversationHistory, userMessage) {
     return [
