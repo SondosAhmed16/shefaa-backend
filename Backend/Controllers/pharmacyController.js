@@ -1045,3 +1045,65 @@ exports.patientSearch = async (req, res) => {
 exports.getOrderTracking = async (req, res) => {
     res.status(501).json({ success: false, message: "Not implemented yet" });
 };
+exports.getLowStockAlerts = async (req, res) => {
+    try {
+        const pharmacy = await getPharmacy(req.user.id);
+        if (!pharmacy)
+            return res.status(404).json({ success: false, message: "Pharmacy not found" });
+
+        const lowStockItems = await MedicineStock.find({
+            pharmacyId: pharmacy._id,
+            inStock: true,
+            $expr: { $lte: ["$quantity", "$minThreshold"] }
+        }).select("medicineName category quantity minThreshold price inStock");
+
+        return res.status(200).json({
+            success: true,
+            data: { lowStockItems, count: lowStockItems.length }
+        });
+    } catch (err) {
+        return res.status(500).json({ success: false, message: "Internal server error" });
+    }
+};
+
+exports.getAvailableDeliveryMen = async (req, res) => {
+    try {
+        const pharmacy = await getPharmacy(req.user.id);
+        if (!pharmacy)
+            return res.status(404).json({ success: false, message: "Pharmacy not found" });
+
+        const deliveryMen = await DeliveryMan.find({
+            pharmacyId: pharmacy._id,
+            isActive: true,
+            status: "Available"
+        }).populate("assignedOrders", "orderNumber status");
+
+        return res.status(200).json({
+            success: true,
+            data: { deliveryMen, count: deliveryMen.length }
+        });
+    } catch (err) {
+        return res.status(500).json({ success: false, message: "Internal server error" });
+    }
+};
+
+exports.getBusyDeliveryMen = async (req, res) => {
+    try {
+        const pharmacy = await getPharmacy(req.user.id);
+        if (!pharmacy)
+            return res.status(404).json({ success: false, message: "Pharmacy not found" });
+
+        const deliveryMen = await DeliveryMan.find({
+            pharmacyId: pharmacy._id,
+            isActive: true,
+            status: "Busy"
+        }).populate("assignedOrders", "orderNumber status");
+
+        return res.status(200).json({
+            success: true,
+            data: { deliveryMen, count: deliveryMen.length }
+        });
+    } catch (err) {
+        return res.status(500).json({ success: false, message: "Internal server error" });
+    }
+};
