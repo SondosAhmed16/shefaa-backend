@@ -69,17 +69,20 @@ async function chatWithAI(conversationHistory, userMessage, retries = 3) {
 
 exports.medicalChat = async (req, res) => {
     try {
-        const { message, conversationHistory = [] } = req.body;
+        const { message, conversationHistory } = req.body;
 
         if (!message || message.trim() === "") {
             return res.status(400).json({ message: "No message provided" });
         }
 
-        if (!Array.isArray(conversationHistory)) {
+        // Accept missing, null, or an array — reject anything else
+        if (conversationHistory !== undefined && conversationHistory !== null && !Array.isArray(conversationHistory)) {
             return res.status(400).json({ message: "conversationHistory must be an array" });
         }
 
-        const aiResponse = await chatWithAI(conversationHistory, message);
+        const history = Array.isArray(conversationHistory) ? conversationHistory : [];
+
+        const aiResponse = await chatWithAI(history, message);
 
         if (aiResponse.error) {
             return res.status(500).json({
@@ -89,9 +92,8 @@ exports.medicalChat = async (req, res) => {
             });
         }
 
-        // Return the reply and the updated history so the client can pass it back next turn
         const updatedHistory = [
-            ...conversationHistory,
+            ...history,
             { role: "user", content: message },
             { role: "assistant", content: aiResponse.reply }
         ];
