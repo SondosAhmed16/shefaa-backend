@@ -1,5 +1,6 @@
 const express = require('express');
 const router = express.Router();
+const { check } = require('express-validator'); // 🟢 ضيفي السطر ده فوراً هنا!
 const labController = require('../Controllers/labController');
 const { auth } = require('../middleware/auth'); 
 const { runValidation } = require('../middleware/validate'); 
@@ -49,15 +50,23 @@ router.get('/my-services', auth, labController.getServices);
 
 router.post(
   '/add-service', 
-  auth, 
+  upload.single('imageUrl'), // 1. بيفك الـ form-data الأول
   [
-    body("name").notEmpty().withMessage("Service name is required"),
-    body("price").isNumeric().withMessage("Price must be a number"),
-    body("category").isIn(["test", "scan"]).withMessage("Category must be test or scan"),
-    body("estimatedTime").notEmpty().withMessage("Estimated time is required")
-  ],
-  runValidation, 
-  labController.addService
+    // 2. مصفوفة الـ Validation
+    check('name', 'Service name is required').notEmpty(),
+    check('price', 'Price must be a number').isNumeric(),
+    check('category', 'Category must be test or scan').isIn(['test', 'scan']),
+    check('estimatedTime', 'Estimated time is required').notEmpty(),
+  ], 
+  (req, res, next) => {
+    const { validationResult } = require('express-validator');
+    const errors = validationResult(req);
+    if (!errors.isEmpty()) {
+      return res.status(422).json({ errors: errors.array() });
+    }
+    next();
+  },
+  labController.addService // 4. الـ Controller الأصلي بتاعك
 );
 
 router.patch('/toggle-service/:serviceId', auth, labController.toggleServiceStatus);
