@@ -25,7 +25,7 @@ const labSchema = new mongoose.Schema(
     },
     workingHours: {
       type: String,
-      required: true
+      required: false
     },
     
     homeSampleCollection: {
