@@ -8,16 +8,6 @@ const labSchema = new mongoose.Schema(
       required: true,
       unique: true,
     },
-    centerName: {
-      type: String,
-      required: true,
-      trim: true
-    },
-    phone: {
-      type: String,
-      required: true,
-      trim: true
-    },
     facilityType: {
       type: String,
       enum: ["lab", "radiology center", "both"], 
