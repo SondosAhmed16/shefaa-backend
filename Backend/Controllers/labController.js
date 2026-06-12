@@ -230,8 +230,8 @@ exports.getServices = async (req, res) => {
 // 4. إضافة خدمة جديدة
 exports.addService = async (req, res) => {
   try {
-    const { name, category, price, estimatedTime, instructions, sessionDuration, imageUrl } = req.body;
-    
+    const { name, category, price, estimatedTime, instructions, sessionDuration } = req.body;
+    const imageUrl = req.file ? req.file.path : undefined;
     if (!name || !price || !category || !estimatedTime) {
       return res.status(400).json({ message: 'Required fields are missing' });
     }

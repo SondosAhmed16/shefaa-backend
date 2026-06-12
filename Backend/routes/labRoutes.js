@@ -50,14 +50,16 @@ router.get('/my-services', auth, labController.getServices);
 
 router.post(
   '/add-service', 
-  upload.single('imageUrl'), // 1. بيفك الـ form-data الأول
+  auth,                   // 🟢 1. التأكد من الـ Token أولاً ويملا الـ req.user
+  upload.single('imageUrl'), // 🟢 2. يفك الـ form-data ويرفع الصورة
   [
-    // 2. مصفوفة الـ Validation
+    // 3. مصفوفة الـ Validation بتاعتك
     check('name', 'Service name is required').notEmpty(),
     check('price', 'Price must be a number').isNumeric(),
     check('category', 'Category must be test or scan').isIn(['test', 'scan']),
     check('estimatedTime', 'Estimated time is required').notEmpty(),
   ], 
+  // 4. فحص أخطاء الـ Validation
   (req, res, next) => {
     const { validationResult } = require('express-validator');
     const errors = validationResult(req);
@@ -66,7 +68,7 @@ router.post(
     }
     next();
   },
-  labController.addService // 4. الـ Controller الأصلي بتاعك
+  labController.addService // 5. الـ Controller الأصلي اللي هيقرا req.user._id بأمان
 );
 
 router.patch('/toggle-service/:serviceId', auth, labController.toggleServiceStatus);
