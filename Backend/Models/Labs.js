@@ -62,10 +62,7 @@ const labSchema = new mongoose.Schema(
       sparse: true,
       trim: true
     },
-    licenseNumber: {
-      type: String, 
-      required: true
-    },
+
     licenseValidUntil: {
       type: Date 
     },
