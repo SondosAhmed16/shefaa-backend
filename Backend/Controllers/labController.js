@@ -2,6 +2,8 @@ const Lab = require('../Models/Labs');
 const Service = require('../Models/Services');
 const Patient = require('../Models/Patients');
 const LabRequest = require('../Models/LabRequest');
+const User = require('../Models/Users');
+
 
 // 1. جلب بيانات البروفايل وكارت الـ AI
 exports.getProfile = async (req, res) => {
@@ -77,63 +79,60 @@ exports.getProfile = async (req, res) => {
   }
 };
 
-// 2. تحديث البروفايل والسويتشات
-// updateProfile المتوافقة تماماً مع الـ UI والـ DRY Principle
+// updateProfile النهائي والمظبوط 100% بدون أي تكرار للكود
 exports.updateProfile = async (req, res) => {
   try {
-    // 1. البحث عن بروفايل المعمل بناءً على الـ User ID المستخرج من الـ Token
+    // 1. البحث عن المعمل والحساب الأساسي
     const lab = await Lab.findOne({ userId: req.user._id });
     if (!lab) {
       return res.status(404).json({ message: "Center profile not found." });
     }
 
-    // 2. البحث عن الحساب الأساسي في جدول الـ Users عشان نحدث البيانات الأساسية لو اتغيرت
     const user = await User.findById(req.user._id);
     if (!user) {
       return res.status(404).json({ message: "User account not found." });
     }
 
-    // 3. استقبال البيانات القادمة من الـ Request Body أو الـ Files (الرخصة)
+    // 2. استقبال جميع البيانات (الأساسية، اللوجستية، والقانونية)
     const {
-      name,                  // اسم المركز الأساسي (من جدول الـ User)
-      phoneNumber,           // رقم التليفون الموحد (من جدول الـ User)
+      name,                      // الاسم الأساسي (Cairo MRI & Lab Center) -> جدول User
+      phoneNumber,               // رقم التليفون الموحد -> جدول User
       facilityType,
-      workingHours,
-      commercialRegisterNumber,
-      licenseNumber,
-      licenseValidUntil,
-      medicalDirectorName,
-      directorProfessionalId,
-      addresses,
-      homeSampleCollection,
-      aiRecommendations,
-      insuranceAccepted,
-      paymentMethods
+      workingHours,              // المواعيد (من شاشة الـ Profile)
+      commercialRegisterNumber,  // رقم السجل/الرخصة
+      licenseValidUntil,         // تاريخ انتهاء الرخصة (الي مش هيفوتنا تاني!)
+      medicalDirectorName,       // اسم المدير الطبي
+      directorProfessionalId,    // رقم الكارنيه
+      homeSampleCollection,      // Toggle العينات المنزلية
+      aiRecommendations,         // Toggle الذكاء الاصطناعي
+      insuranceAccepted,         // دعم التأمين
+      paymentMethods,            // طرق الدفع
+      addresses
     } = req.body;
 
     // ── أولاً: تحديث البيانات الأساسية في جدول الـ Users (بدون تكرار) ──
     if (name !== undefined) user.name = name;
+    
     if (phoneNumber !== undefined) {
-      // التحقق إن الرقم الجديد مش مستخدم في حساب تاني لمنع الـ Duplicate Key Error
+      // التحقق إن الرقم الجديد مش مستخدم في حساب تاني لمنع مشاكل الـ Unique Index
       const existingPhone = await User.findOne({ phoneNumber, _id: { $ne: user._id } });
       if (existingPhone) {
         return res.status(400).json({ message: "Phone number is already in use by another account." });
       }
       user.phoneNumber = phoneNumber;
     }
-    await user.save(); // حفظ تعديلات الـ User
+    await user.save(); // حفظ جدول الـ Users
 
-    // ── ثانياً: تحديث ملف الرخصة لو ارفع في الـ Request ──
+    // ── ثانياً: تحديث ملف الرخصة لو اترفع جديد في الـ Request ──
     if (req.files && req.files['medicalLicence']) {
       lab.medicalLicencePdf = req.files['medicalLicence'][0].path;
     }
 
-    // ── ثالثاً: تحديث البيانات الخاصة بالمعمل في جدول الـ Labs ──
+    // ── ثالثاً: تحديث البيانات القانونية واللوجستية في جدول الـ Labs ──
     if (facilityType !== undefined) lab.facilityType = facilityType;
     if (workingHours !== undefined) lab.workingHours = workingHours;
     if (commercialRegisterNumber !== undefined) lab.commercialRegisterNumber = commercialRegisterNumber;
-    if (licenseNumber !== undefined) lab.licenseNumber = licenseNumber;
-    if (licenseValidUntil !== undefined) lab.licenseValidUntil = licenseValidUntil;
+    if (licenseValidUntil !== undefined) lab.licenseValidUntil = licenseValidUntil; // 🟢 التحديث هنا
     if (medicalDirectorName !== undefined) lab.medicalDirectorName = medicalDirectorName;
     if (directorProfessionalId !== undefined) lab.directorProfessionalId = directorProfessionalId;
     if (homeSampleCollection !== undefined) lab.homeSampleCollection = homeSampleCollection;
@@ -141,7 +140,7 @@ exports.updateProfile = async (req, res) => {
     if (insuranceAccepted !== undefined) lab.insuranceAccepted = insuranceAccepted;
     if (paymentMethods !== undefined) lab.paymentMethods = paymentMethods;
 
-    // معالجة الـ addresses لو مبعوتة كـ String في الـ form-data
+    // معالجة الـ addresses لو مبعوتة كـ String في الـ form-data للفرونت
     if (addresses !== undefined) {
       try {
         lab.addresses = typeof addresses === 'string' ? JSON.parse(addresses) : addresses;
@@ -150,10 +149,11 @@ exports.updateProfile = async (req, res) => {
       }
     }
 
-    await lab.save(); // حفظ تعديلات الـ Lab
+    await lab.save(); // حفظ جدول الـ Labs
 
-    // 4. إرجاع البيانات المحدثة كاملة للـ Frontend بعد دمج الجدولين بـ الـ Populate
-    const updatedProfile = await Lab.findOne({ userId: user._id }).populate('userId', 'name email phoneNumber role');
+    // 3. إرجاع الداتا كاملة ومدموجة بـ الـ Populate النظيف للـ Frontend
+    const updatedProfile = await Lab.findOne({ userId: user._id })
+      .populate('userId', 'name email phoneNumber role');
 
     res.status(200).json({
       success: true,
@@ -162,17 +162,15 @@ exports.updateProfile = async (req, res) => {
     });
 
   } catch (err) {
-    // التعامل مع خطأ تكرار السجل التجاري مثلاً لو كان الفرونت باعت حاجة مكررة
     if (err.code === 11000) {
       return res.status(400).json({
-        message: "Duplicate key error. This commercial register number already exists.",
+        message: "This commercial register number or phone is already registered.",
         field: err.keyValue
       });
     }
     res.status(500).json({ message: err.message });
   }
 };
-
 // 3. جلب الخدمات مع الـ AI Insight الديناميكي
 exports.getServices = async (req, res) => {
   try {
