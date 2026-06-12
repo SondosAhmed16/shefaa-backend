@@ -10,25 +10,27 @@ const cloudinary = require('cloudinary').v2;
 
 // إعداد التخزين
 // التعديل المظبوط جوه ملفك مباشرة بدون أي require خارجي
+
+// كود الـ cloudinary: cloudinary بيكون موجود عندك فوق في الملف أصلاً
+
 const storage = new CloudinaryStorage({
-  cloudinary: cloudinary, // بيقرأ من متغير الكلاوديناري اللي عندك فوق في الملف أصلاً
+  cloudinary: cloudinary,
   params: async (req, file) => {
-    
-    // 1. لو الملف اللي مبعوت صورة (زي الأشعة التوضيحية للخدمة)
+    // 🟢 1. لو الملف اللي جاي عبارة عن صورة (أشعة توضيحية للـ Service)
     if (file.mimetype.startsWith('image/')) {
       const fileExtension = file.mimetype.split('/')[1]; // png, jpeg, jpg
       return {
-        folder: 'lab_services_images', // الفولدر الجديد للصور
-        resource_type: 'image',        // نوع الحساب هنا صورة
-        format: fileExtension,         
+        folder: 'lab_services_images', // فولدر صور الخدمات
+        resource_type: 'image',
+        format: fileExtension,
         public_id: 'service-' + Date.now()
       };
     }
 
-    // 2. لو الملف PDF (بتاع نتايج التحاليل اللي كنتِ عاملاه في الأصل)
+    // 🔴 2. لو الملف PDF (بتاع نتايج التحاليل الأصلية لـ lab_results)
     return {
       folder: 'lab_results',
-      resource_type: 'raw', 
+      resource_type: 'raw',
       format: 'pdf',
       public_id: 'result-' + Date.now()
     };
