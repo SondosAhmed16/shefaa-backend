@@ -262,18 +262,23 @@ exports.addService = async (req, res) => {
 };
 
 // 5. تغيير حالة الخدمة (نشط / غير نشط)
+// 5. تغيير حالة الخدمة تلقائياً (توجل حقيقي)
 exports.toggleServiceStatus = async (req, res) => {
   try {
     const { serviceId } = req.params;
-    const { isActive } = req.body;
 
     const service = await Service.findById(serviceId);
     if (!service) return res.status(404).json({ message: "Service not found" });
 
-    service.isActive = isActive;
+    // 🟢 عكس الحالة الحالية أوتوماتيك بدون الحاجة لـ req.body
+    service.isActive = !service.isActive; 
     await service.save();
 
-    res.json({ success: true, message: `Service status updated to ${isActive}`, service });
+    res.json({ 
+      success: true, 
+      message: `Service status updated to ${service.isActive}`, 
+      service 
+    });
   } catch (err) {
     res.status(500).json({ message: err.message });
   }
