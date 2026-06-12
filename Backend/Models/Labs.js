@@ -8,6 +8,53 @@ const labSchema = new mongoose.Schema(
       required: true,
       unique: true,
     },
+    centerName: {
+      type: String,
+      required: true,
+      trim: true
+    },
+    phone: {
+      type: String,
+      required: true,
+      trim: true
+    },
+    facilityType: {
+      type: String,
+      enum: ["lab", "radiology center", "both"], 
+      required: true
+    },
+    workingHours: {
+      type: String,
+      required: true
+    },
+    
+    homeSampleCollection: {
+      type: Boolean,
+      default: false
+    },
+    aiRecommendations: {
+      type: Boolean,
+      default: true
+    },
+    insuranceAccepted: {
+      type: Boolean,
+      default: false
+    },
+    
+    paymentMethods: [
+      {
+        type: String,
+        enum: ["Cash", "Visa", "Insurance"],
+        default: ["Cash"]
+      }
+    ],
+    rating: {
+      type: Number,
+      default: 4.5,
+      min: 0,
+      max: 5
+    },
+    
     commercialRegisterNumber: {
       type: String,
       required: true,
@@ -15,14 +62,15 @@ const labSchema = new mongoose.Schema(
       sparse: true,
       trim: true
     },
-
+    licenseNumber: {
+      type: String, 
+      required: true
+    },
+    licenseValidUntil: {
+      type: Date 
+    },
     medicalLicencePdf: {
       type: String
-    },
-    facilityType: {
-      type: String,
-      enum: ["lab", "radiology center"],
-      required: true
     },
     medicalDirectorName: {
       type: String,
@@ -35,7 +83,8 @@ const labSchema = new mongoose.Schema(
 
     addresses: [
       {
-        addressText: { type: String, required: false, trim: true },
+        addressText: { type: String, required: true, trim: true }, 
+        floor: { type: Number }, 
         location: {
           type: {
             type: String,
@@ -43,7 +92,7 @@ const labSchema = new mongoose.Schema(
             default: "Point",
           },
           coordinates: {
-            type: [Number],
+            type: [Number], 
             required: true,
           },
         },

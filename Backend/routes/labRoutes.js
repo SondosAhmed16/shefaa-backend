@@ -19,33 +19,30 @@ const storage = new CloudinaryStorage({
   },
 });
 const upload = multer({ storage: storage });
+/***************************************** */
+
+router.get('/profile', auth, labController.getProfile);
+
+router.patch('/update-profile', auth, labController.updateProfile);
 
 
-router.post(
-  '/add-test', 
-  auth, 
-  [
-    body("testName").notEmpty().withMessage("Test name is required"),
-    body("price").isNumeric().withMessage("Price must be a number")
-  ],
-  runValidation, 
-  labController.addTest
-);
+router.get('/my-services', auth, labController.getServices);
 
 router.post(
-  '/upload-result', 
+  '/add-service', 
   auth, 
-  upload.single('resultFile'), 
   [
-    body("patientId").notEmpty().withMessage("Patient ID is required"),
-    body("testName").notEmpty().withMessage("Test name is required")
+    body("name").notEmpty().withMessage("Service name is required"),
+    body("price").isNumeric().withMessage("Price must be a number"),
+    body("category").isIn(["test", "scan"]).withMessage("Category must be test or scan"),
+    body("estimatedTime").notEmpty().withMessage("Estimated time is required")
   ],
   runValidation, 
-  labController.uploadResult
+  labController.addService
 );
 
+router.patch('/toggle-service/:serviceId', auth, labController.toggleServiceStatus);
 
-router.get('/my-tests', auth, labController.getTests);
-router.get('/patient-results/:patientId', auth, labController.getPatientResults);
+router.post('/add-request', auth, labController.createRequest);
 
 module.exports = router;
