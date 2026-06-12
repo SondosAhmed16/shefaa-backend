@@ -9,15 +9,32 @@ const { CloudinaryStorage } = require('multer-storage-cloudinary');
 const cloudinary = require('cloudinary').v2;
 
 // إعداد التخزين
+// التعديل المظبوط جوه ملفك مباشرة بدون أي require خارجي
 const storage = new CloudinaryStorage({
-  cloudinary: cloudinary,
-  params: {
-    folder: 'lab_results',
-    resource_type: 'raw', 
-    format: async (req, file) => 'pdf',
-    public_id: (req, file) => 'result-' + Date.now(),
-  },
+  cloudinary: cloudinary, // بيقرأ من متغير الكلاوديناري اللي عندك فوق في الملف أصلاً
+  params: async (req, file) => {
+    
+    // 1. لو الملف اللي مبعوت صورة (زي الأشعة التوضيحية للخدمة)
+    if (file.mimetype.startsWith('image/')) {
+      const fileExtension = file.mimetype.split('/')[1]; // png, jpeg, jpg
+      return {
+        folder: 'lab_services_images', // الفولدر الجديد للصور
+        resource_type: 'image',        // نوع الحساب هنا صورة
+        format: fileExtension,         
+        public_id: 'service-' + Date.now()
+      };
+    }
+
+    // 2. لو الملف PDF (بتاع نتايج التحاليل اللي كنتِ عاملاه في الأصل)
+    return {
+      folder: 'lab_results',
+      resource_type: 'raw', 
+      format: 'pdf',
+      public_id: 'result-' + Date.now()
+    };
+  }
 });
+
 const upload = multer({ storage: storage });
 /***************************************** */
 
