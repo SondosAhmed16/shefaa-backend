@@ -8,37 +8,50 @@ const { authorizeRoles } = require('../middleware/role');
 const { runValidation } = require('../middleware/validate');
 
 router.get('/dashboard-stats', auth, pharmacyController.getDashboardStats);
-
 router.get('/patient/search', auth, pharmacyController.patientSearch);
-
 router.get('/orders/track/:orderId', auth, pharmacyController.getOrderTracking);
 
-//router.get('/search', pharmacyController.searchMedicines); 
+// ─── Profile ───────────────────────────────────────────────────────────────
+router.get('/profile',          auth, authorizeRoles('pharmacy'), pharmacyController.getProfile);
+router.patch('/profile',        auth, authorizeRoles('pharmacy'), pharmacyController.updateProfile);
 
-/////////////////////////////////////////////////////////////////////
-router.get('/profile', auth, authorizeRoles('pharmacy'), pharmacyController.getProfile);
-router.get('/orders',                            auth, authorizeRoles('pharmacy'), pharmacyController.getOrders);
-router.patch('/orders/:orderId/accept',          auth, authorizeRoles('pharmacy'), pharmacyController.acceptOrder);
-router.patch('/orders/:orderId/ready',           auth, authorizeRoles('pharmacy'), pharmacyController.markOrderReady);
-router.get('/inventory',                    auth, authorizeRoles('pharmacy'), pharmacyController.getInventory);
-router.get('/inventory/search',             auth, authorizeRoles('pharmacy'), pharmacyController.searchMedicines);
-router.get('/inventory/low-stock',          auth, authorizeRoles('pharmacy'), pharmacyController.getLowStockAlerts);
-router.patch('/inventory/:id/restock',      auth, authorizeRoles('pharmacy'), pharmacyController.restockMedicine);
-router.post('/inventory/add',               auth, authorizeRoles('pharmacy'), pharmacyController.addMedicine);
-router.put('/inventory/:id',                auth, authorizeRoles('pharmacy'), pharmacyController.updateMedicine);
-router.get('/delivery-men',              auth, authorizeRoles('pharmacy'), pharmacyController.getDeliveryMen);
-router.get('/delivery-men/search',       auth, authorizeRoles('pharmacy'), pharmacyController.searchDeliveryMen);
-router.get('/delivery-men/available',    auth, authorizeRoles('pharmacy'), pharmacyController.getAvailableDeliveryMen);
-router.get('/delivery-men/busy',         auth, authorizeRoles('pharmacy'), pharmacyController.getBusyDeliveryMen);
-router.post('/delivery-men',             auth, authorizeRoles('pharmacy'), pharmacyController.addDeliveryMan);
-router.put('/delivery-men/:id',          auth, authorizeRoles('pharmacy'), pharmacyController.updateDeliveryMan);
-router.delete('/delivery-men/:id',       auth, authorizeRoles('pharmacy'), pharmacyController.deleteDeliveryMan);
-router.patch('/profile',                   auth, authorizeRoles('pharmacy'), pharmacyController.updateProfile);
-router.patch('/settings/status',           auth, authorizeRoles('pharmacy'), pharmacyController.toggleOpenStatus);
-router.patch('/settings/delivery',         auth, authorizeRoles('pharmacy'), pharmacyController.toggleDeliveryService);
-router.get('/financials', auth, authorizeRoles('pharmacy'), pharmacyController.getFinancials);
-router.get('/financials/payment-history', auth, authorizeRoles('pharmacy'), pharmacyController.getPaymentHistory);
-router.get('/financials/monthly/:year/:month', auth, authorizeRoles('pharmacy'), pharmacyController.getMonthlyDetail);
-router.post('/financials/pay', auth, authorizeRoles('pharmacy'), pharmacyController.confirmPayment);       
-router.post('/finance/pay', auth, authorizeRoles('pharmacy'), pharmacyController.confirmPaymentAlias);     
+// ─── Settings ──────────────────────────────────────────────────────────────
+router.patch('/settings/status',   auth, authorizeRoles('pharmacy'), pharmacyController.toggleOpenStatus);
+router.patch('/settings/delivery', auth, authorizeRoles('pharmacy'), pharmacyController.toggleDeliveryService);
+
+// ─── Orders ────────────────────────────────────────────────────────────────
+router.get('/orders',                          auth, authorizeRoles('pharmacy'), pharmacyController.getOrders);
+router.patch('/orders/:orderId/accept',        auth, authorizeRoles('pharmacy'), pharmacyController.acceptOrder);
+router.patch('/orders/:orderId/ready',         auth, authorizeRoles('pharmacy'), pharmacyController.markOrderReady);
+router.patch('/orders/:orderId/complete',      auth, authorizeRoles('pharmacy'), pharmacyController.completeOrder); // ← NEW
+
+// ─── Inventory ─────────────────────────────────────────────────────────────
+router.get('/inventory',                auth, authorizeRoles('pharmacy'), pharmacyController.getInventory);
+router.get('/inventory/search',         auth, authorizeRoles('pharmacy'), pharmacyController.searchMedicines);
+router.get('/inventory/low-stock',      auth, authorizeRoles('pharmacy'), pharmacyController.getLowStockAlerts);
+router.post('/inventory/add',           auth, authorizeRoles('pharmacy'), pharmacyController.addMedicine);
+router.put('/inventory/:id',            auth, authorizeRoles('pharmacy'), pharmacyController.updateMedicine);
+router.patch('/inventory/:id/restock',  auth, authorizeRoles('pharmacy'), pharmacyController.restockMedicine);
+
+// ─── Delivery Men ──────────────────────────────────────────────────────────
+router.get('/delivery-men',           auth, authorizeRoles('pharmacy'), pharmacyController.getDeliveryMen);
+router.get('/delivery-men/search',    auth, authorizeRoles('pharmacy'), pharmacyController.searchDeliveryMen);
+router.get('/delivery-men/available', auth, authorizeRoles('pharmacy'), pharmacyController.getAvailableDeliveryMen);
+router.get('/delivery-men/busy',      auth, authorizeRoles('pharmacy'), pharmacyController.getBusyDeliveryMen);
+router.post('/delivery-men',          auth, authorizeRoles('pharmacy'), pharmacyController.addDeliveryMan);
+router.put('/delivery-men/:id',       auth, authorizeRoles('pharmacy'), pharmacyController.updateDeliveryMan);
+router.delete('/delivery-men/:id',    auth, authorizeRoles('pharmacy'), pharmacyController.deleteDeliveryMan);
+
+// ─── City Delivery Pricing ─────────────────────────────────────────────────
+router.get('/delivery-prices',          auth, authorizeRoles('pharmacy'), pharmacyController.getCityDeliveryPrices);    // ← NEW
+router.post('/delivery-prices',         auth, authorizeRoles('pharmacy'), pharmacyController.upsertCityDeliveryPrice);  // ← NEW
+router.delete('/delivery-prices/:city', auth, authorizeRoles('pharmacy'), pharmacyController.deleteCityDeliveryPrice);  // ← NEW
+
+// ─── Financials ────────────────────────────────────────────────────────────
+router.get('/financials',                          auth, authorizeRoles('pharmacy'), pharmacyController.getFinancials);
+router.get('/financials/payment-history',          auth, authorizeRoles('pharmacy'), pharmacyController.getPaymentHistory);
+router.get('/financials/monthly/:year/:month',     auth, authorizeRoles('pharmacy'), pharmacyController.getMonthlyDetail);
+router.post('/financials/pay',                     auth, authorizeRoles('pharmacy'), pharmacyController.confirmPayment);
+router.post('/finance/pay',                        auth, authorizeRoles('pharmacy'), pharmacyController.confirmPaymentAlias);
+
 module.exports = router;

@@ -10,6 +10,9 @@
  *     that accepts { method, amount } instead of { monthlyPaymentId }
  *  3. Added GET /financials/payment-history endpoint
  *  4. completeOrder already existed — routes file just needs the button wired up
+ *  5. acceptOrder — added statusHistory guard (Array.isArray check before push)
+ *  6. markOrderReady — added statusHistory guard (Array.isArray check before push)
+ *  7. completeOrder — added statusHistory guard (Array.isArray check before push)
  */
 
 const mongoose = require("mongoose");
@@ -27,6 +30,12 @@ const {
 
 // ─── Shared helper ────────────────────────────────────────────────────────
 const getPharmacy = (userId) => Pharmacy.findOne({ userId });
+
+// ─── Shared statusHistory push helper ────────────────────────────────────
+const pushStatus = (order, status, note) => {
+  if (!Array.isArray(order.statusHistory)) order.statusHistory = [];
+  order.statusHistory.push({ status, changedAt: new Date(), note });
+};
 
 // ════════════════════════════════════════════════════════════════════════════
 // PROFILE
@@ -61,7 +70,6 @@ exports.getProfile = async (req, res) => {
         addresses: pharmacy.addresses,
         deliveryArea: pharmacy.deliveryArea,
         cityDeliveryPrices: pharmacy.cityDeliveryPrices,
-        // Also expose as deliveryPricing so frontend can read it consistently
         deliveryPricing: pharmacy.cityDeliveryPrices,
         paymentMethods: pharmacy.paymentMethods,
         deliveryTime: pharmacy.deliveryTime,
@@ -96,36 +104,27 @@ exports.updateProfile = async (req, res) => {
       if (req.body[field] !== undefined) pharmacyUpdates[field] = req.body[field];
     });
 
-    // ── NEW: handle deliveryPricing → cityDeliveryPrices ──────────────────
-    // Frontend sends: [{ city: "Cairo", price: 30 }, ...]
     if (req.body.deliveryPricing !== undefined) {
       const pricing = req.body.deliveryPricing;
-      if (!Array.isArray(pricing)) {
+      if (!Array.isArray(pricing))
         return res.status(400).json({ success: false, message: "deliveryPricing must be an array" });
-      }
-      // Validate each entry
+
       for (const item of pricing) {
-        if (!item.city || typeof item.city !== "string") {
+        if (!item.city || typeof item.city !== "string")
           return res.status(400).json({ success: false, message: "Each deliveryPricing item must have a city string" });
-        }
-        if (item.price === undefined || Number(item.price) < 0) {
+        if (item.price === undefined || Number(item.price) < 0)
           return res.status(400).json({ success: false, message: `Invalid price for city: ${item.city}` });
-        }
       }
       pharmacyUpdates.cityDeliveryPrices = pricing.map((item) => ({
         city: item.city.trim(),
         price: Number(item.price),
       }));
-      // Also keep deliveryArea in sync
       pharmacyUpdates.deliveryArea = pharmacyUpdates.cityDeliveryPrices.map((c) => c.city);
     }
-    // ── END NEW ────────────────────────────────────────────────────────────
 
-    if (req.body.name !== undefined) {
+    if (req.body.name !== undefined)
       await User.findByIdAndUpdate(userId, { $set: { name: req.body.name.trim() } });
-    }
 
-    // Sanitize addresses — drop invalid GPS coords
     if (pharmacyUpdates.addresses) {
       pharmacyUpdates.addresses = pharmacyUpdates.addresses.map((addr) => {
         const coords = addr.location?.coordinates;
@@ -139,9 +138,8 @@ exports.updateProfile = async (req, res) => {
       });
     }
 
-    if (Object.keys(pharmacyUpdates).length === 0 && req.body.name === undefined) {
+    if (Object.keys(pharmacyUpdates).length === 0 && req.body.name === undefined)
       return res.status(400).json({ success: false, message: "No valid fields to update" });
-    }
 
     const updated = await Pharmacy.findOneAndUpdate(
       { userId },
@@ -156,7 +154,6 @@ exports.updateProfile = async (req, res) => {
       data: {
         pharmacyName: user.name,
         ...updated.toObject(),
-        // Expose deliveryPricing alias in response too
         deliveryPricing: updated.cityDeliveryPrices,
       },
     });
@@ -206,9 +203,7 @@ exports.toggleDeliveryService = async (req, res) => {
       return res.status(400).json({ success: false, message: "deliveryAvailable must be boolean" });
 
     if (deliveryAvailable && !pharmacy.openNow)
-      return res
-        .status(400)
-        .json({ success: false, message: "Cannot enable delivery while pharmacy is closed" });
+      return res.status(400).json({ success: false, message: "Cannot enable delivery while pharmacy is closed" });
 
     const updated = await Pharmacy.findOneAndUpdate(
       { userId: req.user.id },
@@ -230,7 +225,6 @@ exports.toggleDeliveryService = async (req, res) => {
 // CITY DELIVERY PRICING
 // ════════════════════════════════════════════════════════════════════════════
 
-/** GET /pharmacy/delivery-prices */
 exports.getCityDeliveryPrices = async (req, res) => {
   try {
     const pharmacy = await getPharmacy(req.user.id);
@@ -243,7 +237,6 @@ exports.getCityDeliveryPrices = async (req, res) => {
   }
 };
 
-/** POST /pharmacy/delivery-prices — add or update a city price */
 exports.upsertCityDeliveryPrice = async (req, res) => {
   try {
     const pharmacy = await getPharmacy(req.user.id);
@@ -252,9 +245,7 @@ exports.upsertCityDeliveryPrice = async (req, res) => {
 
     const { city, price } = req.body;
     if (!city || price === undefined || Number(price) < 0)
-      return res
-        .status(400)
-        .json({ success: false, message: "city and a non-negative price are required" });
+      return res.status(400).json({ success: false, message: "city and a non-negative price are required" });
 
     const idx = pharmacy.cityDeliveryPrices.findIndex(
       (c) => c.city.toLowerCase() === city.toLowerCase()
@@ -278,7 +269,6 @@ exports.upsertCityDeliveryPrice = async (req, res) => {
   }
 };
 
-/** DELETE /pharmacy/delivery-prices/:city */
 exports.deleteCityDeliveryPrice = async (req, res) => {
   try {
     const pharmacy = await getPharmacy(req.user.id);
@@ -361,17 +351,23 @@ exports.acceptOrder = async (req, res) => {
       return res.status(404).json({ success: false, message: "Pharmacy not found" });
 
     const order = await Order.findOne({ _id: req.params.orderId, pharmacyId: pharmacy._id });
-    if (!order) return res.status(404).json({ success: false, message: "Order not found" });
+    if (!order)
+      return res.status(404).json({ success: false, message: "Order not found" });
     if (order.status !== "New")
       return res.status(400).json({ success: false, message: `Cannot accept order with status "${order.status}"` });
 
     order.status = "Preparing";
-    order.statusHistory.push({ status: "Preparing", changedAt: new Date(), note: "Accepted by pharmacy" });
+    pushStatus(order, "Preparing", "Accepted by pharmacy");
     await order.save();
 
-    return res.status(200).json({ success: true, message: "Order accepted", data: { orderId: order._id, newStatus: order.status } });
+    return res.status(200).json({
+      success: true,
+      message: "Order accepted",
+      data: { orderId: order._id, newStatus: order.status },
+    });
   } catch (err) {
-    return res.status(500).json({ success: false, message: "Internal server error" });
+    console.error("acceptOrder error:", err);
+    return res.status(500).json({ success: false, message: "Internal server error", error: err.message });
   }
 };
 
@@ -382,7 +378,8 @@ exports.markOrderReady = async (req, res) => {
       return res.status(404).json({ success: false, message: "Pharmacy not found" });
 
     const order = await Order.findOne({ _id: req.params.orderId, pharmacyId: pharmacy._id });
-    if (!order) return res.status(404).json({ success: false, message: "Order not found" });
+    if (!order)
+      return res.status(404).json({ success: false, message: "Order not found" });
     if (order.status !== "Preparing")
       return res.status(400).json({ success: false, message: `Cannot mark ready — current status: "${order.status}"` });
 
@@ -392,7 +389,8 @@ exports.markOrderReady = async (req, res) => {
         return res.status(400).json({ success: false, message: "deliveryManId required for delivery orders" });
 
       const dm = await DeliveryMan.findOne({ _id: deliveryManId, pharmacyId: pharmacy._id, isActive: true });
-      if (!dm) return res.status(404).json({ success: false, message: "Delivery man not found" });
+      if (!dm)
+        return res.status(404).json({ success: false, message: "Delivery man not found" });
       if (dm.status === "Offline")
         return res.status(400).json({ success: false, message: `${dm.name} is offline` });
 
@@ -409,20 +407,21 @@ exports.markOrderReady = async (req, res) => {
     }
 
     order.status = "Ready";
-    order.statusHistory.push({ status: "Ready", changedAt: new Date(), note: "Ready for pickup/delivery" });
+    pushStatus(order, "Ready", "Ready for pickup/delivery");
     await order.save();
     await order.populate("deliveryManId", "name phones vehicle status");
 
-    return res.status(200).json({ success: true, message: "Order marked ready", data: { orderId: order._id, newStatus: order.status, deliveryMan: order.deliveryManId ?? null } });
+    return res.status(200).json({
+      success: true,
+      message: "Order marked ready",
+      data: { orderId: order._id, newStatus: order.status, deliveryMan: order.deliveryManId ?? null },
+    });
   } catch (err) {
-    return res.status(500).json({ success: false, message: "Internal server error" });
+    console.error("markOrderReady error:", err);
+    return res.status(500).json({ success: false, message: "Internal server error", error: err.message });
   }
 };
 
-/**
- * PATCH /orders/:orderId/complete
- * Marks order Completed and applies commission automatically.
- */
 exports.completeOrder = async (req, res) => {
   try {
     const pharmacy = await getPharmacy(req.user.id);
@@ -430,15 +429,15 @@ exports.completeOrder = async (req, res) => {
       return res.status(404).json({ success: false, message: "Pharmacy not found" });
 
     const order = await Order.findOne({ _id: req.params.orderId, pharmacyId: pharmacy._id });
-    if (!order) return res.status(404).json({ success: false, message: "Order not found" });
+    if (!order)
+      return res.status(404).json({ success: false, message: "Order not found" });
     if (!["Ready", "Preparing"].includes(order.status))
       return res.status(400).json({ success: false, message: `Cannot complete order with status "${order.status}"` });
 
     order.status = "Completed";
-    order.statusHistory.push({ status: "Completed", changedAt: new Date(), note: "Completed" });
+    pushStatus(order, "Completed", "Completed");
     await order.save();
 
-    // Apply commission (server-side only)
     const commission = await applyCommissionOnCompletion(order._id);
 
     return res.status(200).json({
@@ -453,7 +452,7 @@ exports.completeOrder = async (req, res) => {
     });
   } catch (err) {
     console.error("completeOrder error:", err);
-    return res.status(500).json({ success: false, message: "Internal server error" });
+    return res.status(500).json({ success: false, message: "Internal server error", error: err.message });
   }
 };
 
@@ -513,7 +512,10 @@ exports.searchMedicines = async (req, res) => {
       MedicineStock.countDocuments(filter),
     ]);
 
-    return res.status(200).json({ success: true, data: { medicines, query: q, pagination: { total, page: Number(page), totalPages: Math.ceil(total / Number(limit)) } } });
+    return res.status(200).json({
+      success: true,
+      data: { medicines, query: q, pagination: { total, page: Number(page), totalPages: Math.ceil(total / Number(limit)) } },
+    });
   } catch (err) {
     return res.status(500).json({ success: false, message: "Internal server error" });
   }
@@ -533,7 +535,14 @@ exports.addMedicine = async (req, res) => {
     if (existing)
       return res.status(409).json({ success: false, message: `"${medicineName}" already exists. Use restock to add quantity.` });
 
-    const medicine = await MedicineStock.create({ pharmacyId: pharmacy._id, ...req.body, medicineName: medicineName.trim(), price: Number(price), quantity: Number(req.body.quantity) || 0, minThreshold: req.body.minThreshold !== undefined ? Number(req.body.minThreshold) : 5 });
+    const medicine = await MedicineStock.create({
+      pharmacyId: pharmacy._id,
+      ...req.body,
+      medicineName: medicineName.trim(),
+      price: Number(price),
+      quantity: Number(req.body.quantity) || 0,
+      minThreshold: req.body.minThreshold !== undefined ? Number(req.body.minThreshold) : 5,
+    });
 
     return res.status(201).json({ success: true, message: "Medicine added", data: medicine });
   } catch (err) {
@@ -547,7 +556,11 @@ exports.updateMedicine = async (req, res) => {
     if (!pharmacy)
       return res.status(404).json({ success: false, message: "Pharmacy not found" });
 
-    const allowed = ["medicineName", "genericName", "category", "dosageForm", "manufacturer", "barcode", "price", "quantity", "minThreshold", "inStock", "requiresPrescription", "expiryDate", "indications", "sideEffects", "dosageInstructions", "notes", "image"];
+    const allowed = [
+      "medicineName", "genericName", "category", "dosageForm", "manufacturer",
+      "barcode", "price", "quantity", "minThreshold", "inStock", "requiresPrescription",
+      "expiryDate", "indications", "sideEffects", "dosageInstructions", "notes", "image",
+    ];
     const updates = {};
     allowed.forEach((f) => { if (req.body[f] !== undefined) updates[f] = req.body[f]; });
 
@@ -556,8 +569,13 @@ exports.updateMedicine = async (req, res) => {
       if (updates.quantity <= 0 && updates.inStock === undefined) updates.inStock = false;
     }
 
-    const medicine = await MedicineStock.findOneAndUpdate({ _id: req.params.id, pharmacyId: pharmacy._id }, { $set: updates }, { new: true, runValidators: true });
-    if (!medicine) return res.status(404).json({ success: false, message: "Medicine not found" });
+    const medicine = await MedicineStock.findOneAndUpdate(
+      { _id: req.params.id, pharmacyId: pharmacy._id },
+      { $set: updates },
+      { new: true, runValidators: true }
+    );
+    if (!medicine)
+      return res.status(404).json({ success: false, message: "Medicine not found" });
 
     return res.status(200).json({ success: true, message: "Medicine updated", data: medicine });
   } catch (err) {
@@ -576,14 +594,26 @@ exports.restockMedicine = async (req, res) => {
       return res.status(400).json({ success: false, message: "Quantity must be positive" });
 
     const medicine = await MedicineStock.findOne({ _id: req.params.id, pharmacyId: pharmacy._id });
-    if (!medicine) return res.status(404).json({ success: false, message: "Medicine not found" });
+    if (!medicine)
+      return res.status(404).json({ success: false, message: "Medicine not found" });
 
     const previous = medicine.quantity;
     medicine.quantity += Number(quantity);
     if (!medicine.inStock && medicine.quantity > 0) medicine.inStock = true;
     await medicine.save();
 
-    return res.status(200).json({ success: true, message: `${medicine.medicineName} restocked`, data: { medicineId: medicine._id, medicineName: medicine.medicineName, previousQuantity: previous, addedQuantity: Number(quantity), currentQuantity: medicine.quantity, inStock: medicine.inStock } });
+    return res.status(200).json({
+      success: true,
+      message: `${medicine.medicineName} restocked`,
+      data: {
+        medicineId: medicine._id,
+        medicineName: medicine.medicineName,
+        previousQuantity: previous,
+        addedQuantity: Number(quantity),
+        currentQuantity: medicine.quantity,
+        inStock: medicine.inStock,
+      },
+    });
   } catch (err) {
     return res.status(500).json({ success: false, message: "Internal server error" });
   }
@@ -615,9 +645,19 @@ exports.getDeliveryMen = async (req, res) => {
       ]),
     ]);
 
-    const counts = statusCounts.reduce((a, c) => { a[c._id] = c.count; return a; }, { Available: 0, Busy: 0, Offline: 0 });
+    const counts = statusCounts.reduce(
+      (a, c) => { a[c._id] = c.count; return a; },
+      { Available: 0, Busy: 0, Offline: 0 }
+    );
 
-    return res.status(200).json({ success: true, data: { deliveryMen, summary: { total, ...counts }, pagination: { total, page: Number(page), totalPages: Math.ceil(total / Number(limit)) } } });
+    return res.status(200).json({
+      success: true,
+      data: {
+        deliveryMen,
+        summary: { total, ...counts },
+        pagination: { total, page: Number(page), totalPages: Math.ceil(total / Number(limit)) },
+      },
+    });
   } catch (err) {
     return res.status(500).json({ success: false, message: "Internal server error" });
   }
@@ -630,10 +670,15 @@ exports.searchDeliveryMen = async (req, res) => {
       return res.status(404).json({ success: false, message: "Pharmacy not found" });
 
     const { q } = req.query;
-    if (!q || q.trim().length < 2) return res.status(400).json({ success: false, message: "Query must be at least 2 chars" });
+    if (!q || q.trim().length < 2)
+      return res.status(400).json({ success: false, message: "Query must be at least 2 chars" });
 
     const regex = new RegExp(q.trim(), "i");
-    const deliveryMen = await DeliveryMan.find({ pharmacyId: pharmacy._id, isActive: true, $or: [{ name: regex }, { phones: regex }, { vehicle: regex }] }).populate("assignedOrders", "orderNumber status");
+    const deliveryMen = await DeliveryMan.find({
+      pharmacyId: pharmacy._id,
+      isActive: true,
+      $or: [{ name: regex }, { phones: regex }, { vehicle: regex }],
+    }).populate("assignedOrders", "orderNumber status");
 
     return res.status(200).json({ success: true, data: { deliveryMen } });
   } catch (err) {
@@ -652,7 +697,8 @@ exports.addDeliveryMan = async (req, res) => {
       return res.status(400).json({ success: false, message: "name, vehicle, at least one phone required" });
 
     const dup = await DeliveryMan.findOne({ pharmacyId: pharmacy._id, isActive: true, phones: { $in: phones } });
-    if (dup) return res.status(409).json({ success: false, message: "Phone number already exists" });
+    if (dup)
+      return res.status(409).json({ success: false, message: "Phone number already exists" });
 
     const dm = await DeliveryMan.create({ pharmacyId: pharmacy._id, ...req.body, name: name.trim() });
     return res.status(201).json({ success: true, message: "Delivery man added", data: dm });
@@ -672,8 +718,13 @@ exports.updateDeliveryMan = async (req, res) => {
     allowed.forEach((f) => { if (req.body[f] !== undefined) updates[f] = req.body[f]; });
     if (updates.status === "Available") updates.assignedOrders = [];
 
-    const dm = await DeliveryMan.findOneAndUpdate({ _id: req.params.id, pharmacyId: pharmacy._id, isActive: true }, { $set: updates }, { new: true, runValidators: true });
-    if (!dm) return res.status(404).json({ success: false, message: "Delivery man not found" });
+    const dm = await DeliveryMan.findOneAndUpdate(
+      { _id: req.params.id, pharmacyId: pharmacy._id, isActive: true },
+      { $set: updates },
+      { new: true, runValidators: true }
+    );
+    if (!dm)
+      return res.status(404).json({ success: false, message: "Delivery man not found" });
 
     return res.status(200).json({ success: true, message: "Updated", data: dm });
   } catch (err) {
@@ -688,7 +739,8 @@ exports.deleteDeliveryMan = async (req, res) => {
       return res.status(404).json({ success: false, message: "Pharmacy not found" });
 
     const dm = await DeliveryMan.findOne({ _id: req.params.id, pharmacyId: pharmacy._id, isActive: true });
-    if (!dm) return res.status(404).json({ success: false, message: "Delivery man not found" });
+    if (!dm)
+      return res.status(404).json({ success: false, message: "Delivery man not found" });
 
     if (dm.status === "Busy" && dm.assignedOrders.length > 0)
       return res.status(400).json({ success: false, message: `${dm.name} has active orders. Change status first.` });
@@ -707,11 +759,6 @@ exports.deleteDeliveryMan = async (req, res) => {
 // FINANCIAL P&L
 // ════════════════════════════════════════════════════════════════════════════
 
-/**
- * GET /pharmacy/financials
- * Returns overall P&L summary + monthly breakdown.
- * Query: ?year=2025&months=12 (default: current year, all months)
- */
 exports.getFinancials = async (req, res) => {
   try {
     const pharmacy = await getPharmacy(req.user.id);
@@ -720,15 +767,10 @@ exports.getFinancials = async (req, res) => {
 
     const year = Number(req.query.year) || new Date().getFullYear();
 
-    // Monthly breakdown from MonthlyPayment collection
-    const monthlyRecords = await MonthlyPayment.find({
-      pharmacyId: pharmacy._id,
-      year,
-    }).sort({ month: 1 });
+    const monthlyRecords = await MonthlyPayment.find({ pharmacyId: pharmacy._id, year }).sort({ month: 1 });
 
     const f = pharmacy.financials;
 
-    // Pending (unpaid) records
     const pendingRecords = await MonthlyPayment.find({
       pharmacyId: pharmacy._id,
       status: { $in: ["pending", "overdue"] },
@@ -737,7 +779,6 @@ exports.getFinancials = async (req, res) => {
     const totalPending = pendingRecords.reduce((sum, r) => sum + r.totalCommission, 0);
     const withinWindow = isWithinPaymentWindow();
 
-    // Month name helper
     const MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
 
     return res.status(200).json({
@@ -787,11 +828,6 @@ exports.getFinancials = async (req, res) => {
   }
 };
 
-/**
- * GET /pharmacy/financials/payment-history
- * Returns all paid MonthlyPayment records for this pharmacy.
- * NEW — replaces the MOCK_PAYMENT_HISTORY in the frontend.
- */
 exports.getPaymentHistory = async (req, res) => {
   try {
     const pharmacy = await getPharmacy(req.user.id);
@@ -832,18 +868,6 @@ exports.getPaymentHistory = async (req, res) => {
   }
 };
 
-/**
- * POST /pharmacy/finance/pay   ← matches the frontend's existing call path
- * Alias for confirmPayment that accepts { method, amount } from the frontend
- * and resolves the correct MonthlyPayment record(s) automatically.
- *
- * Body: { method: "Cash" | "Visa" | "Instapay" | "Vodafone Cash", amount: number }
- *
- * Behaviour:
- *  - Finds all pending/overdue MonthlyPayment records for this pharmacy
- *  - Marks them all as paid (within the payment window)
- *  - Restores visibility if hidden
- */
 exports.confirmPaymentAlias = async (req, res) => {
   try {
     if (!isWithinPaymentWindow()) {
@@ -860,24 +884,20 @@ exports.confirmPaymentAlias = async (req, res) => {
     const { method, amount } = req.body;
     const ALLOWED_METHODS = ["Cash", "Visa", "Mastercard", "Instapay", "Meeza", "Vodafone Cash", "Etisalat Cash", "Orange Cash"];
 
-    if (!method || !ALLOWED_METHODS.includes(method)) {
+    if (!method || !ALLOWED_METHODS.includes(method))
       return res.status(400).json({ success: false, message: `Invalid payment method. Allowed: ${ALLOWED_METHODS.join(", ")}` });
-    }
 
-    // Find all unpaid records
     const pendingRecords = await MonthlyPayment.find({
       pharmacyId: pharmacy._id,
       status: { $in: ["pending", "overdue"] },
     });
 
-    if (pendingRecords.length === 0) {
+    if (pendingRecords.length === 0)
       return res.status(400).json({ success: false, message: "No pending payments found" });
-    }
 
     const totalDue = pendingRecords.reduce((sum, r) => sum + r.totalCommission, 0);
     const now = new Date();
 
-    // Mark all pending records as paid
     await Promise.all(
       pendingRecords.map((record) => {
         record.status = "paid";
@@ -888,7 +908,6 @@ exports.confirmPaymentAlias = async (req, res) => {
       })
     );
 
-    // Mark all related orders as commission paid
     const allOrderIds = pendingRecords.flatMap((r) => r.orderIds || []);
     if (allOrderIds.length > 0) {
       await Order.updateMany(
@@ -897,7 +916,6 @@ exports.confirmPaymentAlias = async (req, res) => {
       );
     }
 
-    // Update pharmacy financials and restore visibility
     await Pharmacy.findByIdAndUpdate(pharmacy._id, {
       $inc: { "financials.currentDue": -totalDue },
       $set: {
@@ -913,12 +931,7 @@ exports.confirmPaymentAlias = async (req, res) => {
     return res.status(200).json({
       success: true,
       message: "Payment confirmed. Your pharmacy is now visible to patients.",
-      data: {
-        paidRecords: pendingRecords.length,
-        totalPaid: totalDue,
-        paidAt: now,
-        method,
-      },
+      data: { paidRecords: pendingRecords.length, totalPaid: totalDue, paidAt: now, method },
     });
   } catch (err) {
     console.error("confirmPaymentAlias error:", err);
@@ -926,10 +939,6 @@ exports.confirmPaymentAlias = async (req, res) => {
   }
 };
 
-/**
- * POST /pharmacy/financials/pay   ← original route (kept for backwards compat)
- * Pharmacy confirms payment for a specific MonthlyPayment record by ID.
- */
 exports.confirmPayment = async (req, res) => {
   try {
     if (!isWithinPaymentWindow()) {
@@ -947,14 +956,9 @@ exports.confirmPayment = async (req, res) => {
     if (!monthlyPaymentId)
       return res.status(400).json({ success: false, message: "monthlyPaymentId required" });
 
-    const record = await MonthlyPayment.findOne({
-      _id: monthlyPaymentId,
-      pharmacyId: pharmacy._id,
-    });
-
+    const record = await MonthlyPayment.findOne({ _id: monthlyPaymentId, pharmacyId: pharmacy._id });
     if (!record)
       return res.status(404).json({ success: false, message: "Payment record not found" });
-
     if (record.status === "paid")
       return res.status(400).json({ success: false, message: "Already paid" });
 
@@ -992,10 +996,6 @@ exports.confirmPayment = async (req, res) => {
   }
 };
 
-/**
- * GET /pharmacy/financials/monthly/:year/:month
- * Detailed view of a single billing month.
- */
 exports.getMonthlyDetail = async (req, res) => {
   try {
     const pharmacy = await getPharmacy(req.user.id);
@@ -1003,7 +1003,11 @@ exports.getMonthlyDetail = async (req, res) => {
       return res.status(404).json({ success: false, message: "Pharmacy not found" });
 
     const { year, month } = req.params;
-    const record = await MonthlyPayment.findOne({ pharmacyId: pharmacy._id, year: Number(year), month: Number(month) });
+    const record = await MonthlyPayment.findOne({
+      pharmacyId: pharmacy._id,
+      year: Number(year),
+      month: Number(month),
+    });
 
     if (!record)
       return res.status(404).json({ success: false, message: "No data for this period" });
@@ -1033,77 +1037,81 @@ exports.getMonthlyDetail = async (req, res) => {
   }
 };
 
+// ════════════════════════════════════════════════════════════════════════════
+// STUBS
+// ════════════════════════════════════════════════════════════════════════════
 
 exports.getDashboardStats = async (req, res) => {
-    res.status(501).json({ success: false, message: "Not implemented yet" });
+  res.status(501).json({ success: false, message: "Not implemented yet" });
 };
 
 exports.patientSearch = async (req, res) => {
-    res.status(501).json({ success: false, message: "Not implemented yet" });
+  res.status(501).json({ success: false, message: "Not implemented yet" });
 };
 
 exports.getOrderTracking = async (req, res) => {
-    res.status(501).json({ success: false, message: "Not implemented yet" });
+  res.status(501).json({ success: false, message: "Not implemented yet" });
 };
+
 exports.getLowStockAlerts = async (req, res) => {
-    try {
-        const pharmacy = await getPharmacy(req.user.id);
-        if (!pharmacy)
-            return res.status(404).json({ success: false, message: "Pharmacy not found" });
+  try {
+    const pharmacy = await getPharmacy(req.user.id);
+    if (!pharmacy)
+      return res.status(404).json({ success: false, message: "Pharmacy not found" });
 
-        const lowStockItems = await MedicineStock.find({
-            pharmacyId: pharmacy._id,
-            inStock: true,
-            $expr: { $lte: ["$quantity", "$minThreshold"] }
-        }).select("medicineName category quantity minThreshold price inStock");
+    const lowStockItems = await MedicineStock.find({
+      pharmacyId: pharmacy._id,
+      inStock: true,
+      $expr: { $lte: ["$quantity", "$minThreshold"] },
+    }).select("medicineName category quantity minThreshold price inStock");
 
-        return res.status(200).json({
-            success: true,
-            data: { lowStockItems, count: lowStockItems.length }
-        });
-    } catch (err) {
-        return res.status(500).json({ success: false, message: "Internal server error" });
-    }
+    return res.status(200).json({
+      success: true,
+      data: { lowStockItems, count: lowStockItems.length },
+    });
+  } catch (err) {
+    return res.status(500).json({ success: false, message: "Internal server error" });
+  }
 };
 
 exports.getAvailableDeliveryMen = async (req, res) => {
-    try {
-        const pharmacy = await getPharmacy(req.user.id);
-        if (!pharmacy)
-            return res.status(404).json({ success: false, message: "Pharmacy not found" });
+  try {
+    const pharmacy = await getPharmacy(req.user.id);
+    if (!pharmacy)
+      return res.status(404).json({ success: false, message: "Pharmacy not found" });
 
-        const deliveryMen = await DeliveryMan.find({
-            pharmacyId: pharmacy._id,
-            isActive: true,
-            status: "Available"
-        }).populate("assignedOrders", "orderNumber status");
+    const deliveryMen = await DeliveryMan.find({
+      pharmacyId: pharmacy._id,
+      isActive: true,
+      status: "Available",
+    }).populate("assignedOrders", "orderNumber status");
 
-        return res.status(200).json({
-            success: true,
-            data: { deliveryMen, count: deliveryMen.length }
-        });
-    } catch (err) {
-        return res.status(500).json({ success: false, message: "Internal server error" });
-    }
+    return res.status(200).json({
+      success: true,
+      data: { deliveryMen, count: deliveryMen.length },
+    });
+  } catch (err) {
+    return res.status(500).json({ success: false, message: "Internal server error" });
+  }
 };
 
 exports.getBusyDeliveryMen = async (req, res) => {
-    try {
-        const pharmacy = await getPharmacy(req.user.id);
-        if (!pharmacy)
-            return res.status(404).json({ success: false, message: "Pharmacy not found" });
+  try {
+    const pharmacy = await getPharmacy(req.user.id);
+    if (!pharmacy)
+      return res.status(404).json({ success: false, message: "Pharmacy not found" });
 
-        const deliveryMen = await DeliveryMan.find({
-            pharmacyId: pharmacy._id,
-            isActive: true,
-            status: "Busy"
-        }).populate("assignedOrders", "orderNumber status");
+    const deliveryMen = await DeliveryMan.find({
+      pharmacyId: pharmacy._id,
+      isActive: true,
+      status: "Busy",
+    }).populate("assignedOrders", "orderNumber status");
 
-        return res.status(200).json({
-            success: true,
-            data: { deliveryMen, count: deliveryMen.length }
-        });
-    } catch (err) {
-        return res.status(500).json({ success: false, message: "Internal server error" });
-    }
+    return res.status(200).json({
+      success: true,
+      data: { deliveryMen, count: deliveryMen.length },
+    });
+  } catch (err) {
+    return res.status(500).json({ success: false, message: "Internal server error" });
+  }
 };
