@@ -366,7 +366,7 @@ exports.acceptOrder = async (req, res) => {
       data: { orderId: order._id, newStatus: order.status },
     });
   } catch (err) {
-    console.error("acceptOrder error:", err);
+   console.error("acceptOrder error:", err.stack || err);
     return res.status(500).json({ success: false, message: "Internal server error", error: err.message });
   }
 };
