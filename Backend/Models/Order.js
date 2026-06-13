@@ -107,12 +107,11 @@ const orderSchema = new mongoose.Schema(
 );
 
 // Auto-generate orderNumber before save
-orderSchema.pre("save", async function (next) {
+orderSchema.pre("save", async function () {
   if (!this.orderNumber) {
     const rand = Math.floor(10000 + Math.random() * 90000);
     this.orderNumber = `ORD-${rand}`;
   }
-  next();
 });
 
 module.exports = mongoose.model("Order", orderSchema);
