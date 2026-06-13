@@ -56,7 +56,17 @@ const orderSchema = new mongoose.Schema(
       },
     ],
 
-    deliveryAddress: { type: String },
+    deliveryAddress: {
+      addressText: { type: String },
+      fullName: { type: String },
+      phoneNumber: { type: String },
+      cityDistrict: { type: String },
+      streetAddress: { type: String },
+      location: {
+        type: { type: String, default: "Point" },
+        coordinates: { type: [Number] },
+      },
+    },
     paymentMethod: {
       type: String,
       enum: [
