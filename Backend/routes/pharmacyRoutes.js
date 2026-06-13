@@ -36,4 +36,9 @@ router.delete('/delivery-men/:id',       auth, authorizeRoles('pharmacy'), pharm
 router.patch('/profile',                   auth, authorizeRoles('pharmacy'), pharmacyController.updateProfile);
 router.patch('/settings/status',           auth, authorizeRoles('pharmacy'), pharmacyController.toggleOpenStatus);
 router.patch('/settings/delivery',         auth, authorizeRoles('pharmacy'), pharmacyController.toggleDeliveryService);
+router.get('/financials', auth, authorizeRoles('pharmacy'), pharmacyController.getFinancials);
+router.get('/financials/payment-history', auth, authorizeRoles('pharmacy'), pharmacyController.getPaymentHistory);
+router.get('/financials/monthly/:year/:month', auth, authorizeRoles('pharmacy'), pharmacyController.getMonthlyDetail);
+router.post('/financials/pay', auth, authorizeRoles('pharmacy'), pharmacyController.confirmPayment);       
+router.post('/finance/pay', auth, authorizeRoles('pharmacy'), pharmacyController.confirmPaymentAlias);     
 module.exports = router;
