@@ -10,14 +10,14 @@ const labSchema = new mongoose.Schema(
     },
     facilityType: {
       type: String,
-      enum: ["lab", "radiology center", "both"], 
+      enum: ["lab", "radiology center", "both"],
       required: true
     },
     workingHours: {
-      type: String,
-      required: false
+      open: { type: Number, required: false, min: 0, max: 23 },  // مثلاً: 9 (يعني 9 صباحاً)
+      close: { type: Number, required: false, min: 0, max: 23 } // مثلاً: 23 (يعني 11 مساءً)
     },
-    
+
     homeSampleCollection: {
       type: Boolean,
       default: false
@@ -30,7 +30,7 @@ const labSchema = new mongoose.Schema(
       type: Boolean,
       default: false
     },
-    
+
     paymentMethods: [
       {
         type: String,
@@ -44,7 +44,7 @@ const labSchema = new mongoose.Schema(
       min: 0,
       max: 5
     },
-    
+
     commercialRegisterNumber: {
       type: String,
       required: true,
@@ -54,7 +54,7 @@ const labSchema = new mongoose.Schema(
     },
 
     licenseValidUntil: {
-      type: Date 
+      type: Date
     },
     medicalLicencePdf: {
       type: String
@@ -70,8 +70,8 @@ const labSchema = new mongoose.Schema(
 
     addresses: [
       {
-        addressText: { type: String, required: true, trim: true }, 
-        floor: { type: Number }, 
+        addressText: { type: String, required: true, trim: true },
+        floor: { type: Number },
         location: {
           type: {
             type: String,
@@ -79,7 +79,7 @@ const labSchema = new mongoose.Schema(
             default: "Point",
           },
           coordinates: {
-            type: [Number], 
+            type: [Number],
             required: true,
           },
         },

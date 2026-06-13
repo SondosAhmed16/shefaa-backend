@@ -6,6 +6,8 @@ const Notification = require('../Models/Notification');
 const Pharmacy = require('../Models/Pharmaces');
 const Order = require('../Models/Order');
 const MedicineStock = require('../Models/MedicineStock');
+const Lab = require('../Models/Labs');
+const Service = require('../Models/Services');
 const User = require('../Models/Users');
 const getPatientByUserId = async (userId) => {
   return await Patient.findOne({ userId: userId });
@@ -1132,5 +1134,121 @@ exports.confirmOrderReceipt = async (req, res) => {
   } catch (err) {
     console.error("Error in confirmOrderReceipt:", err);
     return res.status(500).json({ success: false, message: "Internal server error", error: err.message });
+  }
+};
+
+
+
+
+exports.patientSearch = async (req, res) => {
+  try {
+    const { search, type, homeService, openNow, lat, lng, requiredServices } = req.query;
+
+    let labQuery = {};
+
+    // 1. فلاتر الـ Type والخدمة المنزلية والمواعيد
+    if (type) {
+      if (type === 'scan') labQuery.facilityType = { $in: ['radiology center', 'both'] };
+      else if (type === 'lab') labQuery.facilityType = { $in: ['lab', 'both'] };
+    }
+    if (homeService === 'true') labQuery.homeSampleCollection = true;
+    if (openNow === 'true') {
+      const currentHour = new Date().getHours();
+      labQuery["workingHours.open"] = { $lte: currentHour };
+      labQuery["workingHours.close"] = { $gt: currentHour };
+    }
+
+    // 2. دعم ميزة "الروشتة المرفوعة" لو الفرونت بعت لستة تحاليل مطلوبة
+    if (requiredServices) {
+      const servicesArray = requiredServices.split(','); // CBC,MRI
+      const matchedServices = await Service.find({ name: { $in: servicesArray } }).select('labId');
+      const labIds = matchedServices.map(s => s.labId);
+      labQuery._id = { $in: labIds };
+    }
+
+    // 3. السيرش بار العادي
+    if (search && !requiredServices) {
+      const matchedUsers = await User.find({ name: { $regex: search, $options: 'i' }, role: 'lab' }).select('_id');
+      const matchedServices = await Service.find({ name: { $regex: search, $options: 'i' }, isActive: true }).select('labId');
+      
+      labQuery.$or = [
+        { userId: { $in: matchedUsers.map(u => u._id) } },
+        { _id: { $in: matchedServices.map(s => s.labId) } }
+      ];
+    }
+
+    // 4. جلب البيانات وحساب المسافة بالـ GPS
+    let labs = [];
+    if (lat && lng) {
+      labs = await Lab.aggregate([
+        {
+          $geoNear: {
+            near: { type: "Point", coordinates: [parseFloat(lng), parseFloat(lat)] },
+            distanceField: "distanceResult",
+            spherical: true,
+            query: labQuery
+          }
+        },
+        { $lookup: { from: "users", localField: "userId", foreignField: "_id", as: "userId" } },
+        { $unwind: { path: "$userId", preserveNullAndEmptyArrays: true } }
+      ]);
+    } else {
+      labs = await Lab.find(labQuery).populate('userId', 'name email phoneNumber').lean();
+    }
+
+    // 5. تجميع داتا الخدمات والأسعار مبدئياً
+    let formattedCenters = await Promise.all(labs.map(async (lab) => {
+      const services = await Service.find({ labId: lab._id, isActive: true });
+      const minPrice = services.length > 0 ? Math.min(...services.map(s => s.price)) : 0;
+      const distanceNum = lab.distanceResult !== undefined ? lab.distanceResult / 1000 : null;
+
+      return {
+        labId: lab._id,
+        name: lab.userId ? lab.userId.name : "Unknown Center",
+        facilityType: lab.facilityType,
+        rating: lab.rating || 4.5,
+        distanceNum: distanceNum,
+        distance: distanceNum ? `${distanceNum.toFixed(1)} km` : "Unknown",
+        homeServiceAvailable: lab.homeSampleCollection,
+        insuranceAccepted: lab.insuranceAccepted,
+        minPrice: minPrice,
+        badge: null, // هيتم حسابه تحت ديناميكياً
+        nextSlot: "Today 10:30 AM", 
+        availableTags: services.map(s => ({ name: s.name, category: s.category, isPartner: false }))
+      };
+    }));
+
+    // 6. 🧠 حساب الـ Badges ديناميكياً بناءً على النتائج المتوفرة لتطابق الـ UI
+    if (formattedCenters.length > 0) {
+      // أ) تحديد الأقرب (Nearest)
+      const validDistances = formattedCenters.filter(c => c.distanceNum !== null);
+      if (validDistances.length > 0) {
+        const nearest = validDistances.reduce((min, c) => c.distanceNum < min.distanceNum ? c : min, validDistances[0]);
+        nearest.badge = "Nearest";
+      }
+
+      // ب) تحديد الأرخص (Cheapest) - بشرط ميكونش واخد badge الأقرب خلاص
+      const validPrices = formattedCenters.filter(c => c.minPrice > 0 && c.badge === null);
+      if (validPrices.length > 0) {
+        const cheapest = validPrices.reduce((min, c) => c.minPrice < min.minPrice ? c : min, validPrices[0]);
+        cheapest.badge = "Cheapest";
+      }
+
+      // ج) تحديد الأعلى تقييماً (Top Rated)
+      const topRated = formattedCenters.reduce((max, c) => (c.rating > max.rating && c.badge === null) ? c : max, formattedCenters[0]);
+      if (topRated && topRated.badge === null && topRated.rating >= 4.7) {
+        topRated.badge = "Top Rated";
+      }
+    }
+
+    res.status(200).json({
+      success: true,
+      count: formattedCenters.length,
+      isAIRanked: true, // عشان يظهر الـ Tag اللطيف اللي فوق في الـ UI (AI Ranked)
+      centers: formattedCenters
+    });
+
+  } catch (err) {
+    res.status(500).json({ success: false, message: err.message });
   }
 };

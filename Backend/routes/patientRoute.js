@@ -61,4 +61,9 @@ router.get('/orders/track/:orderId', auth, authorizeRoles('patient'), patientCon
 router.post('/orders/confirm-receipt', auth, authorizeRoles('patient'), patientController.confirmOrderReceipt);
 
 router.post('/pharmacies/review', auth, authorizeRoles('patient'), reviewController.addPharmacyReview);
+
+
+router.get('/search-centers', auth, patientController.patientSearch);
+
+
 module.exports = router;
