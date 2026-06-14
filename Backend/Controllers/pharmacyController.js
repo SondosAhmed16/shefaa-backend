@@ -1164,6 +1164,7 @@ exports.generateDailySummary = async (req, res) => {
     });
 
     const data = await response.json();
+    console.error("Anthropic response:", JSON.stringify(data)); // ← ضيف دي
     const text = data.content?.map(c => c.text || "").join("") || "";
 
     return res.status(200).json({ success: true, data: { summary: text } });
