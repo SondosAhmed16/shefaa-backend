@@ -422,7 +422,6 @@ exports.markOrderReady = async (req, res) => {
   }
 };
 
-// In pharmacyController.js — replace completeOrder
 exports.completeOrder = async (req, res) => {
   try {
     const pharmacy = await getPharmacy(req.user.id);
@@ -448,6 +447,14 @@ exports.completeOrder = async (req, res) => {
     }
 
     await order.save();
+
+    // Free the delivery man when order completes
+    if (order.deliveryManId) {
+      await DeliveryMan.findByIdAndUpdate(order.deliveryManId, {
+        $pull: { assignedOrders: order._id },
+        $set:  { status: "Available" },
+      });
+    }
 
     // Always apply commission to update pharmacy financials + monthly record
     const commission = await applyCommissionOnCompletion(order._id);
