@@ -851,7 +851,9 @@ exports.createOrder = async (req, res) => {
 
     // 6. تحديد حالة الدفع المبدئية
     // لو كاش أو عند الوصول بيبقى Pending لحد ما يستلم، لو فيزا بيبقى Pending لحد ما بوابة الدفع تأكد
-    const paymentStatus = "Pending";
+    // In orderController.js (createOrder) — replace step 6 paymentStatus line:
+    const CASH_METHODS = ["Cash"];
+    const paymentStatus = CASH_METHODS.includes(paymentMethod) ? "Pending" : "Paid";
 
     // 7. حفظ الأوردر في قاعدة البيانات
     const newOrder = new Order({

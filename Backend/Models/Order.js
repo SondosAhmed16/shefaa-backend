@@ -57,16 +57,17 @@ const orderSchema = new mongoose.Schema(
     ],
 
     deliveryAddress: {
-      addressText: { type: String },
-      fullName: { type: String },
-      phoneNumber: { type: String },
-      cityDistrict: { type: String },
+      addressText:   { type: String },
+      fullName:      { type: String },
+      phoneNumber:   { type: String },
+      cityDistrict:  { type: String },
       streetAddress: { type: String },
       location: {
-        type: { type: String, default: "Point" },
+        type:        { type: String, default: "Point" },
         coordinates: { type: [Number] },
       },
     },
+
     paymentMethod: {
       type: String,
       enum: [
@@ -82,20 +83,28 @@ const orderSchema = new mongoose.Schema(
       default: "Cash",
     },
 
+    // ── NEW: tracks whether the patient has paid ───────────────────────
+    paymentStatus: {
+      type: String,
+      enum: ["Pending", "Paid", "Failed", "Refunded"],
+      default: "Pending",
+    },
+
     // ── Financial fields ───────────────────────────────────────────────
-    subtotal: { type: Number, default: 0 },        // order total before delivery
-    deliveryFee: { type: Number, default: 0 },     // delivery fee charged
-    totalPrice: { type: Number, required: true },  // subtotal + deliveryFee
+    subtotal:    { type: Number, default: 0 },       // order total before delivery & discount
+    deliveryFee: { type: Number, default: 0 },       // delivery fee charged
+    discount:    { type: Number, default: 0 },       // NEW: promo/discount amount
+    totalPrice:  { type: Number, required: true },   // subtotal + deliveryFee - discount
 
     // Commission (calculated server-side, never trusted from client)
-    commissionRate: { type: Number, default: 1 },    // % at time of order
+    commissionRate:   { type: Number, default: 1 },  // % at time of order
     commissionAmount: { type: Number, default: 0 },  // totalPrice * commissionRate / 100
-    pharmacyEarning: { type: Number, default: 0 },   // totalPrice - commissionAmount
+    pharmacyEarning:  { type: Number, default: 0 },  // totalPrice - commissionAmount
 
     // Payment to app
-    commissionPaid: { type: Boolean, default: false },
-    commissionPaidAt: { type: Date, default: null },
-    commissionPaidInCycleId: {                        // references MonthlyPayment doc
+    commissionPaid:         { type: Boolean, default: false },
+    commissionPaidAt:       { type: Date, default: null },
+    commissionPaidInCycleId: {
       type: mongoose.Schema.Types.ObjectId,
       ref: "MonthlyPayment",
       default: null,

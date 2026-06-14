@@ -422,6 +422,7 @@ exports.markOrderReady = async (req, res) => {
   }
 };
 
+// In pharmacyController.js — replace completeOrder
 exports.completeOrder = async (req, res) => {
   try {
     const pharmacy = await getPharmacy(req.user.id);
@@ -436,9 +437,27 @@ exports.completeOrder = async (req, res) => {
 
     order.status = "Completed";
     pushStatus(order, "Completed", "Completed");
+
+    // Online payments — commission already collected via payment gateway
+    const CASH_METHODS = ["Cash"];
+    const isPaidOnline = !CASH_METHODS.includes(order.paymentMethod);
+    if (isPaidOnline) {
+      order.paymentStatus = "Paid";
+      order.commissionPaid = true;
+      order.commissionPaidAt = new Date();
+    }
+
     await order.save();
 
+    // Always apply commission to update pharmacy financials + monthly record
     const commission = await applyCommissionOnCompletion(order._id);
+
+    // If paid online, immediately reduce currentDue since commission is settled
+    if (isPaidOnline) {
+      await Pharmacy.findByIdAndUpdate(pharmacy._id, {
+        $inc: { "financials.currentDue": -commission.commissionAmount },
+      });
+    }
 
     return res.status(200).json({
       success: true,
@@ -448,6 +467,8 @@ exports.completeOrder = async (req, res) => {
         newStatus: order.status,
         commissionAmount: commission.commissionAmount,
         pharmacyEarning: commission.pharmacyEarning,
+        commissionPaid: order.commissionPaid,
+        paymentStatus: order.paymentStatus,
       },
     });
   } catch (err) {
