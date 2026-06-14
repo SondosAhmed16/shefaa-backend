@@ -54,4 +54,6 @@ router.get('/financials/monthly/:year/:month',     auth, authorizeRoles('pharmac
 router.post('/financials/pay',                     auth, authorizeRoles('pharmacy'), pharmacyController.confirmPayment);
 router.post('/finance/pay',                        auth, authorizeRoles('pharmacy'), pharmacyController.confirmPaymentAlias);
 
+// ---------Ai------- 
+router.post('/ai/daily-summary', auth, authorizeRoles('pharmacy'), pharmacyController.generateDailySummary);
 module.exports = router;
