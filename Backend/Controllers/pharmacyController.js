@@ -22,7 +22,6 @@ const Order = require("../Models/Order");
 const DeliveryMan = require("../Models/DeliveryMan");
 const MonthlyPayment = require("../Models/MonthlyPayment");
 const User = require("../Models/Users");
-const { AzureOpenAI } = require("openai");
 const { openAIKey, openAIEndpoint } = require("../config/azureConfig");
 const {
   applyCommissionOnCompletion,
