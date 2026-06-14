@@ -22,6 +22,8 @@ const Order = require("../Models/Order");
 const DeliveryMan = require("../Models/DeliveryMan");
 const MonthlyPayment = require("../Models/MonthlyPayment");
 const User = require("../Models/Users");
+const { AzureOpenAI } = require("openai");
+const { openAIKey, openAIEndpoint } = require("../config/azureConfig");
 const {
   applyCommissionOnCompletion,
   calculateCommission,
@@ -1144,30 +1146,32 @@ exports.getBusyDeliveryMen = async (req, res) => {
   }
 };
 
+const { AzureOpenAI } = require("openai");
+
+const openaiClient = new AzureOpenAI({
+  endpoint: process.env.AZURE_OPENAI_ENDPOINT,
+  apiKey: process.env.AZURE_OPENAI_KEY,
+  apiVersion: "2024-02-01",
+  deployment: "gpt-4o"
+});
+
 exports.generateDailySummary = async (req, res) => {
   try {
     const { prompt } = req.body;
     if (!prompt) return res.status(400).json({ success: false, message: "prompt required" });
 
-    const response = await fetch("https://api.anthropic.com/v1/messages", {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        "x-api-key": process.env.ANTHROPIC_API_KEY,
-        "anthropic-version": "2023-06-01",
-      },
-      body: JSON.stringify({
-        model: "claude-sonnet-4-6",
-        max_tokens: 1000,
-        messages: [{ role: "user", content: prompt }],
-      }),
+    const result = await openaiClient.chat.completions.create({
+      model: "gpt-4o-mini",
+      temperature: 0.7,
+      messages: [
+        { role: "system", content: "You are a smart pharmacy operations assistant. Write clear, professional summaries in English." },
+        { role: "user", content: prompt }
+      ]
     });
 
-    const data = await response.json();
-    console.error("Anthropic response:", JSON.stringify(data)); // ← ضيف دي
-    const text = data.content?.map(c => c.text || "").join("") || "";
-
+    const text = result.choices[0]?.message?.content || "";
     return res.status(200).json({ success: true, data: { summary: text } });
+
   } catch (err) {
     console.error("generateDailySummary error:", err);
     return res.status(500).json({ success: false, message: "Failed to generate summary" });
