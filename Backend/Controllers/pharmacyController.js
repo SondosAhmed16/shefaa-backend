@@ -366,7 +366,7 @@ exports.acceptOrder = async (req, res) => {
       data: { orderId: order._id, newStatus: order.status },
     });
   } catch (err) {
-   console.error("acceptOrder error:", err.stack || err);
+    console.error("acceptOrder error:", err.stack || err);
     return res.status(500).json({ success: false, message: "Internal server error", error: err.message });
   }
 };
@@ -452,7 +452,7 @@ exports.completeOrder = async (req, res) => {
     if (order.deliveryManId) {
       await DeliveryMan.findByIdAndUpdate(order.deliveryManId, {
         $pull: { assignedOrders: order._id },
-        $set:  { status: "Available" },
+        $set: { status: "Available" },
       });
     }
 
@@ -1143,7 +1143,6 @@ exports.getBusyDeliveryMen = async (req, res) => {
     return res.status(500).json({ success: false, message: "Internal server error" });
   }
 };
-
 
 exports.generateDailySummary = async (req, res) => {
   try {
