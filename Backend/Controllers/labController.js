@@ -428,16 +428,17 @@ exports.getLabResultsDashboard = async (req, res) => {
   }
 };
 
+// 2. دالة رفع النتيجة الفورية عبر Multer وكلاوديناري وإشعار المريض تلقائياً (مؤمنة بالكامل)
 exports.uploadLabResult = async (req, res) => {
   try {
     const { requestId } = req.body; 
 
-    // 1. التحقق من أن الـ multer قام برفع الملف بنجاح إلى كلاوديناري
+    // 1. التحقق من أن الـ multer قام برفع الملف بنجاح
     if (!req.file) {
       return res.status(400).json({ success: false, message: "Please upload a result file (Image or PDF)" });
     }
 
-    const resultFileUrl = req.file.path; // الرابط الجاهز القادم من Cloudinary تلقائياً
+    const resultFileUrl = req.file.path; 
     const fileType = req.file.mimetype && req.file.mimetype.includes('pdf') ? 'pdf' : 'image'; 
 
     if (!requestId) {
@@ -445,7 +446,6 @@ exports.uploadLabResult = async (req, res) => {
     }
 
     // 2. تحديث الطلب في قاعدة البيانات وتحويل حالته إلى مكتمل بأمان
-    // قمنا بوضع اسم الموديل صراحة 'Patients' لتفادي أي خطأ في التسمية داخل قاعدة البيانات
     const updatedRequest = await LabRequest.findByIdAndUpdate(
       requestId,
       {
@@ -455,36 +455,38 @@ exports.uploadLabResult = async (req, res) => {
         resultUploadedAt: new Date()
       },
       { new: true }
-    ).populate({
-      path: 'patientId',
-      model: 'Patients', // يضمن عدم انهيار الـ populate لو الموديل مسمى Patients بالـ S
-      select: 'userId'
-    });
+    );
 
     if (!updatedRequest) {
       return res.status(404).json({ success: false, message: "Request not found" });
     }
 
-    // 3. 🔔 إرسال الإشعار التلقائي للمريض ليكون "Patient Notified"
-    const patientUserId = updatedRequest.patientId?.userId;
+    // 3. 🔔 جلب المريض يدوياً باستخدام الموديل المستدعى فوق لمنع انهيار الـ Populate بسبب حرف الـ S
+    if (updatedRequest.patientId) {
+      // استدعاء المريض مباشرة باستخدام متد الـ Patient المستدعى في أول الملف عندك
+      const patientData = await Patient.findById(updatedRequest.patientId);
+      
+      const patientUserId = patientData?.userId;
 
-    if (patientUserId) {
-      // جلب اسم المعمل الحالي بأمان مع وضع حماية لو لم يجد الحساب
-      const center = await Lab.findOne({ userId: req.user._id }).populate('userId', 'name');
-      const centerName = center?.userId?.name || "The Medical Center";
+      if (patientUserId) {
+        // جلب اسم المعمل الحالي
+        const center = await Lab.findOne({ userId: req.user._id }).populate('userId', 'name');
+        const centerName = center?.userId?.name || "The Medical Center";
 
-      const newNotification = new Notification({
-        recipient: patientUserId, // الـ User ID الخاص بالمريض المستلم
-        title: "Medical Result Available! 📄",
-        message: `Your test results from ${centerName} have been uploaded successfully. You can now view or download them from your profile.`,
-        type: "lab_result", 
-        relatedId: updatedRequest._id 
-      });
+        // إنشاء الإشعار للمريض
+        const newNotification = new Notification({
+          recipient: patientUserId, 
+          title: "Medical Result Available! 📄",
+          message: `Your test results from ${centerName} have been uploaded successfully. You can now view or download them from your profile.`,
+          type: "lab_result", 
+          relatedId: updatedRequest._id 
+        });
 
-      await newNotification.save();
+        await newNotification.save();
+      }
     }
 
-    // إرجاع النتيجة الناجحة بنسبة 100%
+    // إرجاع النتيجة الناجحة بنجاح
     res.status(200).json({
       success: true,
       message: "Result uploaded successfully and patient has been notified.",
@@ -492,7 +494,6 @@ exports.uploadLabResult = async (req, res) => {
     });
 
   } catch (err) {
-    // في حال حدوث أي خطأ غير متوقع، سيعود الإيرور بوضوح هنا دون تعليق السيرفر
     res.status(500).json({ success: false, message: err.message });
   }
 };
