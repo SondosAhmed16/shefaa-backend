@@ -94,6 +94,12 @@ exports.updateProfile = async (req, res) => {
     if (!pharmacy)
       return res.status(404).json({ success: false, message: "Pharmacy not found" });
 
+    // ── Step 1: نظف أي addresses فيها coordinates فاضية في الـ DB ──────────
+    await Pharmacy.updateOne(
+      { userId },
+      { $pull: { addresses: { "location.coordinates": { $size: 0 } } } }
+    );
+
     const allowedFields = [
       "phone", "about", "workingHours", "deliveryArea", "deliveryTime",
       "paymentMethods", "addresses", "licenseExpiry", "medicalLicencePdf",
@@ -126,6 +132,7 @@ exports.updateProfile = async (req, res) => {
     if (req.body.name !== undefined)
       await User.findByIdAndUpdate(userId, { $set: { name: req.body.name.trim() } });
 
+    // ── Step 2: نظف الـ addresses الجاية من الـ request نفسه ────────────────
     if (pharmacyUpdates.addresses) {
       pharmacyUpdates.addresses = pharmacyUpdates.addresses.map((addr) => {
         const coords = addr.location?.coordinates;
@@ -144,17 +151,11 @@ exports.updateProfile = async (req, res) => {
     if (Object.keys(pharmacyUpdates).length === 0 && req.body.name === undefined)
       return res.status(400).json({ success: false, message: "No valid fields to update" });
 
+    // ── Step 3: الـ update الفعلي بدون أي geo مكسور ─────────────────────────
     const updated = await Pharmacy.findOneAndUpdate(
       { userId },
-      {
-        $set: pharmacyUpdates,
-        $unset: { "addresses.$[bad].location": "" },
-      },
-      {
-        new: true,
-        runValidators: true,
-        arrayFilters: [{ "bad.location.coordinates": { $size: 0 } }],
-      }
+      { $set: pharmacyUpdates },
+      { new: true, runValidators: true }
     );
 
     const user = await User.findById(userId).select("name");
