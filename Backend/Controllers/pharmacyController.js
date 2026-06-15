@@ -133,7 +133,9 @@ exports.updateProfile = async (req, res) => {
           Array.isArray(coords) &&
           coords.length === 2 &&
           coords.every((c) => typeof c === "number" && isFinite(c));
+
         if (valid) return addr;
+
         const { location, ...rest } = addr;
         return rest;
       });
@@ -144,8 +146,15 @@ exports.updateProfile = async (req, res) => {
 
     const updated = await Pharmacy.findOneAndUpdate(
       { userId },
-      { $set: pharmacyUpdates },
-      { new: true, runValidators: true }
+      {
+        $set: pharmacyUpdates,
+        $unset: { "addresses.$[bad].location": "" },
+      },
+      {
+        new: true,
+        runValidators: true,
+        arrayFilters: [{ "bad.location.coordinates": { $size: 0 } }],
+      }
     );
 
     const user = await User.findById(userId).select("name");
@@ -163,6 +172,7 @@ exports.updateProfile = async (req, res) => {
     return res.status(500).json({ success: false, message: "Internal server error" });
   }
 };
+
 
 // ─── Toggle Open ────────────────────────────────────────────────────────────
 exports.toggleOpenStatus = async (req, res) => {
