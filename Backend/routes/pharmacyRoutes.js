@@ -2,6 +2,7 @@ const express = require('express');
 const router = express.Router();
 const pharmacyController = require('../Controllers/pharmacyController');
 const ai=require('../Controllers/pharmacyDailyai')
+const ai2=require('../Controllers/stockAlertChat')
 // Importing Middlewares
 const { auth } = require('../middleware/auth');
 const { authorizeRoles } = require('../middleware/role');
@@ -55,5 +56,8 @@ router.post('/financials/pay',                     auth, authorizeRoles('pharmac
 router.post('/finance/pay',                        auth, authorizeRoles('pharmacy'), pharmacyController.confirmPaymentAlias);
 
 // ---------Ai------- 
-router.post('/ai/daily-summary', auth, authorizeRoles('pharmacy'), ai.generateDailySummary);
+router.post('/ai/daily-summary',   auth, authorizeRoles('pharmacy'), ai.generateDailySummary);
+router.post('/ai/stock-alerts',    auth, authorizeRoles('pharmacy'), ai2.getSmartStockAlerts);
+router.post('/ai/chat',            auth, authorizeRoles('pharmacy'), ai2.adminChatAssistant);
+
 module.exports = router;
