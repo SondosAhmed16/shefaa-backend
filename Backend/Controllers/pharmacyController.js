@@ -127,17 +127,14 @@ exports.updateProfile = async (req, res) => {
       await User.findByIdAndUpdate(userId, { $set: { name: req.body.name.trim() } });
 
     // ── Clean addresses coming from request ───────────────────────────────
+    // قبل الـ bulkWrite، ضيف دي في pharmacyUpdates لو فيه addresses:
     if (pharmacyUpdates.addresses) {
-      pharmacyUpdates.addresses = pharmacyUpdates.addresses.map((addr) => {
+      pharmacyUpdates.addresses = pharmacyUpdates.addresses.map(addr => {
         const coords = addr.location?.coordinates;
-        const valid =
-          Array.isArray(coords) &&
-          coords.length === 2 &&
-          coords.every((c) => typeof c === "number" && isFinite(c));
-
+        const valid = Array.isArray(coords) && coords.length === 2 &&
+          coords.every(c => typeof c === "number" && isFinite(c));
         if (valid) return addr;
-        // Strip the broken location entirely — don't store empty coordinates
-        const { location, ...rest } = addr;
+        const { location, ...rest } = addr;  // شيل location لو مش valid
         return rest;
       });
     }
