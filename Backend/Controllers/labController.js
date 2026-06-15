@@ -284,10 +284,14 @@ exports.toggleServiceStatus = async (req, res) => {
   }
 };
 
-// 6. إنشاء طلب جديد برقم التليفون للمريض الأوفلاين
+// 6. إنشاء طلب جديد برقم التليفون للمريض الأوفلاين (Debugging Version)
 exports.createRequest = async (req, res) => {
   try {
     const { patientPhone, serviceIds, viaAI } = req.body; 
+
+    console.log("================ POSTMAN DEBUG START ================");
+    console.log("1. Incoming Raw Phone from Postman:", JSON.stringify(patientPhone));
+    console.log("2. Data Type of Incoming Phone:", typeof patientPhone);
 
     if (!patientPhone) {
       return res.status(400).json({ 
@@ -303,13 +307,45 @@ exports.createRequest = async (req, res) => {
       });
     }
 
-    const patient = await Patient.findOne({ phone: patientPhone });
+    // --- DEBUG ENGINE ---
+    // Clean spaces just in case
+    const cleanPhone = String(patientPhone).trim();
+    console.log("3. Cleaned Phone Target:", cleanPhone);
+
+    // Let's check if the Patient model is pointing to an empty collection or wrong DB
+    const globalCount = await Patient.countDocuments({});
+    console.log("4. Total number of patients currently in this collection:", globalCount);
+
+    // Let's try finding the patient using flexible formats
+    let patient = await Patient.findOne({ phone: cleanPhone });
+    
+    // Fallback Check: If not found as a string, check if it was stored as a Number in MongoDB (dropping the leading 0)
+    if (!patient && cleanPhone.startsWith('0')) {
+      const numericPhone = Number(cleanPhone);
+      console.log("5. Testing Fallback: Searching as a Number data-type instead ->", numericPhone);
+      patient = await Patient.findOne({ phone: numericPhone });
+    }
+
     if (!patient) {
+      // Fetch up to 3 sample records from your DB to see how phone numbers are actually structured
+      const samplePatients = await Patient.find({}).limit(3).select('name phone');
+      console.log("6. Failed to find match. Here is what your DB data actually looks like:", samplePatients);
+      console.log("================= POSTMAN DEBUG END =================");
+
       return res.status(404).json({ 
         success: false, 
-        message: "This phone number is not registered in Shefaa App. Please check the number or register the patient first." 
+        message: "This phone number is not registered in Shefaa App. Check your server terminal logs for the exact type mismatch.",
+        debugInfo: {
+          receivedPhone: patientPhone,
+          dataTypeReceived: typeof patientPhone,
+          totalPatientsInDB: globalCount,
+          samplesInDatabase: samplePatients
+        }
       });
     }
+
+    console.log("7. Success! Patient found:", patient.name, "ID:", patient._id);
+    console.log("================= POSTMAN DEBUG END =================");
 
     const lab = await Lab.findOne({ userId: req.user._id });
     if (!lab) {
@@ -331,6 +367,7 @@ exports.createRequest = async (req, res) => {
       newRequest 
     });
   } catch (err) {
+    console.error("DEBUG ERROR STACK:", err);
     res.status(500).json({ success: false, message: err.message });
   }
 };
