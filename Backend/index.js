@@ -37,15 +37,17 @@ app.use(cors({
   allowedHeaders: ["Content-Type", "Authorization"],
 }));
 
-
+// 2. Standard Middlewares
+app.use(express.json());
+app.use(express.urlencoded({ extended: true }));
 
 // 1. Security Middlewares
 securityMiddleware(app); 
 
-// 2. Standard Middlewares
-app.use(express.json());
-app.use(express.urlencoded({ extended: true }));
+
+
 app.use(passport.initialize());
+
 
 // 3. Static Folder
 app.use("/uploads", express.static("uploads"));
