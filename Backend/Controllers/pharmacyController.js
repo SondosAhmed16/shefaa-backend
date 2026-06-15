@@ -94,12 +94,6 @@ exports.updateProfile = async (req, res) => {
     if (!pharmacy)
       return res.status(404).json({ success: false, message: "Pharmacy not found" });
 
-    // ── Step 1: نظف أي addresses فيها coordinates فاضية في الـ DB ──────────
-    await Pharmacy.updateOne(
-      { userId },
-      { $pull: { addresses: { "location.coordinates": { $size: 0 } } } }
-    );
-
     const allowedFields = [
       "phone", "about", "workingHours", "deliveryArea", "deliveryTime",
       "paymentMethods", "addresses", "licenseExpiry", "medicalLicencePdf",
@@ -132,7 +126,7 @@ exports.updateProfile = async (req, res) => {
     if (req.body.name !== undefined)
       await User.findByIdAndUpdate(userId, { $set: { name: req.body.name.trim() } });
 
-    // ── Step 2: نظف الـ addresses الجاية من الـ request نفسه ────────────────
+    // ── Clean addresses coming from request ───────────────────────────────
     if (pharmacyUpdates.addresses) {
       pharmacyUpdates.addresses = pharmacyUpdates.addresses.map((addr) => {
         const coords = addr.location?.coordinates;
@@ -142,7 +136,7 @@ exports.updateProfile = async (req, res) => {
           coords.every((c) => typeof c === "number" && isFinite(c));
 
         if (valid) return addr;
-
+        // Strip the broken location entirely — don't store empty coordinates
         const { location, ...rest } = addr;
         return rest;
       });
@@ -151,14 +145,45 @@ exports.updateProfile = async (req, res) => {
     if (Object.keys(pharmacyUpdates).length === 0 && req.body.name === undefined)
       return res.status(400).json({ success: false, message: "No valid fields to update" });
 
-    // ── Step 3: الـ update الفعلي بدون أي geo مكسور ─────────────────────────
-    const updated = await Pharmacy.findOneAndUpdate(
-      { userId },
-      { $set: pharmacyUpdates },
-      { new: true, runValidators: true }
+    // ── Fix broken coordinates already in the DB + apply updates atomically ──
+    // $unset the bad location field on existing addresses with empty coordinates,
+    // then $set all the new data — one round-trip, no index conflict window.
+    const updateOp = {
+      $set: pharmacyUpdates,
+    };
+
+    // Check if the stored doc already has the poisoned address
+    const hasEmptyCoords = pharmacy.addresses?.some(
+      (a) => Array.isArray(a.location?.coordinates) && a.location.coordinates.length === 0
     );
 
+    if (hasEmptyCoords) {
+      // Use bulkWrite: first neutralize the bad geo field, then apply the real update
+      await Pharmacy.bulkWrite([
+        {
+          updateOne: {
+            filter: { userId, "addresses.location.coordinates": { $size: 0 } },
+            update: { $unset: { "addresses.$[elem].location": "" } },
+            arrayFilters: [{ "elem.location.coordinates": { $size: 0 } }],
+          },
+        },
+        {
+          updateOne: {
+            filter: { userId },
+            update: updateOp,
+          },
+        },
+      ]);
+    } else {
+      await Pharmacy.findOneAndUpdate({ userId }, updateOp, {
+        new: true,
+        runValidators: true,
+      });
+    }
+
+    const updated = await Pharmacy.findOne({ userId });
     const user = await User.findById(userId).select("name");
+
     return res.status(200).json({
       success: true,
       message: "Profile updated successfully",
