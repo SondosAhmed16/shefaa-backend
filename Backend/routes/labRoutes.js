@@ -77,6 +77,5 @@ router.post('/add-request', auth, labController.createRequest);
 
 router.get('/results-dashboard', auth, labController.getLabResultsDashboard);
 
-router.post('/upload-result', auth, labController.uploadLabResult);
-
+router.post('/upload-result', auth, upload.single('resultFileUrl'), labController.uploadLabResult);
 module.exports = router;
