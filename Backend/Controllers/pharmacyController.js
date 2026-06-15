@@ -593,6 +593,10 @@ exports.updateMedicine = async (req, res) => {
     const updates = {};
     allowed.forEach((f) => { if (req.body[f] !== undefined) updates[f] = req.body[f]; });
 
+    if (updates.expiryDate === "" || updates.expiryDate === null) {
+      delete updates.expiryDate;
+    }
+
     if (updates.quantity !== undefined) {
       updates.quantity = Number(updates.quantity);
       if (updates.quantity <= 0 && updates.inStock === undefined) updates.inStock = false;
@@ -608,7 +612,8 @@ exports.updateMedicine = async (req, res) => {
 
     return res.status(200).json({ success: true, message: "Medicine updated", data: medicine });
   } catch (err) {
-    return res.status(500).json({ success: false, message: "Internal server error" });
+    console.error("updateMedicine error:", err);
+    return res.status(500).json({ success: false, message: "Internal server error", error: err.message });
   }
 };
 
