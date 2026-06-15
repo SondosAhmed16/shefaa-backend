@@ -284,12 +284,11 @@ exports.toggleServiceStatus = async (req, res) => {
   }
 };
 
-// 6. إنشاء طلب جديد برقم التليفون للمريض الأوفلاين (النسخة الصحيحة والنهائية)
+// 6. إنشاء طلب جديد برقم التليفون للمريض الأوفلاين (النسخة النهائية الصحيحة)
 exports.createRequest = async (req, res) => {
   try {
     const { patientPhone, serviceIds, viaAI } = req.body; 
 
-    // 1. التحقق من المدخلات الأساسية
     if (!patientPhone) {
       return res.status(400).json({ 
         success: false, 
@@ -304,7 +303,7 @@ exports.createRequest = async (req, res) => {
       });
     }
 
-    // 2. البحث عن المستخدم في جدول Users أولاً باستخدام رقم الهاتف الصحيح
+    // الخطوة السحرية: ابحث في الـ Users أولاً لأن الـ phoneNumber هناك!
     const user = await User.findOne({ phoneNumber: String(patientPhone).trim() });
     if (!user) {
       return res.status(404).json({ 
@@ -313,7 +312,7 @@ exports.createRequest = async (req, res) => {
       });
     }
 
-    // 3. البحث عن الملف الطبي للمريض في جدول Patients باستخدام الـ userId الخاص بالحساب المكتشف
+    // ثم ابحث في الـ Patients بربط الـ userId
     const patient = await Patient.findOne({ userId: user._id });
     if (!patient) {
       return res.status(404).json({ 
@@ -322,13 +321,11 @@ exports.createRequest = async (req, res) => {
       });
     }
 
-    // 4. التحقق من وجود المعمل/المركز الطبي الذي يرسل الطلب حالياً
     const lab = await Lab.findOne({ userId: req.user._id });
     if (!lab) {
       return res.status(404).json({ success: false, message: "Center not found" });
     }
 
-    // 5. إنشاء الطلب وربطه بـ id المريض الصحيح
     const newRequest = new LabRequest({
       labId: lab._id,
       patientId: patient._id, 
@@ -338,7 +335,6 @@ exports.createRequest = async (req, res) => {
 
     await newRequest.save();
 
-    // إرجاع استجابة ناجحة بالاسم المستخرج من جدول الـ User مباشرة
     res.status(201).json({ 
       success: true,
       message: `Request added successfully for patient (${user.name}) and linked to Shefaa App`, 
