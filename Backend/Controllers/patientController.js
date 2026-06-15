@@ -1153,25 +1153,45 @@ exports.patientSearch = async (req, res) => {
       if (type === 'scan') labQuery.facilityType = { $in: ['radiology center', 'both'] };
       else if (type === 'lab') labQuery.facilityType = { $in: ['lab', 'both'] };
     }
-    if (homeService === 'true') labQuery.homeSampleCollection = true;
+
+    if (homeService === 'true') {
+      labQuery.homeSampleCollection = true;
+    }
+
     if (openNow === 'true') {
       const currentHour = new Date().getHours();
       labQuery["workingHours.open"] = { $lte: currentHour };
       labQuery["workingHours.close"] = { $gt: currentHour };
     }
 
-    // 2. دعم ميزة "الروشتة المرفوعة" لو الفرونت بعت لستة تحاليل مطلوبة
+    // 2. دعم ميزة "الروشتة المرفوعة" (تحسين البحث ليكون مرناً غير حساس لحالة الأحرف الجزئية)
     if (requiredServices) {
-      const servicesArray = requiredServices.split(','); // CBC,MRI
-      const matchedServices = await Service.find({ name: { $in: servicesArray } }).select('labId');
+      // تحويل الخدمات المطلوبة لمصفوفة وعمل تريم للمسافات
+      const servicesArray = requiredServices.split(',').map(s => s.trim()); 
+      
+      // استخدام $regex لجعل البحث مرناً ولا يفشل بسبب كلمة "Test" أو "Scan" الزائدة
+      const regexPatterns = servicesArray.map(service => new RegExp(service, 'i'));
+
+      const matchedServices = await Service.find({ 
+        name: { $in: regexPatterns },
+        isActive: true 
+      }).select('labId');
+
       const labIds = matchedServices.map(s => s.labId);
       labQuery._id = { $in: labIds };
     }
 
-    // 3. السيرش بار العادي
+    // 3. السيرش بار العادي (في حال عدم وجود روشتة مرفوعة)
     if (search && !requiredServices) {
-      const matchedUsers = await User.find({ name: { $regex: search, $options: 'i' }, role: 'lab' }).select('_id');
-      const matchedServices = await Service.find({ name: { $regex: search, $options: 'i' }, isActive: true }).select('labId');
+      const matchedUsers = await User.find({ 
+        name: { $regex: search, $options: 'i' }, 
+        role: 'lab' 
+      }).select('_id');
+
+      const matchedServices = await Service.find({ 
+        name: { $regex: search, $options: 'i' }, 
+        isActive: true 
+      }).select('labId');
       
       labQuery.$or = [
         { userId: { $in: matchedUsers.map(u => u._id) } },
@@ -1198,7 +1218,7 @@ exports.patientSearch = async (req, res) => {
       labs = await Lab.find(labQuery).populate('userId', 'name email phoneNumber').lean();
     }
 
-    // 5. تجميع داتا الخدمات والأسعار مبدئياً
+    // 5. تجميع داتا الخدمات والأسعار بشكل ديناميكي
     let formattedCenters = await Promise.all(labs.map(async (lab) => {
       const services = await Service.find({ labId: lab._id, isActive: true });
       const minPrice = services.length > 0 ? Math.min(...services.map(s => s.price)) : 0;
@@ -1211,10 +1231,10 @@ exports.patientSearch = async (req, res) => {
         rating: lab.rating || 4.5,
         distanceNum: distanceNum,
         distance: distanceNum ? `${distanceNum.toFixed(1)} km` : "Unknown",
-        homeServiceAvailable: lab.homeSampleCollection,
-        insuranceAccepted: lab.insuranceAccepted,
+        homeServiceAvailable: lab.homeSampleCollection || false,
+        insuranceAccepted: lab.insuranceAccepted || false,
         minPrice: minPrice,
-        badge: null, // هيتم حسابه تحت ديناميكياً
+        badge: null, // سيتم حسابه في الخطوة القادمة ديناميكياً
         nextSlot: "Today 10:30 AM", 
         availableTags: services.map(s => ({ name: s.name, category: s.category, isPartner: false }))
       };
@@ -1229,7 +1249,7 @@ exports.patientSearch = async (req, res) => {
         nearest.badge = "Nearest";
       }
 
-      // ب) تحديد الأرخص (Cheapest) - بشرط ميكونش واخد badge الأقرب خلاص
+      // ب) تحديد الأرخص (Cheapest) - بشرط ألا يكون قد أخذ شارة الأقرب بالفعل
       const validPrices = formattedCenters.filter(c => c.minPrice > 0 && c.badge === null);
       if (validPrices.length > 0) {
         const cheapest = validPrices.reduce((min, c) => c.minPrice < min.minPrice ? c : min, validPrices[0]);
@@ -1243,10 +1263,11 @@ exports.patientSearch = async (req, res) => {
       }
     }
 
+    // 7. إرسال الاستجابة الناجحة
     res.status(200).json({
       success: true,
       count: formattedCenters.length,
-      isAIRanked: true, // عشان يظهر الـ Tag اللطيف اللي فوق في الـ UI (AI Ranked)
+      isAIRanked: true, 
       centers: formattedCenters
     });
 
