@@ -354,36 +354,31 @@ exports.getLabResultsDashboard = async (req, res) => {
       return res.status(404).json({ success: false, message: "Center profile not found" });
     }
 
-    // ---- 🔍 اختبارات الديباج في الترمينال 🔍 ----
-    console.log("=== DASHBOARD DEBUG ===");
-    console.log("Logged-in User ID:", req.user._id);
-    console.log("Found Lab Profile ID (_id):", lab._id);
-
-    // لنحسب إجمالي الطلبات في قاعدة البيانات بدون أي فلاتر لمعرفة هل الجدول فارغ أم لا
-    const totalGlobalRequests = await LabRequest.countDocuments({});
-    console.log("Total Requests in whole DB:", totalGlobalRequests);
-
-    // لنرى طلبات هذا المعمل بالتحديد بدون فلتر الحالة (pending/completed)
-    const totalLabRequests = await LabRequest.countDocuments({ labId: lab._id });
-    console.log("Total Requests for THIS specific Lab ID:", totalLabRequests);
-    console.log("=======================");
-    // --------------------------------------------
-
-    // 2. جلب الطلبات المعلقة مع حماية الـ Populate من القيم الفارغة (Using flexible paths)
-    const pendingRequests = await LabRequest.find({ labId: lab._id, status: "pending" })
+    // 2. جلب كافة طلبات هذا المعمل بدون اشتراط كلمة 'pending' حرفياً لتفادي أي خطأ في الداتا القديمة
+    const allLabRequests = await LabRequest.find({ labId: lab._id })
       .populate('services', 'name estimatedTime')
       .lean();
 
-    // جلب بيانات المرضى يدوياً أو برفق لو الموديل مسمى Patients أو Patient
-    const formattedPending = await Promise.all(pendingRequests.map(async (reqItem) => {
+    let pendingUploads = [];
+    let uploadedResults = [];
+
+    for (const reqItem of allLabRequests) {
+      // جلب اسم المريض بشكل مرن لتفادي مشاكل الـ Populate الآلي واسم الموديل (Patient / Patients)
       let patientName = "Offline Patient";
-      
-      // جلب المريض واليوزر للتأكد من الاسم حتى لو الـ populate الآلي فيه مشكلة
-      const patientData = await mongoose.model("Patient").findById(reqItem.patientId).populate("userId", "name");
-      if (patientData && patientData.userId) {
-        patientName = patientData.userId.name;
+      try {
+        // فحص الموديل ديناميكياً لتأمين جلب الاسم
+        const PatientModel = mongoose.models.Patient || mongoose.models.Patients;
+        if (PatientModel && reqItem.patientId) {
+          const patientData = await PatientModel.findById(reqItem.patientId).populate("userId", "name");
+          if (patientData && patientData.userId) {
+            patientName = patientData.userId.name;
+          }
+        }
+      } catch (err) {
+        console.log("Patient populate error:", err.message);
       }
 
+      // حساب الوقت المستغرق
       let maxHours = 24;
       if (reqItem.services && reqItem.services.length > 0) {
         reqItem.services.forEach(service => {
@@ -395,7 +390,7 @@ exports.getLabResultsDashboard = async (req, res) => {
       const expectedDelivery = new Date(reqItem.createdAt || new Date());
       expectedDelivery.setHours(expectedDelivery.getHours() + maxHours);
 
-      return {
+      const formattedItem = {
         requestId: reqItem._id,
         refCode: `REF-${String(reqItem._id).substring(18).toUpperCase()}`,
         patientName: patientName,
@@ -403,43 +398,28 @@ exports.getLabResultsDashboard = async (req, res) => {
         createdAt: reqItem.createdAt,
         expectedDelivery: expectedDelivery
       };
-    }));
 
-    // 3. جلب النتائج المرفوعة سابقاً
-    const uploadedRequests = await LabRequest.find({ labId: lab._id, status: "completed" })
-      .populate('services', 'name')
-      .lean();
-
-    const formattedUploaded = await Promise.all(uploadedRequests.map(async (reqItem) => {
-      let patientName = "Unknown Patient";
-      const patientData = await mongoose.model("Patient").findById(reqItem.patientId).populate("userId", "name");
-      if (patientData && patientData.userId) {
-        patientName = patientData.userId.name;
+      // تقسيم الطلبات بناءً على الحالة (مع تدارك حالة الـ default لو غير مكتوبة)
+      if (reqItem.status === "completed") {
+        uploadedResults.push({
+          ...formattedItem,
+          uploadedAt: reqItem.resultUploadedAt || reqItem.updatedAt,
+          fileType: reqItem.resultFileType || "pdf",
+          fileUrl: reqItem.resultFile || "",
+          patientNotified: true
+        });
+      } else {
+        // أي حالة أخرى (سواء pending أو فارغة) ستعتبر معلقة لتظهر فوراً في الـ UI
+        pendingUploads.push(formattedItem);
       }
-
-      return {
-        requestId: reqItem._id,
-        refCode: `REF-${String(reqItem._id).substring(18).toUpperCase()}`,
-        patientName: patientName,
-        services: reqItem.services ? reqItem.services.map(s => s.name) : [],
-        uploadedAt: reqItem.resultUploadedAt,
-        fileType: reqItem.resultFileType,
-        fileUrl: reqItem.resultFile,
-        patientNotified: true
-      };
-    }));
+    }
 
     res.status(200).json({
       success: true,
-      debug: {
-        totalRequestsInDatabase: totalGlobalRequests,
-        requestsForThisLab: totalLabRequests,
-        yourLabId: lab._id
-      },
-      pendingCount: formattedPending.length,
-      uploadedCount: formattedUploaded.length,
-      pendingUploads: formattedPending,
-      uploadedResults: formattedUploaded
+      pendingCount: pendingUploads.length,
+      uploadedCount: uploadedResults.length,
+      pendingUploads: pendingUploads,
+      uploadedResults: uploadedResults
     });
 
   } catch (err) {
