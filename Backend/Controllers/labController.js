@@ -284,15 +284,12 @@ exports.toggleServiceStatus = async (req, res) => {
   }
 };
 
-// 6. إنشاء طلب جديد برقم التليفون للمريض الأوفلاين (Debugging Version)
+// 6. إنشاء طلب جديد برقم التليفون للمريض الأوفلاين (النسخة الصحيحة والنهائية)
 exports.createRequest = async (req, res) => {
   try {
     const { patientPhone, serviceIds, viaAI } = req.body; 
 
-    console.log("================ POSTMAN DEBUG START ================");
-    console.log("1. Incoming Raw Phone from Postman:", JSON.stringify(patientPhone));
-    console.log("2. Data Type of Incoming Phone:", typeof patientPhone);
-
+    // 1. التحقق من المدخلات الأساسية
     if (!patientPhone) {
       return res.status(400).json({ 
         success: false, 
@@ -307,51 +304,31 @@ exports.createRequest = async (req, res) => {
       });
     }
 
-    // --- DEBUG ENGINE ---
-    // Clean spaces just in case
-    const cleanPhone = String(patientPhone).trim();
-    console.log("3. Cleaned Phone Target:", cleanPhone);
-
-    // Let's check if the Patient model is pointing to an empty collection or wrong DB
-    const globalCount = await Patient.countDocuments({});
-    console.log("4. Total number of patients currently in this collection:", globalCount);
-
-    // Let's try finding the patient using flexible formats
-    let patient = await Patient.findOne({ phone: cleanPhone });
-    
-    // Fallback Check: If not found as a string, check if it was stored as a Number in MongoDB (dropping the leading 0)
-    if (!patient && cleanPhone.startsWith('0')) {
-      const numericPhone = Number(cleanPhone);
-      console.log("5. Testing Fallback: Searching as a Number data-type instead ->", numericPhone);
-      patient = await Patient.findOne({ phone: numericPhone });
-    }
-
-    if (!patient) {
-      // Fetch up to 3 sample records from your DB to see how phone numbers are actually structured
-      const samplePatients = await Patient.find({}).limit(3).select('name phone');
-      console.log("6. Failed to find match. Here is what your DB data actually looks like:", samplePatients);
-      console.log("================= POSTMAN DEBUG END =================");
-
+    // 2. البحث عن المستخدم في جدول Users أولاً باستخدام رقم الهاتف الصحيح
+    const user = await User.findOne({ phoneNumber: String(patientPhone).trim() });
+    if (!user) {
       return res.status(404).json({ 
         success: false, 
-        message: "This phone number is not registered in Shefaa App. Check your server terminal logs for the exact type mismatch.",
-        debugInfo: {
-          receivedPhone: patientPhone,
-          dataTypeReceived: typeof patientPhone,
-          totalPatientsInDB: globalCount,
-          samplesInDatabase: samplePatients
-        }
+        message: "This phone number is not registered in Shefaa App. Please check the number or register the patient first." 
       });
     }
 
-    console.log("7. Success! Patient found:", patient.name, "ID:", patient._id);
-    console.log("================= POSTMAN DEBUG END =================");
+    // 3. البحث عن الملف الطبي للمريض في جدول Patients باستخدام الـ userId الخاص بالحساب المكتشف
+    const patient = await Patient.findOne({ userId: user._id });
+    if (!patient) {
+      return res.status(404).json({ 
+        success: false, 
+        message: "The user account exists, but no active patient profile was found associated with it." 
+      });
+    }
 
+    // 4. التحقق من وجود المعمل/المركز الطبي الذي يرسل الطلب حالياً
     const lab = await Lab.findOne({ userId: req.user._id });
     if (!lab) {
       return res.status(404).json({ success: false, message: "Center not found" });
     }
 
+    // 5. إنشاء الطلب وربطه بـ id المريض الصحيح
     const newRequest = new LabRequest({
       labId: lab._id,
       patientId: patient._id, 
@@ -361,13 +338,13 @@ exports.createRequest = async (req, res) => {
 
     await newRequest.save();
 
+    // إرجاع استجابة ناجحة بالاسم المستخرج من جدول الـ User مباشرة
     res.status(201).json({ 
       success: true,
-      message: `Request added successfully for patient (${patient.name}) and linked to Shefaa App`, 
+      message: `Request added successfully for patient (${user.name}) and linked to Shefaa App`, 
       newRequest 
     });
   } catch (err) {
-    console.error("DEBUG ERROR STACK:", err);
     res.status(500).json({ success: false, message: err.message });
   }
 };
