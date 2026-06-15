@@ -575,6 +575,7 @@ exports.addMedicine = async (req, res) => {
 
     return res.status(201).json({ success: true, message: "Medicine added", data: medicine });
   } catch (err) {
+    console.error("addition error:", err);
     return res.status(500).json({ success: false, message: "Internal server error" });
   }
 };
