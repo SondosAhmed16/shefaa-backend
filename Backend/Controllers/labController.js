@@ -3,6 +3,7 @@ const Service = require('../Models/Services');
 const Patient = require('../Models/Patients');
 const LabRequest = require('../Models/LabRequest');
 const User = require('../Models/Users');
+const Notification = require('../Models/Notification');
 
 
 // 1. جلب بيانات البروفايل وكارت الـ AI
@@ -284,7 +285,7 @@ exports.toggleServiceStatus = async (req, res) => {
   }
 };
 
-// 6. إنشاء طلب جديد برقم التليفون للمريض الأوفلاين
+// 6. إنشاء طلب جديد برقم التليفون للمريض الأوفلاين (النسخة النهائية الصحيحة)
 exports.createRequest = async (req, res) => {
   try {
     const { patientPhone, serviceIds, viaAI } = req.body; 
@@ -303,11 +304,21 @@ exports.createRequest = async (req, res) => {
       });
     }
 
-    const patient = await Patient.findOne({ phone: patientPhone });
-    if (!patient) {
+    // الخطوة السحرية: ابحث في الـ Users أولاً لأن الـ phoneNumber هناك!
+    const user = await User.findOne({ phoneNumber: String(patientPhone).trim() });
+    if (!user) {
       return res.status(404).json({ 
         success: false, 
         message: "This phone number is not registered in Shefaa App. Please check the number or register the patient first." 
+      });
+    }
+
+    // ثم ابحث في الـ Patients بربط الـ userId
+    const patient = await Patient.findOne({ userId: user._id });
+    if (!patient) {
+      return res.status(404).json({ 
+        success: false, 
+        message: "The user account exists, but no active patient profile was found associated with it." 
       });
     }
 
@@ -327,9 +338,157 @@ exports.createRequest = async (req, res) => {
 
     res.status(201).json({ 
       success: true,
-      message: `Request added successfully for patient (${patient.name}) and linked to Shefaa App`, 
+      message: `Request added successfully for patient (${user.name}) and linked to Shefaa App`, 
       newRequest 
     });
+  } catch (err) {
+    res.status(500).json({ success: false, message: err.message });
+  }
+};
+
+exports.getLabResultsDashboard = async (req, res) => {
+  try {
+    // 1. التحقق من حساب المعمل
+    const lab = await Lab.findOne({ userId: req.user._id });
+    if (!lab) {
+      return res.status(404).json({ success: false, message: "Center profile not found" });
+    }
+
+    // 2. جلب كافة طلبات هذا المعمل بدون اشتراط كلمة 'pending' حرفياً لتفادي أي خطأ في الداتا القديمة
+    const allLabRequests = await LabRequest.find({ labId: lab._id })
+      .populate('services', 'name estimatedTime')
+      .lean();
+
+    let pendingUploads = [];
+    let uploadedResults = [];
+
+    for (const reqItem of allLabRequests) {
+      // جلب اسم المريض بشكل مرن لتفادي مشاكل الـ Populate الآلي واسم الموديل (Patient / Patients)
+      let patientName = "Offline Patient";
+      try {
+        // فحص الموديل ديناميكياً لتأمين جلب الاسم
+        const PatientModel = mongoose.models.Patient || mongoose.models.Patients;
+        if (PatientModel && reqItem.patientId) {
+          const patientData = await PatientModel.findById(reqItem.patientId).populate("userId", "name");
+          if (patientData && patientData.userId) {
+            patientName = patientData.userId.name;
+          }
+        }
+      } catch (err) {
+        console.log("Patient populate error:", err.message);
+      }
+
+      // حساب الوقت المستغرق
+      let maxHours = 24;
+      if (reqItem.services && reqItem.services.length > 0) {
+        reqItem.services.forEach(service => {
+          const hours = parseInt(service.estimatedTime) || 24;
+          if (hours > maxHours) maxHours = hours;
+        });
+      }
+
+      const expectedDelivery = new Date(reqItem.createdAt || new Date());
+      expectedDelivery.setHours(expectedDelivery.getHours() + maxHours);
+
+      const formattedItem = {
+        requestId: reqItem._id,
+        refCode: `REF-${String(reqItem._id).substring(18).toUpperCase()}`,
+        patientName: patientName,
+        services: reqItem.services ? reqItem.services.map(s => s.name) : [],
+        createdAt: reqItem.createdAt,
+        expectedDelivery: expectedDelivery
+      };
+
+      // تقسيم الطلبات بناءً على الحالة (مع تدارك حالة الـ default لو غير مكتوبة)
+      if (reqItem.status === "completed") {
+        uploadedResults.push({
+          ...formattedItem,
+          uploadedAt: reqItem.resultUploadedAt || reqItem.updatedAt,
+          fileType: reqItem.resultFileType || "pdf",
+          fileUrl: reqItem.resultFile || "",
+          patientNotified: true
+        });
+      } else {
+        // أي حالة أخرى (سواء pending أو فارغة) ستعتبر معلقة لتظهر فوراً في الـ UI
+        pendingUploads.push(formattedItem);
+      }
+    }
+
+    res.status(200).json({
+      success: true,
+      pendingCount: pendingUploads.length,
+      uploadedCount: uploadedResults.length,
+      pendingUploads: pendingUploads,
+      uploadedResults: uploadedResults
+    });
+
+  } catch (err) {
+    res.status(500).json({ success: false, message: err.message });
+  }
+};
+
+// دالة رفع النتيجة وتغيير الحالة وإرسال النوتيفيكيشن للمريض (مُعدلة لتقرأ من Multer-Cloudinary)
+exports.uploadLabResult = async (req, res) => {
+  try {
+    const { requestId } = req.body; // نأخذ الـ requestId فقط من الـ body
+
+    // التحقق من أن الـ multer قام برفع الملف بنجاح إلى كلاوديناري
+    if (!req.file) {
+      return res.status(400).json({ success: false, message: "Please upload a result file (Image or PDF)" });
+    }
+
+    const resultFileUrl = req.file.path; // الرابط الجاهز القادم من Cloudinary تلقائياً
+    
+    // تحديد نوع الملف ديناميكياً بناءً على نوع الملف المرفوع
+    const fileType = req.file.mimetype.includes('pdf') ? 'pdf' : 'image';
+
+    if (!requestId) {
+      return res.status(400).json({ success: false, message: "Missing required field: requestId" });
+    }
+
+    // 1. تحديث الطلب في قاعدة البيانات وتحويل حالته إلى مكتمل
+    const updatedRequest = await LabRequest.findByIdAndUpdate(
+      requestId,
+      {
+        status: "completed",
+        resultFile: resultFileUrl,
+        resultFileType: fileType,
+        resultUploadedAt: new Date()
+      },
+      { new: true }
+    ).populate({
+      path: 'patientId',
+      select: 'userId'
+    });
+
+    if (!updatedRequest) {
+      return res.status(404).json({ success: false, message: "Request not found" });
+    }
+
+    // 2. 🔔 إرسال الإشعار التلقائي للمريض (Patient Notified)
+    const patientUserId = updatedRequest.patientId?.userId;
+
+    if (patientUserId) {
+      const center = await Lab.findOne({ userId: req.user._id }).populate('userId', 'name');
+      const centerName = center?.userId?.name || "The Medical Center";
+
+      const newNotification = new Notification({
+        recipient: patientUserId,
+        title: "Medical Result Available! 📄",
+        message: `Your test results from ${centerName} have been uploaded successfully. You can now view or download them from your profile.`,
+        type: "lab_result",
+        relatedId: updatedRequest._id
+      });
+
+      await newNotification.save();
+    }
+
+    res.status(200).json({
+      success: true,
+      message: "Result uploaded successfully and patient has been notified.",
+      updatedRequest
+    });
+
   } catch (err) {
     res.status(500).json({ success: false, message: err.message });
   }
