@@ -26,7 +26,17 @@ const medicineStockSchema = new mongoose.Schema(
       type: String,
       required: true,
       trim: true,
-      enum: ["analgesic", "antibiotic", "cardiac", "diabetes", "allergy", "vitamins", "other"]
+      lowercase: true,
+      enum: [
+        "analgesic",
+        "antibiotic",
+        "antiviral",
+        "cardiac",
+        "diabetes",
+        "allergy",
+        "vitamins",
+        "other"
+      ]
     },
     dosageForm: {
       type: String,
