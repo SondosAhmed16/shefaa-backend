@@ -3,6 +3,7 @@ const Service = require('../Models/Services');
 const Patient = require('../Models/Patients');
 const LabRequest = require('../Models/LabRequest');
 const User = require('../Models/Users');
+const Notification = require('../Models/Notification');
 
 
 // 1. جلب بيانات البروفايل وكارت الـ AI
@@ -340,6 +341,148 @@ exports.createRequest = async (req, res) => {
       message: `Request added successfully for patient (${user.name}) and linked to Shefaa App`, 
       newRequest 
     });
+  } catch (err) {
+    res.status(500).json({ success: false, message: err.message });
+  }
+};
+
+exports.getLabResultsDashboard = async (req, res) => {
+  try {
+    // 1. التحقق من وجود المعمل
+    const lab = await Lab.findOne({ userId: req.user._id });
+    if (!lab) {
+      return res.status(404).json({ success: false, message: "Center profile not found" });
+    }
+
+    // 2. جلب الطلبات المعلقة (Pending Upload) مع بيانات المريض والتحاليل المطلوبة
+    const pendingRequests = await LabRequest.find({ labId: lab._id, status: "pending" })
+      .populate({
+        path: 'patientId',
+        populate: { path: 'userId', select: 'name' } // لجلب اسم المريض من جدول الـ Users
+      })
+      .populate('services', 'name estimatedTime') // جلب اسم التحليل والوقت المستغرق
+      .sort({ createdAt: 1 }); // الأقدم أولاً
+
+    // حساب الـ Delivery Date ديناميكياً لكل طلب معلق
+    const formattedPending = pendingRequests.map(reqItem => {
+      // حساب أقصى وقت متوقع بناءً على التحاليل المطلوبة
+      let maxHours = 24; // قيمة افتراضية إذا لم يحدد الوقت
+      reqItem.services.forEach(service => {
+        // إذا كنت مخزن الـ estimatedTime مثل "24 hours" أو "2 hours" نأخذ الرقم فقط
+        const hours = parseInt(service.estimatedTime) || 24;
+        if (hours > maxHours) maxHours = hours;
+      });
+
+      // وقت التسليم المتوقع = وقت إنشاء الطلب + الساعات المستغرقة
+      const expectedDelivery = new Date(reqItem.createdAt);
+      expectedDelivery.setHours(expectedDelivery.getHours() + maxHours);
+
+      return {
+        requestId: reqItem._id,
+        refCode: `REF-${String(reqItem._id).substring(18).toUpperCase()}`, // توليد اسم أوردر مميز من الـ ID
+        patientName: reqItem.patientId?.userId?.name || "Offline Patient",
+        services: reqItem.services.map(s => s.name),
+        createdAt: reqItem.createdAt,
+        expectedDelivery: expectedDelivery
+      };
+    });
+
+    // 3. جلب النتائج المرفوعة سابقاً (Uploaded Results)
+    const uploadedRequests = await LabRequest.find({ labId: lab._id, status: "completed" })
+      .populate({
+        path: 'patientId',
+        populate: { path: 'userId', select: 'name' }
+      })
+      .populate('services', 'name')
+      .sort({ resultUploadedAt: -1 }); // الأحدث يظهر أولاً
+
+    const formattedUploaded = uploadedRequests.map(reqItem => ({
+      requestId: reqItem._id,
+      refCode: `REF-${String(reqItem._id).substring(18).toUpperCase()}`,
+      patientName: reqItem.patientId?.userId?.name || "Unknown Patient",
+      services: reqItem.services.map(s => s.name),
+      uploadedAt: reqItem.resultUploadedAt,
+      fileType: reqItem.resultFileType, // image أو pdf
+      fileUrl: reqItem.resultFile,
+      patientNotified: true // طالما دخلت هنا، الإشعار أُرسل تلقائياً
+    }));
+
+    // 4. إرسال الاستجابة
+    res.status(200).json({
+      success: true,
+      pendingCount: formattedPending.length,
+      uploadedCount: formattedUploaded.length,
+      pendingUploads: formattedPending,
+      uploadedResults: formattedUploaded
+    });
+
+  } catch (err) {
+    res.status(500).json({ success: false, message: err.message });
+  }
+};
+
+// دالة رفع النتيجة وتغيير الحالة وإرسال النوتيفيكيشن للمريض (مُعدلة لتقرأ من Multer-Cloudinary)
+exports.uploadLabResult = async (req, res) => {
+  try {
+    const { requestId } = req.body; // نأخذ الـ requestId فقط من الـ body
+
+    // التحقق من أن الـ multer قام برفع الملف بنجاح إلى كلاوديناري
+    if (!req.file) {
+      return res.status(400).json({ success: false, message: "Please upload a result file (Image or PDF)" });
+    }
+
+    const resultFileUrl = req.file.path; // الرابط الجاهز القادم من Cloudinary تلقائياً
+    
+    // تحديد نوع الملف ديناميكياً بناءً على نوع الملف المرفوع
+    const fileType = req.file.mimetype.includes('pdf') ? 'pdf' : 'image';
+
+    if (!requestId) {
+      return res.status(400).json({ success: false, message: "Missing required field: requestId" });
+    }
+
+    // 1. تحديث الطلب في قاعدة البيانات وتحويل حالته إلى مكتمل
+    const updatedRequest = await LabRequest.findByIdAndUpdate(
+      requestId,
+      {
+        status: "completed",
+        resultFile: resultFileUrl,
+        resultFileType: fileType,
+        resultUploadedAt: new Date()
+      },
+      { new: true }
+    ).populate({
+      path: 'patientId',
+      select: 'userId'
+    });
+
+    if (!updatedRequest) {
+      return res.status(404).json({ success: false, message: "Request not found" });
+    }
+
+    // 2. 🔔 إرسال الإشعار التلقائي للمريض (Patient Notified)
+    const patientUserId = updatedRequest.patientId?.userId;
+
+    if (patientUserId) {
+      const center = await Lab.findOne({ userId: req.user._id }).populate('userId', 'name');
+      const centerName = center?.userId?.name || "The Medical Center";
+
+      const newNotification = new Notification({
+        recipient: patientUserId,
+        title: "Medical Result Available! 📄",
+        message: `Your test results from ${centerName} have been uploaded successfully. You can now view or download them from your profile.`,
+        type: "lab_result",
+        relatedId: updatedRequest._id
+      });
+
+      await newNotification.save();
+    }
+
+    res.status(200).json({
+      success: true,
+      message: "Result uploaded successfully and patient has been notified.",
+      updatedRequest
+    });
+
   } catch (err) {
     res.status(500).json({ success: false, message: err.message });
   }
