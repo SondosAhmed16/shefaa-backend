@@ -31,10 +31,18 @@ const medicineStockSchema = new mongoose.Schema(
         "analgesic",
         "antibiotic",
         "antiviral",
+        "antidiabetic",
         "cardiac",
         "diabetes",
         "allergy",
         "vitamins",
+        "antihistamine",
+        "antifungal",
+        "antiseptic",
+        "respiratory",
+        "gastrointestinal",
+        "dermatology",
+        "supplements",
         "other"
       ]
     },
