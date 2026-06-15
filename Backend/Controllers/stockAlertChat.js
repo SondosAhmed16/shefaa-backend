@@ -19,8 +19,8 @@ async function generateStockAlert(item) {
         role: "system",
         content: `You are a pharmacy inventory analyst for "Shefaa Pharmacy".
 Given current stock and recent weekly sales rate for a medicine, estimate how many days until it runs out.
-Respond in ARABIC, one short sentence only, in this style:
-"باراسيتامول هيخلص في 4 أيام بناءً على المبيعات الأخيرة."
+Respond in ENGLISH, one short sentence only, in this style:
+"Paracetamol will run out in 4 days based on recent sales."
 If sales rate is 0, say the item is not moving and stock is stable.
 Do not add any extra commentary, just the one sentence.`
       },
@@ -70,7 +70,7 @@ exports.getSmartStockAlerts = async (req, res) => {
           currentStock: item.currentStock,
           threshold: item.threshold,
           weeklySales: item.weeklySales,
-          message: `${item.name} وصل لحد الطلب (${item.currentStock} متبقي).`
+          message: `${item.name} has reached the reorder threshold (${item.currentStock} units remaining).`
         });
       }
     }
@@ -96,8 +96,8 @@ async function generateChatAnswer(question, contextData, retries = 3) {
             role: "system",
             content: `You are an internal admin chat assistant for "Shefaa Pharmacy".
 Answer the admin's question using ONLY the JSON data provided below — do not invent numbers.
-Answer in ARABIC, clearly and directly, in 1-3 sentences.
-If the data needed to answer isn't available in the provided context, say so honestly in Arabic.
+Answer in ENGLISH, clearly and directly, in 1-3 sentences.
+If the data needed to answer isn't available in the provided context, say so honestly in English.
 
 Pharmacy Data:
 ${JSON.stringify(contextData)}`
