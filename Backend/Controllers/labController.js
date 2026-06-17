@@ -497,3 +497,35 @@ exports.uploadLabResult = async (req, res) => {
     res.status(500).json({ success: false, message: err.message });
   }
 };
+
+
+exports.updateNotificationSettings = async (req, res) => {
+  try {
+    const { newBookings, resultDeadlines, systemAlerts } = req.body;
+
+    const updatedLab = await Lab.findOneAndUpdate(
+      { userId: req.user._id },
+      {
+        $set: {
+          "notificationSettings.newBookings": newBookings,
+          "notificationSettings.resultDeadlines": resultDeadlines,
+          "notificationSettings.systemAlerts": systemAlerts
+        }
+      },
+      { new: true, select: 'notificationSettings' }
+    );
+
+    if (!updatedLab) {
+      return res.status(404).json({ success: false, message: "Center profile not found" });
+    }
+
+    res.status(200).json({
+      success: true,
+      message: "Notification settings updated successfully.",
+      settings: updatedLab.notificationSettings
+    });
+
+  } catch (err) {
+    res.status(500).json({ success: false, message: err.message });
+  }
+};
