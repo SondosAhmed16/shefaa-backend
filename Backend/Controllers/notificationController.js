@@ -126,11 +126,31 @@ exports.getLabNotificationsForUI = async (req, res) => {
     combinedNotifications.sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
 
     // E) تقسيم وتنسيق الداتا لـ (New) و (Earlier) بالظبط لتطابق كروت وتصميم الـ UI 📋
-    const notificationsGrouped = {
-      unreadCount: unreadCount + timeOutAlerts.length, // إجمالي العداد الكلي فوق شامل تنبيهات الوقت
-      new: combinedNotifications.filter(n => !n.isRead || n.type === 'timeout_alert'),
-      earlier: combinedNotifications.filter(n => n.isRead && n.type !== 'timeout_alert')
-    };
+// E) تقسيم وتنسيق الداتا لـ (New) و (Earlier) بشكل سليم 📋
+const notificationsGrouped = {
+  unreadCount: unreadCount + liveTrackAlerts.filter(n => n.type === 'timeout_alert' || (new Date() - new Date(n.createdAt)) < 60000).length, // العداد هيعد بس المتأخر جداً أو اللي جاي حالا في آخر دقيقة
+  
+  // الـ New هيكون فيه بس التنبيهات المتأخرة (Timeout) والحجوزات اللي لسه جاية حالا في آخر ساعة مثلاً
+  new: combinedNotifications.filter(n => {
+    if (n.type === 'timeout_alert') return true;
+    if (n.type === 'new_booking') {
+      // لو الريكويست بقاله أكتر من ساعة (60 دقيقة)، نعتبره اتشاف وننزله تحت في الـ Earlier تلقائياً
+      const minutesPassed = (new Date() - new Date(n.createdAt)) / (1000 * 60);
+      return minutesPassed <= 60; 
+    }
+    return !n.isRead; // للإشعارات العادية من الداتابيز
+  }),
+
+  // الـ Earlier هينزل فيه الإشعارات المقروءة والحجوزات الحية اللي خلاص عدا عليها وقت واتشافت
+  earlier: combinedNotifications.filter(n => {
+    if (n.type === 'timeout_alert') return false;
+    if (n.type === 'new_booking') {
+      const minutesPassed = (new Date() - new Date(n.createdAt)) / (1000 * 60);
+      return minutesPassed > 60; // لو عدا عليها ساعة تنزل هنا في الأرشيف القديم
+    }
+    return n.isRead; // للإشعارات العادية من الداتابيز
+  })
+};
 
     res.status(200).json(notificationsGrouped);
 
