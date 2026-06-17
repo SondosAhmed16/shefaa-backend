@@ -14,7 +14,7 @@ const { AzureOpenAI } = require("openai");
 const { openAIKey, openAIEndpoint } = require("../config/azureConfig");
 
 // Re-use the internal context builder from the existing controller
-const { buildContextForDoctor } = require("./aiContextController");
+const { buildContextForDoctor } = require("./Aicontextcontroller");
 // ⚠️  Make sure buildContextForDoctor is exported from aiContextController.js:
 //     module.exports.buildContextForDoctor = buildContextForDoctor;
 
