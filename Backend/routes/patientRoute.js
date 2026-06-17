@@ -65,5 +65,6 @@ router.post('/pharmacies/review', auth, authorizeRoles('patient'), reviewControl
 
 router.get('/search-centers', auth, patientController.patientSearch);
 
+router.get('/my-lab-results', auth, patientController.getPatientLabResults);
 
 module.exports = router;
