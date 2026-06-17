@@ -231,7 +231,7 @@ exports.getAIChatContext = async (userObj) => {
           as: "appointment",
         },
       },
-      { $unwind: { path: "$appointment", preserveNullAndEmpty: true } },
+      { $unwind: { path: "$appointment", preserveNullAndEmptyArrays: true } },
       {
         $group: {
           _id: "$appointment.clinic",
