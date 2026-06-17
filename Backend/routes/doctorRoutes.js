@@ -1,7 +1,7 @@
 const express = require('express');
 const router = express.Router();
 const doctorController = require('../Controllers/doctorController');
-const aiDoctorController = require('../Controllers/aiDoctorController');
+const aiDoctorController = require('../Controllers/AiDoctorController');
 const multer = require("multer");
 const cloudinary = require("cloudinary").v2;
 const { CloudinaryStorage } = require("multer-storage-cloudinary");
