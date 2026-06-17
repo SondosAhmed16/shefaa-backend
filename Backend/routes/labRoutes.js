@@ -84,6 +84,6 @@ router.get('/lab-notifications', auth, notificationController.getLabNotification
 
 router.patch('/notification-settings', auth, labController.updateNotificationSettings);
 
-
+router.get('/dashboard', auth, labController.getLabDashboardForUI);
 
 module.exports = router;
