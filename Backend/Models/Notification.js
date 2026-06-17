@@ -19,7 +19,9 @@ const notificationSchema = new mongoose.Schema({
       'low_stock',           // للصيدلية (تنبيه المخزن)
       'appointment',         // للدكتور والمريض (المواعيد)
       'payment_confirmed',   // تأكيد الدفع في سكرين التتبع
-      'lab_result',          // ننتقل له هنا لإشعار المريض بظهور النتيجة
+      'lab_result',  
+      'new_booking',    // 🟢 ضيفي ده هنا
+      'timeout_alert',        // ننتقل له هنا لإشعار المريض بظهور النتيجة
       'system'               // إشعارات عامة
     ],
     default: 'system'
