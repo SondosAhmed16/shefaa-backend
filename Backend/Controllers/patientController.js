@@ -6,6 +6,7 @@ const Notification = require('../Models/Notification');
 const Pharmacy = require('../Models/Pharmaces');
 const Order = require('../Models/Order');
 const MedicineStock = require('../Models/MedicineStock');
+const LabRequest = require('../Models/LabRequest');
 const Lab = require('../Models/Labs');
 const Service = require('../Models/Services');
 const User = require('../Models/Users');
@@ -1269,6 +1270,58 @@ exports.patientSearch = async (req, res) => {
       count: formattedCenters.length,
       isAIRanked: true, 
       centers: formattedCenters
+    });
+
+  } catch (err) {
+    res.status(500).json({ success: false, message: err.message });
+  }
+};
+
+
+exports.getPatientLabResults = async (req, res) => {
+  try {
+    const patient = await Patient.findOne({ userId: req.user._id });
+    if (!patient) {
+      return res.status(404).json({ success: false, message: "Patient profile not found" });
+    }
+
+    const completedResults = await LabRequest.find({
+      patientId: patient._id,
+      status: "completed"
+    })
+    .populate({
+      path: 'labId',
+      model: 'Lab',
+      populate: {
+        path: 'userId',
+        model: 'User',
+        select: 'name' 
+      }
+    })
+    .populate('services', 'name') 
+    .sort({ resultUploadedAt: -1 }) 
+    .lean();
+
+    const formattedResults = completedResults.map(reqItem => {
+      const fileName = reqItem.services && reqItem.services.length > 0
+        ? reqItem.services.map(s => s.name).join(', ')
+        : "Medical Analysis Report";
+
+      return {
+        requestId: reqItem._id,
+        fileName: fileName, 
+        labName: reqItem.labId?.userId?.name || "The Medical Center", 
+        uploadedAt: reqItem.resultUploadedAt || reqItem.updatedAt, 
+        fileUrl: reqItem.resultFile || "", 
+        fileType: reqItem.resultFileType || "image",
+        doctorNotes: "No specific notes provided by the specialist." 
+      };
+    });
+
+    res.status(200).json({
+      success: true,
+      count: formattedResults.length,
+      results: formattedResults
     });
 
   } catch (err) {
