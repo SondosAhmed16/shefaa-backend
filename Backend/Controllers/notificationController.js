@@ -53,24 +53,22 @@ exports.markAllRead = async (req, res) => {
   }
 };
 
-// 1. الدالة المخصصة والمنفصلة كلياً لإشعارات المعمل باللغة الإنجليزية 🇬🇧
 exports.getLabNotificationsForUI = async (req, res) => {
   try {
-    // A) جلب إشعارات المعمل الأساسية المسجلة من الداتابيز مرتبة من الأحدث
+    // A) جلب الإشعارات العادية والمباشرة من جدول الـ Notifications (إن وجدت)
     const allNotifications = await Notification.find({ recipient: req.user._id })
       .sort({ createdAt: -1 })
       .lean();
 
-    // B) حساب عدد الإشعارات الأساسية غير المقروءة لتظهر في العداد 🔢
     const unreadCount = allNotifications.filter(n => !n.isRead).length;
 
-    // C) جلب بروفايل المعمل الحالي لمعالجة تنبيهات الـ Deadline ديناميكياً
+    // B) جلب بروفايل المعمل الحالي
     const lab = await Lab.findOne({ userId: req.user._id });
     
-    let timeOutAlerts = [];
+    let liveTrackAlerts = []; // 🟢 الاسم هنا سليم وثابت
 
     if (lab) {
-      // جلب الطلبات المعلقة (pending) فقط عشان نحسب وقت تسليمها المتوقع
+      // جلب كافة الطلبات المعلقة (pending) لربطها فوراً بالشاشة 🧪
       const pendingRequests = await LabRequest.find({ labId: lab._id, status: "pending" })
         .populate({
           path: 'patientId',
@@ -78,79 +76,89 @@ exports.getLabNotificationsForUI = async (req, res) => {
           populate: { path: 'userId', model: 'User', select: 'name' }
         })
         .populate('services', 'name estimatedTime')
+        .sort({ createdAt: -1 }) 
         .lean();
 
       const now = new Date();
 
       pendingRequests.forEach(reqItem => {
-        // 🧠 الحسبة الذكية لأطول مده: نأخذ أقصى عدد ساعات بين الخدمات المطلوبة في الطلب
+        const patientName = reqItem.patientId?.userId?.name || "Offline Patient";
+        const servicesNames = reqItem.services && reqItem.services.length > 0 
+          ? reqItem.services.map(s => s.name).join(', ') 
+          : "Medical Analysis";
+        
+        // 🧠 الحسبة الذكية لأطول مدة تحليل
         let maxHours = 0;
         if (reqItem.services && reqItem.services.length > 0) {
           reqItem.services.forEach(service => {
-            const hours = parseInt(service.estimatedTime) || 24; // افتراضي 24 ساعة لو لم يحدد وقت
+            const hours = parseInt(service.estimatedTime) || 24;
             if (hours > maxHours) maxHours = hours;
           });
         }
 
-        // حساب تاريخ وقت التسليم المتوقع بناءً على أطول مدة (maxHours) ⏱️
+        // حساب موعد التسليم المتوقع
         const expectedDelivery = new Date(reqItem.createdAt);
         expectedDelivery.setHours(expectedDelivery.getHours() + maxHours);
 
-        // 🚨 إذا تخطى الوقت الحالي موعد التسليم والنتيجة لسه pending -> توليد تنبيه فوري بالإنجليزية
-        if (now > expectedDelivery) {
-          const patientName = reqItem.patientId?.userId?.name || "Offline Patient";
-          const servicesNames = reqItem.services ? reqItem.services.map(s => s.name).join(', ') : "Tests";
+        // 🏠 معرفة هل التحليل من البيت ولا في المعمل
+        const isHomeVisit = reqItem.viaAI ? "Yes (Home Visit)" : "No (At Center)";
 
-          timeOutAlerts.push({
-            _id: `timeout-${reqItem._id}`, // معرف فريد ومميز للفرونت إند
+        // 🚨 السيناريو الأول: لو الوقت الحالي تخطى موعد التسليم -> تنبيه استعجال متأخر
+        if (now > expectedDelivery) {
+          liveTrackAlerts.push({
+            _id: `timeout-${reqItem._id}`,
             title: "Analysis Timeout Alert! ⚠️",
             message: `The expected delivery time for patient (${patientName}) tests (${servicesNames}) has ended. Please upload the results immediately.`,
             type: "timeout_alert",
             isRead: false,
-            createdAt: expectedDelivery, // تاريخ التنبيه هو نفس وقت انتهاء الصلاحية للترتيب التاريخي
-            details: {
-              patientName,
-              servicesNames,
-              maxHoursCalculated: maxHours,
-              isHomeVisit: reqItem.viaAI || false 
-            }
+            createdAt: reqItem.createdAt, 
+            details: { patientName, servicesNames, isHomeVisit, maxHours }
+          });
+        } 
+        // 🆕 السيناريو الثاني: الريكويست لسه ميعاده مخلصش (لسه مكرية حالا) -> يظهر كـ حجز جديد فوراً!
+        else {
+          liveTrackAlerts.push({
+            _id: `newbook-${reqItem._id}`,
+            title: "New Booking Received! 🧪",
+            message: `New request registered for patient (${patientName}) for [${servicesNames}]. Home Visit: ${isHomeVisit}.`,
+            type: "new_booking",
+            isRead: false,
+            createdAt: reqItem.createdAt, 
+            details: { patientName, servicesNames, isHomeVisit, expectedIn: `${maxHours} hrs` }
           });
         }
       });
     }
 
-    // D) دمج الإشعارات القادمة من قاعدة البيانات مع تنبيهات انتهاء الوقت الفورية
-    const combinedNotifications = [...timeOutAlerts, ...allNotifications];
+    // C) دمج الإشعارات الحية والمباشرة مع إشعارات الداتابيز
+    const combinedNotifications = [...liveTrackAlerts, ...allNotifications];
 
-    // ترتيب الدمج النهائي تنازلياً (الأحدث دائماً فوق) لراحة المستخدم في الـ UI
+    // الترتيب التاريخي التنازلي: الأحدث تظهر أول حاجة فوق في الصفحة
     combinedNotifications.sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
 
-    // E) تقسيم وتنسيق الداتا لـ (New) و (Earlier) بالظبط لتطابق كروت وتصميم الـ UI 📋
-// E) تقسيم وتنسيق الداتا لـ (New) و (Earlier) بشكل سليم 📋
-const notificationsGrouped = {
-  unreadCount: unreadCount + liveTrackAlerts.filter(n => n.type === 'timeout_alert' || (new Date() - new Date(n.createdAt)) < 60000).length, // العداد هيعد بس المتأخر جداً أو اللي جاي حالا في آخر دقيقة
-  
-  // الـ New هيكون فيه بس التنبيهات المتأخرة (Timeout) والحجوزات اللي لسه جاية حالا في آخر ساعة مثلاً
-  new: combinedNotifications.filter(n => {
-    if (n.type === 'timeout_alert') return true;
-    if (n.type === 'new_booking') {
-      // لو الريكويست بقاله أكتر من ساعة (60 دقيقة)، نعتبره اتشاف وننزله تحت في الـ Earlier تلقائياً
-      const minutesPassed = (new Date() - new Date(n.createdAt)) / (1000 * 60);
-      return minutesPassed <= 60; 
-    }
-    return !n.isRead; // للإشعارات العادية من الداتابيز
-  }),
+    // D) تقسيم الداتا لـ (New) و (Earlier) بالظبط لتطابق كروت الـ UI 📋
+    const notificationsGrouped = {
+      // 🟢 تعديل التسمية هنا لـ liveTrackAlerts لتطابق التعريف فوق تماماً
+      unreadCount: unreadCount + liveTrackAlerts.filter(n => n.type === 'timeout_alert' || (new Date() - new Date(n.createdAt)) < 3600000).length, 
+      
+      new: combinedNotifications.filter(n => {
+        if (n.type === 'timeout_alert') return true;
+        if (n.type === 'new_booking') {
+          const minutesPassed = (new Date() - new Date(n.createdAt)) / (1000 * 60);
+          return minutesPassed <= 60; // لو بقاله أقل من ساعة يفضل في الـ New
+        }
+        return !n.isRead; 
+      }),
 
-  // الـ Earlier هينزل فيه الإشعارات المقروءة والحجوزات الحية اللي خلاص عدا عليها وقت واتشافت
-  earlier: combinedNotifications.filter(n => {
-    if (n.type === 'timeout_alert') return false;
-    if (n.type === 'new_booking') {
-      const minutesPassed = (new Date() - new Date(n.createdAt)) / (1000 * 60);
-      return minutesPassed > 60; // لو عدا عليها ساعة تنزل هنا في الأرشيف القديم
-    }
-    return n.isRead; // للإشعارات العادية من الداتابيز
-  })
-};
+      earlier: combinedNotifications.filter(n => {
+        if (n.type === 'timeout_alert') return false;
+        if (n.type === 'new_booking') {
+          const minutesPassed = (new Date() - new Date(n.createdAt)) / (1000 * 60);
+          return minutesPassed > 60; // لو عدا عليه ساعة ينزل تلقائي في الـ Earlier
+        }
+        return n.isRead; 
+      })
+    };
 
     res.status(200).json(notificationsGrouped);
 
