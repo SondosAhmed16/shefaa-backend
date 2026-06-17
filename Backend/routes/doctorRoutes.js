@@ -1,6 +1,7 @@
 const express = require('express');
 const router = express.Router();
 const doctorController = require('../Controllers/doctorController');
+const aiDoctorController = require('../Controllers/aiDoctorController');
 const multer = require("multer");
 const cloudinary = require("cloudinary").v2;
 const { CloudinaryStorage } = require("multer-storage-cloudinary");
@@ -27,26 +28,37 @@ const imageStorage = new CloudinaryStorage({
   },
 });
 
-
 const uploadImage = multer({ storage: imageStorage });
 
-// 1. Profile Routes
+// ─── 1. Profile Routes ────────────────────────────────────────────────────────
 router.get('/profile', auth, authorizeRoles('doctor'), doctorController.getDoctorProfile);
 router.put(
   '/profile',
   auth,
   authorizeRoles('doctor'),
-  uploadImage.single('image'), // <-- handles the image field
+  uploadImage.single('image'),
   runValidation,
   doctorController.updateDoctorProfile
 );
 
 router.get('/search-doctors', doctorController.searchDoctors);
 
-// 2. Appointments & Medical Records
+// ─── 2. Appointments & Medical Records ───────────────────────────────────────
 router.get('/doctorDashboard', auth, authorizeRoles('doctor'), doctorController.getDoctorDashboard);
 router.post('/add-medical-record', auth, authorizeRoles('doctor'), runValidation, doctorController.addMedicalRecord);
 
+router.get('/:doctorId/clinics', auth, authorizeRoles('doctor', 'patient'), doctorController.getDoctorClinics);
 
-router.get('/:doctorId/clinics', auth, authorizeRoles('doctor','patient'), doctorController.getDoctorClinics);
+// ─── 3. AI Assistant Routes ───────────────────────────────────────────────────
+
+// POST /api/doctor/ai/chat
+// Body: { message: string, history?: [{ role, content }] }
+router.post('/ai/chat', auth, authorizeRoles('doctor'), aiDoctorController.aiChat);
+
+// GET /api/doctor/ai/brief?lang=ar|en
+router.get('/ai/brief', auth, authorizeRoles('doctor'), aiDoctorController.aiDailyBrief);
+
+// GET /api/doctor/ai/financials?lang=ar|en
+router.get('/ai/financials', auth, authorizeRoles('doctor'), aiDoctorController.aiFinancialAnalysis);
+
 module.exports = router;
