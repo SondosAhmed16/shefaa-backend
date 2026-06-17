@@ -74,7 +74,7 @@ exports.getLabNotificationsForUI = async (req, res) => {
       const pendingRequests = await LabRequest.find({ labId: lab._id, status: "pending" })
         .populate({
           path: 'patientId',
-          model: 'Patients', 
+          model: 'Patient', 
           populate: { path: 'userId', model: 'User', select: 'name' }
         })
         .populate('services', 'name estimatedTime')
