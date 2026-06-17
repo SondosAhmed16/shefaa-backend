@@ -14,9 +14,7 @@ const { AzureOpenAI } = require("openai");
 const { openAIKey, openAIEndpoint } = require("../config/azureConfig");
 
 // Re-use the internal context builder from the existing controller
-const { buildContextForDoctor } = require("./Aicontextcontroller");
-// ⚠️  Make sure buildContextForDoctor is exported from aiContextController.js:
-//     module.exports.buildContextForDoctor = buildContextForDoctor;
+const { getAIChatContext } = require("./Aicontextcontroller");
 
 // ─── Azure OpenAI client (same as analyzeReport controller) ──────────────────
 
@@ -78,7 +76,7 @@ exports.aiChat = async (req, res) => {
     }
 
     // Build fresh context for this doctor
-    const ctxResult = await buildContextForDoctor(req.user);
+    const ctxResult = await getAIChatContext(req.user);
     if (!ctxResult.success) {
       return res.status(500).json({ message: ctxResult.error });
     }
@@ -152,7 +150,7 @@ exports.aiDailyBrief = async (req, res) => {
   try {
     const lang = (req.query.lang || "ar").toLowerCase();
 
-    const ctxResult = await buildContextForDoctor(req.user);
+    const ctxResult = await getAIChatContext(req.user);
     if (!ctxResult.success) {
       return res.status(500).json({ message: ctxResult.error });
     }
@@ -239,7 +237,7 @@ exports.aiFinancialAnalysis = async (req, res) => {
   try {
     const lang = (req.query.lang || "ar").toLowerCase();
 
-    const ctxResult = await buildContextForDoctor(req.user);
+    const ctxResult = await getAIChatContext(req.user);
     if (!ctxResult.success) {
       return res.status(500).json({ message: ctxResult.error });
     }
