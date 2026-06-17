@@ -82,8 +82,7 @@ router.post('/upload-result', auth, upload.single('resultFileUrl'), labControlle
 
 router.get('/lab-notifications', auth, notificationController.getLabNotificationsForUI);
 
-router.patch('/notification-settings', auth, labController.updateNotificationSettings);
-
+router.get('/lab-notifications', auth, notificationController.getLabNotificationsForUI);
 
 
 module.exports = router;
