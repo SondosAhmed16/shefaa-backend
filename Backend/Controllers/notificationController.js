@@ -137,26 +137,26 @@ exports.getLabNotificationsForUI = async (req, res) => {
     combinedNotifications.sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
 
     // D) تقسيم الداتا لـ (New) و (Earlier) بالظبط لتطابق كروت الـ UI 📋
-    const notificationsGrouped = {
-      // 🟢 تعديل التسمية هنا لـ liveTrackAlerts لتطابق التعريف فوق تماماً
-      unreadCount: unreadCount + liveTrackAlerts.filter(n => n.type === 'timeout_alert' || (new Date() - new Date(n.createdAt)) < 3600000).length, 
+   const notificationsGrouped = {
+      // العداد بيعد الحجوزات أو التنبيهات اللي اتعملت في آخر ساعة بس ولسه مقروءتش
+      unreadCount: unreadCount + liveTrackAlerts.filter(n => (new Date() - new Date(n.createdAt)) < 3600000).length, 
       
+      // الـ New: يشتمل على الإشعارات العادية غير المقروءة + أي طلب حي (جديد أو متأخر) بقاله أقل من ساعة
       new: combinedNotifications.filter(n => {
-        if (n.type === 'timeout_alert') return true;
-        if (n.type === 'new_booking') {
+        if (n.type === 'timeout_alert' || n.type === 'new_booking') {
           const minutesPassed = (new Date() - new Date(n.createdAt)) / (1000 * 60);
           return minutesPassed <= 60; // لو بقاله أقل من ساعة يفضل في الـ New
         }
-        return !n.isRead; 
+        return !n.isRead; // للإشعارات التقليدية من قاعدة البيانات
       }),
 
+      // الـ Earlier: ينزل فيه الإشعارات المقروءة + أي طلب حي (جديد أو متأخر) عدا عليه أكتر من ساعة
       earlier: combinedNotifications.filter(n => {
-        if (n.type === 'timeout_alert') return false;
-        if (n.type === 'new_booking') {
+        if (n.type === 'timeout_alert' || n.type === 'new_booking') {
           const minutesPassed = (new Date() - new Date(n.createdAt)) / (1000 * 60);
-          return minutesPassed > 60; // لو عدا عليه ساعة ينزل تلقائي في الـ Earlier
+          return minutesPassed > 60; // لو عدا عليه أكتر من ساعة (60 دقيقة) ينزل تلقائياً في الـ Earlier
         }
-        return n.isRead; 
+        return n.isRead; // للإشعارات التقليدية من قاعدة البيانات
       })
     };
 
