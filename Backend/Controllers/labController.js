@@ -497,3 +497,170 @@ exports.uploadLabResult = async (req, res) => {
     res.status(500).json({ success: false, message: err.message });
   }
 };
+
+
+exports.updateNotificationSettings = async (req, res) => {
+  try {
+    const { newBookings, resultDeadlines, systemAlerts } = req.body;
+
+    const updatedLab = await Lab.findOneAndUpdate(
+      { userId: req.user._id },
+      {
+        $set: {
+          "notificationSettings.newBookings": newBookings,
+          "notificationSettings.resultDeadlines": resultDeadlines,
+          "notificationSettings.systemAlerts": systemAlerts
+        }
+      },
+      { new: true, select: 'notificationSettings' }
+    );
+
+    if (!updatedLab) {
+      return res.status(404).json({ success: false, message: "Center profile not found" });
+    }
+
+    res.status(200).json({
+      success: true,
+      message: "Notification settings updated successfully.",
+      settings: updatedLab.notificationSettings
+    });
+
+  } catch (err) {
+    res.status(500).json({ success: false, message: err.message });
+  }
+};
+
+
+
+exports.getLabDashboardForUI = async (req, res) => {
+  try {
+    // 1. جلب بروفايل المعمل الحالي واسمه من جدول الـ User 🏢
+    const lab = await Lab.findOne({ userId: req.user._id }).populate('userId', 'name');
+    if (!lab) {
+      return res.status(404).json({ success: false, message: "Lab profile not found" });
+    }
+
+    // 2. ضبط توقيت "اليوم بيومه" (من الساعة 12:00 بالليل حتى 11:59 قبل منتصف الليل) ⏱️
+    const startOfToday = new Date();
+    startOfToday.setHours(0, 0, 0, 0);
+
+    const endOfToday = new Date();
+    endOfToday.setHours(23, 59, 59, 999);
+
+    const now = new Date();
+
+    // 3. جلب كافة طلبات المعمل المعلقة والمنتهية للتصفية والحسابات
+    const allLabRequests = await LabRequest.find({ labId: lab._id })
+      .populate({
+        path: 'patientId',
+        model: 'Patient', // استخدام المفرد الصحيح لتجنب الانهيار 🎯
+        populate: { path: 'userId', model: 'User', select: 'name' }
+      })
+      .populate('services', 'name estimatedTime')
+      .sort({ createdAt: -1 })
+      .lean();
+
+    // --- [ الحسابات والإحصائيات العلوية للـ Dashboard ] ---
+
+    // أ) عدد الريكويستات اللي اتعملت النهاردة بس 🔢
+    const todaysRequestsCount = allLabRequests.filter(reqItem => 
+      reqItem.createdAt >= startOfToday && reqItem.createdAt <= endOfToday
+    ).length;
+
+    // ب) عدد التحاليل اللي خلاص خلصت النهاردة بس (status: completed وتاريخ الرفع النهاردة) ✅
+    const completedTodayCount = allLabRequests.filter(reqItem => 
+      reqItem.status === 'completed' && 
+      reqItem.resultUploadedAt >= startOfToday && 
+      reqItem.resultUploadedAt <= endOfToday
+    ).length;
+
+    // ج) حساب التحاليل المتأخرة (Timeout) وجلب أسماء المرضى المتأخرين 🚨
+    let timeoutPatientsList = [];
+    
+    const pendingRequests = allLabRequests.filter(reqItem => reqItem.status === 'pending');
+
+    pendingRequests.forEach(reqItem => {
+      let maxHours = 0;
+      if (reqItem.services && reqItem.services.length > 0) {
+        reqItem.services.forEach(s => {
+          const hours = parseInt(s.estimatedTime) || 24;
+          if (hours > maxHours) maxHours = hours;
+        });
+      }
+
+      const expectedDelivery = new Date(reqItem.createdAt);
+      expectedDelivery.setHours(expectedDelivery.getHours() + maxHours);
+
+      // لو الوقت الحالي تخطى موعد التسليم المتوقع والنتيجة لسه pending
+      if (now > expectedDelivery) {
+        timeoutPatientsList.push({
+          requestId: reqItem._id,
+          patientName: reqItem.patientId?.userId?.name || "Offline Patient",
+          tests: reqItem.services ? reqItem.services.map(s => s.name).join(', ') : "Medical Analysis"
+        });
+      }
+    });
+
+    const timeoutRequestsCount = timeoutPatientsList.length;
+
+    // --- [ المصفوفات والقوائم السفلية للـ Dashboard ] ---
+
+    // 4. قائمة طلبات اليوم: Today's Requests (اسم البيشنت، اسم التحليل، الـ Ref، ووقت الحجز) 📋
+    const todaysRequestsList = allLabRequests
+      .filter(reqItem => reqItem.createdAt >= startOfToday && reqItem.createdAt <= endOfToday)
+      .map(reqItem => {
+        // تنسيق وقت الحجز ليظهر بشكل جمالي (مثال: 02:30 PM)
+        const bookingTime = new Date(reqItem.createdAt).toLocaleTimeString('en-US', {
+          hour: '2-digit',
+          minute: '2-digit'
+        });
+
+        return {
+          ref: reqItem._id.toString().substring(reqItem._id.toString().length - 6).toUpperCase(), // توليد كود الـ Ref من آخر 6 حقول بالـ ObjectId
+          patientName: reqItem.patientId?.userId?.name || "Offline Patient",
+          analysisName: reqItem.services ? reqItem.services.map(s => s.name).join(', ') : "General Test",
+          bookedAt: bookingTime,
+          status: reqItem.status
+        };
+      });
+
+    // 5. قائمة النتائج المرفوعة اليوم: Results uploaded today 📤
+    // (اسم البيشنت، اسم التحاليل، وقت الرفع، وهل الـ Patient Notified)
+    const resultsUploadedTodayList = allLabRequests
+      .filter(reqItem => 
+        reqItem.status === 'completed' && 
+        reqItem.resultUploadedAt >= startOfToday && 
+        reqItem.resultUploadedAt <= endOfToday
+      )
+      .map(reqItem => {
+        const uploadTime = new Date(reqItem.resultUploadedAt).toLocaleTimeString('en-US', {
+          hour: '2-digit',
+          minute: '2-digit'
+        });
+
+        return {
+          patientName: reqItem.patientId?.userId?.name || "Offline Patient",
+          analysisName: reqItem.services ? reqItem.services.map(s => s.name).join(', ') : "General Test",
+          uploadedAt: uploadTime,
+          patientNotified: true // طالما الريكويست اتحول completed فالسيستم بعت إشعار للمريض تلقائياً 🔔
+        };
+      });
+
+    // 6. إرسال الداتا مجمعة ومفلترة بالملّي للفرونت إند 🎯
+    res.status(200).json({
+      success: true,
+      labName: lab.userId?.name || "Your Lab Center",
+      stats: {
+        todaysRequests: todaysRequestsCount,
+        completedToday: completedTodayCount,
+        timeoutRequests: timeoutRequestsCount,
+        timeoutPatients: timeoutPatientsList // مصفوفة بأسماء المرضى المتأخرين لعرضها في الـ Pop-up أو الـ Alert
+      },
+      todaysRequests: todaysRequestsList,
+      resultsUploadedToday: resultsUploadedTodayList
+    });
+
+  } catch (err) {
+    res.status(500).json({ success: false, message: err.message });
+  }
+};

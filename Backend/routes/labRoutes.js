@@ -1,5 +1,6 @@
 const express = require('express');
 const router = express.Router();
+const notificationController = require('../Controllers/notificationController');
 const { check } = require('express-validator'); // 🟢 ضيفي السطر ده فوراً هنا!
 const labController = require('../Controllers/labController');
 const { auth } = require('../middleware/auth'); 
@@ -78,4 +79,11 @@ router.post('/add-request', auth, labController.createRequest);
 router.get('/results-dashboard', auth, labController.getLabResultsDashboard);
 
 router.post('/upload-result', auth, upload.single('resultFileUrl'), labController.uploadLabResult);
+
+router.get('/lab-notifications', auth, notificationController.getLabNotificationsForUI);
+
+router.patch('/notification-settings', auth, labController.updateNotificationSettings);
+
+router.get('/dashboard', auth, labController.getLabDashboardForUI);
+
 module.exports = router;
