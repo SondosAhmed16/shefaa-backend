@@ -63,7 +63,7 @@ const transactionSchema = new mongoose.Schema(
     // ── Relation ──────────────────────────────────────────────────────────────
     relatedModel: {
       type: String,
-      enum: ["Appointment"],
+      enum: ["Appointment", "Order"], // ✅ أضف Order
     },
     relatedId: {
       type: mongoose.Schema.Types.ObjectId,
