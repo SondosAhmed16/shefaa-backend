@@ -2,15 +2,22 @@ const mongoose = require("mongoose");
 
 const transactionSchema = new mongoose.Schema(
   {
+    // `payer` / `recipient` are NOT required — a null value means
+    // "the platform itself" is the counterparty. Examples:
+    //   - appointment_fee : payer = patient,   recipient = doctor
+    //   - pharmacy_order  : payer = patient,   recipient = pharmacy
+    //   - lab_test_fee    : payer = patient,   recipient = lab
+    //   - payout          : payer = null,      recipient = doctor/pharmacy/lab
+    //   - refund          : payer = null,      recipient = patient
     payer: {
       type: mongoose.Schema.Types.ObjectId,
       ref: "User",
-      required: true,
+      default: null,
     },
     recipient: {
       type: mongoose.Schema.Types.ObjectId,
       ref: "User",
-      required: true,
+      default: null,
     },
     amount: {
       type: Number,
@@ -22,7 +29,7 @@ const transactionSchema = new mongoose.Schema(
     },
     type: {
       type: String,
-      enum: ["appointment_fee"],
+      enum: ["appointment_fee", "lab_test_fee", "pharmacy_order", "refund", "payout"],
       required: true,
     },
     status: {
@@ -67,6 +74,16 @@ const transactionSchema = new mongoose.Schema(
   },
   { timestamps: true }
 );
+
+// Safety net: a transaction must involve at least one real party.
+// Both `payer` and `recipient` being null at the same time means the
+// platform is paying itself, which is never a valid transaction.
+transactionSchema.pre("validate", function (next) {
+  if (!this.payer && !this.recipient) {
+    return next(new Error("Transaction must have at least one of payer or recipient"));
+  }
+  next();
+});
 
 // ── Monthly summary helper ────────────────────────────────────────────────────
 // Returns total platformFeeAmount owed by a doctor for a given month.

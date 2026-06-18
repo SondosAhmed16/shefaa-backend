@@ -56,6 +56,14 @@ const orderSchema = new mongoose.Schema(
       },
     ],
 
+    // ── NEW: dual confirmation before an order is truly "Completed" ─────
+    // Both flags must be true before commission/Transaction logic runs.
+    pharmacyConfirmedCompletion: { type: Boolean, default: false },
+    pharmacyConfirmedAt:         { type: Date, default: null },
+    patientConfirmedCompletion:  { type: Boolean, default: false },
+    patientConfirmedAt:          { type: Date, default: null },
+    completedAt:                 { type: Date, default: null },
+
     deliveryAddress: {
       addressText:   { type: String },
       fullName:      { type: String },

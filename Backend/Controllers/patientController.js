@@ -10,6 +10,7 @@ const LabRequest = require('../Models/LabRequest');
 const Lab = require('../Models/Labs');
 const Service = require('../Models/Services');
 const User = require('../Models/Users');
+const Transaction = require("../Models/Transaction");
 const getPatientByUserId = async (userId) => {
   return await Patient.findOne({ userId: userId });
 };
@@ -1098,7 +1099,12 @@ exports.confirmOrderReceipt = async (req, res) => {
       return res.status(400).json({ success: false, message: "Order is already marked as Completed." });
     }
 
+    // ── 1. Complete the order ─────────────────────────────────────────────
     order.status = "Completed";
+    order.patientConfirmedCompletion = true;
+    order.patientConfirmedAt = new Date();
+    order.completedAt = new Date();
+
     if (order.paymentMethod === "Cash") {
       order.paymentStatus = "Paid";
     }
@@ -1110,10 +1116,38 @@ exports.confirmOrderReceipt = async (req, res) => {
 
     await order.save();
 
+    // ── 2. Create Transaction ─────────────────────────────────────────────
+    const COMMISSION_RATE = 0.01; // 1%
+    const commissionAmount = parseFloat((order.totalPrice * COMMISSION_RATE).toFixed(2));
+    const pharmacyEarning  = parseFloat((order.totalPrice - commissionAmount).toFixed(2));
+
+    const transaction = await Transaction.create({
+      payer:             order.userId,        // المريض
+      recipient:         order.pharmacyId,    // الصيدلية (User ref عن طريق Pharmacy)
+      amount:            order.totalPrice,
+      currency:          "EGP",
+      type:              "pharmacy_order",
+      status:            order.paymentMethod === "Cash" ? "completed" : "pending",
+      paymentMethod:     order.paymentMethod === "Cash" ? "cash" : "online",
+      platformFeeRate:   COMMISSION_RATE,
+      platformFeeAmount: commissionAmount,
+      platformFeePaid:   false,
+      relatedModel:      "Order",
+      relatedId:         order._id,
+      note: `Pharmacy order #${order.orderNumber} — pharmacy earns EGP ${pharmacyEarning}`,
+    });
+
+    // ── 3. Update Order with commission figures ───────────────────────────
+    order.commissionRate   = COMMISSION_RATE * 100; // store as % (1)
+    order.commissionAmount = commissionAmount;
+    order.pharmacyEarning  = pharmacyEarning;
+    await order.save();
+
+    // ── 4. Free up Delivery Man ───────────────────────────────────────────
     if (order.deliveryManId) {
-      await mongoose.model('DeliveryMan').findByIdAndUpdate(order.deliveryManId, {
-        $inc: { totalDeliveries: 1 }, // تزويد عدد التوصيلات الناجحة للطيار بمقدار 1
-        $set: { status: "Available" }  // تحويل حالة الطيار إلى متاح لاستقبال أوردرات تانية
+      await mongoose.model("DeliveryMan").findByIdAndUpdate(order.deliveryManId, {
+        $inc: { totalDeliveries: 1 },
+        $set: { status: "Available" },
       });
     }
 
@@ -1121,17 +1155,21 @@ exports.confirmOrderReceipt = async (req, res) => {
       success: true,
       message: "Order receipt confirmed successfully!",
       data: {
-        orderId: order._id,
-        orderNumber: order.orderNumber,
-        status: order.status,
-        paymentStatus: order.paymentStatus,
-        verifiedItems: order.items.map(item => ({
+        orderId:        order._id,
+        orderNumber:    order.orderNumber,
+        status:         order.status,
+        paymentStatus:  order.paymentStatus,
+        totalPrice:     order.totalPrice,
+        commission:     commissionAmount,
+        pharmacyEarns:  pharmacyEarning,
+        transactionId:  transaction._id,
+        verifiedItems:  order.items.map(item => ({
           medicineId: item.medicineId,
-          quantity: item.quantity,
-          price: item.price,
-          itemStatus: "Received" // ثابتة لكل الأدوية بناءً على تصميم شاشتك المرفقة
-        }))
-      }
+          quantity:   item.quantity,
+          price:      item.price,
+          itemStatus: "Received",
+        })),
+      },
     });
 
   } catch (err) {

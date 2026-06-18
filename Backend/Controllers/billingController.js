@@ -17,10 +17,6 @@ const monthBounds = (month, year) => ({
 });
 
 // ─── GET /admin/billing/summary ───────────────────────────────────────────────
-/**
- * Returns totals for the current month:
- * collected, outstanding, breakdown by entity type.
- */
 exports.getBillingSummary = async (req, res) => {
   try {
     const month = parseInt(req.query.month) || new Date().getMonth() + 1;
@@ -36,7 +32,6 @@ exports.getBillingSummary = async (req, res) => {
       .reduce((a, r) => a + r.dueAmount, 0);
     const totalUnpaid    = totalDue - totalCollected;
 
-    // Break down by entity type
     const byType = ['doctor', 'pharmacy', 'lab'].map(type => {
       const group = records.filter(r => r.entityType === type);
       return {
@@ -60,9 +55,6 @@ exports.getBillingSummary = async (req, res) => {
 };
 
 // ─── GET /admin/billing/records ───────────────────────────────────────────────
-/**
- * Paginated list of billing records, filterable by type/month/year/paid.
- */
 exports.getBillingRecords = async (req, res) => {
   try {
     const month  = parseInt(req.query.month) || new Date().getMonth() + 1;
@@ -85,9 +77,6 @@ exports.getBillingRecords = async (req, res) => {
 };
 
 // ─── PATCH /admin/billing/records/:id/pay ─────────────────────────────────────
-/**
- * Mark a billing record as paid and create a matching payout transaction.
- */
 exports.markPaid = async (req, res) => {
   try {
     const record = await BillingRecord.findById(req.params.id);
@@ -98,7 +87,9 @@ exports.markPaid = async (req, res) => {
     record.paidAt = new Date();
     await record.save();
 
-    // Create a payout transaction so it shows up in Finance screen
+    // Create a payout transaction so it shows up in Finance screen.
+    // NOTE: requires Transaction.payer to no longer be `required: true`
+    // in the model, since there is no "payer" for a platform → entity payout.
     await Transaction.create({
       recipient:    record.entity,
       amount:       record.dueAmount,
@@ -119,7 +110,11 @@ exports.markPaid = async (req, res) => {
 
 // ─── PATCH /admin/billing/records/:id/suspend ─────────────────────────────────
 /**
- * Suspend an entity for non-payment — deactivates their User account.
+ * Suspend an entity for non-payment.
+ * - Always deactivates the linked User account (isVerified = false).
+ * - For pharmacies, also flips `visibilityStatus` to "suspended" since the
+ *   public pharmacy listing is expected to filter on that field, not on
+ *   User.isVerified. Confirm this matches your public listing query.
  */
 exports.suspendForNonPayment = async (req, res) => {
   try {
@@ -131,6 +126,17 @@ exports.suspendForNonPayment = async (req, res) => {
 
     await User.findByIdAndUpdate(record.entity, { isVerified: false });
 
+    if (record.entityType === 'pharmacy') {
+      await Pharmacy.findOneAndUpdate(
+        { userId: record.entity },
+        {
+          visibilityStatus: 'suspended',
+          hiddenAt:         new Date(),
+          hiddenReason:     'Non-payment of platform commission',
+        }
+      );
+    }
+
     logger.warn(`Entity ${record.entity} suspended for non-payment`);
     res.json({ message: 'Account suspended for non-payment', record });
   } catch (err) {
@@ -140,26 +146,14 @@ exports.suspendForNonPayment = async (req, res) => {
 };
 
 // ─── POST /admin/billing/generate ─────────────────────────────────────────────
-/**
- * Generate (or refresh) billing records for a given month/year.
- * Safe to run multiple times — uses upsert so it won't duplicate.
- *
- * For doctors  : sums appointment fees from Transaction where type='appointment_fee'
- *                and recipient = doctor's userId (or falls back to Appointment count).
- * For pharmacies: sums pharmacy_order transactions where recipient = pharmacy userId.
- *
- * Call this:
- *   - Via a monthly cron job on the 1st of each month
- *   - Or manually from the admin panel
- */
 exports.generateMonthlyBilling = async (req, res) => {
   try {
     const month = parseInt(req.body.month) || new Date().getMonth() + 1;
     const year  = parseInt(req.body.year)  || new Date().getFullYear();
     const { start, end } = monthBounds(month, year);
 
-    const created   = [];
-    const updated   = [];
+    const created = [];
+    const updated = [];
 
     // ── DOCTORS ────────────────────────────────────────────────────────────────
     const doctors = await Doctor.find().populate('userId', 'name email isVerified').lean();
@@ -167,7 +161,6 @@ exports.generateMonthlyBilling = async (req, res) => {
     for (const doc of doctors) {
       if (!doc.userId) continue;
 
-      // Sum appointment fees received by this doctor this month
       const revenueAgg = await Transaction.aggregate([
         {
           $match: {
@@ -180,15 +173,19 @@ exports.generateMonthlyBilling = async (req, res) => {
         { $group: { _id: null, total: { $sum: '$amount' }, count: { $sum: 1 } } },
       ]);
 
-      // Fallback: count appointments if no transactions exist yet
       const appointmentCount = await Appointment.countDocuments({
         doctor:    doc._id,
         createdAt: { $gte: start, $lte: end },
       });
 
-      const totalRevenue  = revenueAgg[0]?.total ?? 0;
+      // Fallback when no Transactions exist yet for this doctor this month:
+      // estimate revenue from appointment count × current consultation price,
+      // so dueAmount isn't silently zero while activityCount shows real sessions.
+      const fallbackRevenue = appointmentCount * (doc.clinicConsultationPrice || 0);
+
+      const totalRevenue  = revenueAgg[0]?.total ?? fallbackRevenue;
       const activityCount = revenueAgg[0]?.count ?? appointmentCount;
-      const dueAmount     = parseFloat((totalRevenue * RATES.doctor).toFixed(2));
+      const dueAmount      = parseFloat((totalRevenue * RATES.doctor).toFixed(2));
 
       const result = await BillingRecord.findOneAndUpdate(
         { entity: doc.userId._id, month, year },
@@ -232,7 +229,7 @@ exports.generateMonthlyBilling = async (req, res) => {
 
       const totalRevenue  = revenueAgg[0]?.total ?? 0;
       const activityCount = revenueAgg[0]?.count ?? 0;
-      const dueAmount     = parseFloat((totalRevenue * RATES.pharmacy).toFixed(2));
+      const dueAmount      = parseFloat((totalRevenue * RATES.pharmacy).toFixed(2));
 
       const result = await BillingRecord.findOneAndUpdate(
         { entity: ph.userId._id, month, year },
@@ -276,9 +273,12 @@ exports.generateMonthlyBilling = async (req, res) => {
 
       const totalRevenue  = revenueAgg[0]?.total ?? 0;
       const activityCount = revenueAgg[0]?.count ?? 0;
-      const dueAmount     = parseFloat((totalRevenue * RATES.lab).toFixed(2));
+      const dueAmount      = parseFloat((totalRevenue * RATES.lab).toFixed(2));
 
-      await BillingRecord.findOneAndUpdate(
+      // FIX: capture the result and track it like doctors/pharmacies above —
+      // previously this loop didn't push to created/updated, so the response
+      // undercounted how many records were actually generated for labs.
+      const result = await BillingRecord.findOneAndUpdate(
         { entity: lab.userId._id, month, year },
         {
           $set: {
@@ -294,6 +294,10 @@ exports.generateMonthlyBilling = async (req, res) => {
         },
         { upsert: true, new: true }
       );
+
+      (result.createdAt?.getTime() === result.updatedAt?.getTime()
+        ? created : updated
+      ).push(result._id);
     }
 
     logger.info(`Billing generated for ${month}/${year} — ${created.length} created, ${updated.length} updated`);

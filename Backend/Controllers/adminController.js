@@ -366,32 +366,24 @@ exports.getRecentActivity = async (req, res) => {
     // ── Appointments ──────────────────────────────────────────────────────────
     let appointmentEvents = [];
     try {
-      const recentAppointments = await Appointment.find({ createdAt: { $gte: since } })
-        .sort({ createdAt: -1 })
-        .limit(limit)
-        .lean();   // ← no populate yet; we'll do it safely below
-
-      // Try to populate — if field names are wrong this won't crash the whole route
       const populated = await Appointment.find({ createdAt: { $gte: since } })
         .sort({ createdAt: -1 })
         .limit(limit)
-        .populate('patientId', 'name')   // ← change to 'patient' if that's your field name
-        .populate('doctorId',  'name specialization') // ← change to 'doctor' if needed
-        .lean()
-        .catch(() => recentAppointments); // fallback to unpopulated if populate fails
+        .populate({ path: 'doctor',  populate: { path: 'userId', select: 'name' } })
+        .populate({ path: 'patient', populate: { path: 'userId', select: 'name' } })
+        .lean();
 
       appointmentEvents = populated.map((apt) => ({
         type:       apt.status === 'cancelled' ? 'appointment_cancelled' : 'appointment_booked',
         event:      apt.status === 'cancelled' ? 'Appointment cancelled' : 'New booking',
-        entity:     apt.doctorId?.name || apt.doctor?.name || 'Unknown doctor',
-        user:       apt.patientId?.name || apt.patient?.name || 'Unknown patient',
+        entity:     apt.doctor?.userId?.name  || 'Unknown doctor',
+        user:       apt.patient?.userId?.name || 'Unknown patient',
         status:     apt.status === 'cancelled' ? 'Cancelled' : 'Confirmed',
         statusType: apt.status === 'cancelled' ? 'red' : 'green',
         createdAt:  apt.createdAt,
       }));
     } catch (aptErr) {
       logger.error('Appointments sub-query failed: ' + aptErr.message);
-      // continue with empty array — don't crash the whole route
     }
 
     // ── Users ─────────────────────────────────────────────────────────────────
