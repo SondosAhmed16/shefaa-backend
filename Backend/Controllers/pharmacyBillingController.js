@@ -4,7 +4,7 @@ const Pharmacy = require("../Models/Pharmaces");
 const Order = require("../Models/Order");
 const BillingRecord = require("../Models/BillingRecord");
 
-const PLATFORM_FEE_RATE = 0.05; // 5% للصيدليات — غيّريه على حسب المتفق عليه
+const PLATFORM_FEE_RATE = 0.01; // 5% للصيدليات — غيّريه على حسب المتفق عليه
 
 // ─── Helpers ────────────────────────────────────────────────────────────────
 
