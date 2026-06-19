@@ -1117,30 +1117,33 @@ exports.confirmOrderReceipt = async (req, res) => {
     await order.save();
 
     // ── 2. Create Transaction ─────────────────────────────────────────────
-    const COMMISSION_RATE = 0.01; // 1%
+    const COMMISSION_RATE = 0.01;
     const commissionAmount = parseFloat((order.totalPrice * COMMISSION_RATE).toFixed(2));
-    const pharmacyEarning  = parseFloat((order.totalPrice - commissionAmount).toFixed(2));
+    const pharmacyEarning = parseFloat((order.totalPrice - commissionAmount).toFixed(2));
+
+    // جيب الـ userId من الـ Pharmacy
+    const pharmacy = await Pharmacy.findById(order.pharmacyId).select("userId");
 
     const transaction = await Transaction.create({
-      payer:             order.userId,        // المريض
-      recipient:         order.pharmacyId,    // الصيدلية (User ref عن طريق Pharmacy)
-      amount:            order.totalPrice,
-      currency:          "EGP",
-      type:              "pharmacy_order",
-      status:            order.paymentMethod === "Cash" ? "completed" : "pending",
-      paymentMethod:     order.paymentMethod === "Cash" ? "cash" : "online",
-      platformFeeRate:   COMMISSION_RATE,
+      payer: order.userId,
+      recipient: pharmacy.userId,   // ✅ User._id مش Pharmacy._id
+      amount: order.totalPrice,
+      currency: "EGP",
+      type: "pharmacy_order",
+      status: order.paymentMethod === "Cash" ? "completed" : "pending",
+      paymentMethod: order.paymentMethod === "Cash" ? "cash" : "online",
+      platformFeeRate: COMMISSION_RATE,
       platformFeeAmount: commissionAmount,
-      platformFeePaid:   false,
-      relatedModel:      "Order",
-      relatedId:         order._id,
+      platformFeePaid: false,
+      relatedModel: "Order",
+      relatedId: order._id,
       note: `Pharmacy order #${order.orderNumber} — pharmacy earns EGP ${pharmacyEarning}`,
     });
 
     // ── 3. Update Order with commission figures ───────────────────────────
-    order.commissionRate   = COMMISSION_RATE * 100; // store as % (1)
+    order.commissionRate = COMMISSION_RATE * 100; // store as % (1)
     order.commissionAmount = commissionAmount;
-    order.pharmacyEarning  = pharmacyEarning;
+    order.pharmacyEarning = pharmacyEarning;
     await order.save();
 
     // ── 4. Free up Delivery Man ───────────────────────────────────────────
@@ -1155,18 +1158,18 @@ exports.confirmOrderReceipt = async (req, res) => {
       success: true,
       message: "Order receipt confirmed successfully!",
       data: {
-        orderId:        order._id,
-        orderNumber:    order.orderNumber,
-        status:         order.status,
-        paymentStatus:  order.paymentStatus,
-        totalPrice:     order.totalPrice,
-        commission:     commissionAmount,
-        pharmacyEarns:  pharmacyEarning,
-        transactionId:  transaction._id,
-        verifiedItems:  order.items.map(item => ({
+        orderId: order._id,
+        orderNumber: order.orderNumber,
+        status: order.status,
+        paymentStatus: order.paymentStatus,
+        totalPrice: order.totalPrice,
+        commission: commissionAmount,
+        pharmacyEarns: pharmacyEarning,
+        transactionId: transaction._id,
+        verifiedItems: order.items.map(item => ({
           medicineId: item.medicineId,
-          quantity:   item.quantity,
-          price:      item.price,
+          quantity: item.quantity,
+          price: item.price,
           itemStatus: "Received",
         })),
       },
@@ -1206,14 +1209,14 @@ exports.patientSearch = async (req, res) => {
     // 2. دعم ميزة "الروشتة المرفوعة" (تحسين البحث ليكون مرناً غير حساس لحالة الأحرف الجزئية)
     if (requiredServices) {
       // تحويل الخدمات المطلوبة لمصفوفة وعمل تريم للمسافات
-      const servicesArray = requiredServices.split(',').map(s => s.trim()); 
-      
+      const servicesArray = requiredServices.split(',').map(s => s.trim());
+
       // استخدام $regex لجعل البحث مرناً ولا يفشل بسبب كلمة "Test" أو "Scan" الزائدة
       const regexPatterns = servicesArray.map(service => new RegExp(service, 'i'));
 
-      const matchedServices = await Service.find({ 
+      const matchedServices = await Service.find({
         name: { $in: regexPatterns },
-        isActive: true 
+        isActive: true
       }).select('labId');
 
       const labIds = matchedServices.map(s => s.labId);
@@ -1222,16 +1225,16 @@ exports.patientSearch = async (req, res) => {
 
     // 3. السيرش بار العادي (في حال عدم وجود روشتة مرفوعة)
     if (search && !requiredServices) {
-      const matchedUsers = await User.find({ 
-        name: { $regex: search, $options: 'i' }, 
-        role: 'lab' 
+      const matchedUsers = await User.find({
+        name: { $regex: search, $options: 'i' },
+        role: 'lab'
       }).select('_id');
 
-      const matchedServices = await Service.find({ 
-        name: { $regex: search, $options: 'i' }, 
-        isActive: true 
+      const matchedServices = await Service.find({
+        name: { $regex: search, $options: 'i' },
+        isActive: true
       }).select('labId');
-      
+
       labQuery.$or = [
         { userId: { $in: matchedUsers.map(u => u._id) } },
         { _id: { $in: matchedServices.map(s => s.labId) } }
@@ -1274,7 +1277,7 @@ exports.patientSearch = async (req, res) => {
         insuranceAccepted: lab.insuranceAccepted || false,
         minPrice: minPrice,
         badge: null, // سيتم حسابه في الخطوة القادمة ديناميكياً
-        nextSlot: "Today 10:30 AM", 
+        nextSlot: "Today 10:30 AM",
         availableTags: services.map(s => ({ name: s.name, category: s.category, isPartner: false }))
       };
     }));
@@ -1306,7 +1309,7 @@ exports.patientSearch = async (req, res) => {
     res.status(200).json({
       success: true,
       count: formattedCenters.length,
-      isAIRanked: true, 
+      isAIRanked: true,
       centers: formattedCenters
     });
 
@@ -1327,18 +1330,18 @@ exports.getPatientLabResults = async (req, res) => {
       patientId: patient._id,
       status: "completed"
     })
-    .populate({
-      path: 'labId',
-      model: 'Lab',
-      populate: {
-        path: 'userId',
-        model: 'User',
-        select: 'name' 
-      }
-    })
-    .populate('services', 'name') 
-    .sort({ resultUploadedAt: -1 }) 
-    .lean();
+      .populate({
+        path: 'labId',
+        model: 'Lab',
+        populate: {
+          path: 'userId',
+          model: 'User',
+          select: 'name'
+        }
+      })
+      .populate('services', 'name')
+      .sort({ resultUploadedAt: -1 })
+      .lean();
 
     const formattedResults = completedResults.map(reqItem => {
       const fileName = reqItem.services && reqItem.services.length > 0
@@ -1347,12 +1350,12 @@ exports.getPatientLabResults = async (req, res) => {
 
       return {
         requestId: reqItem._id,
-        fileName: fileName, 
-        labName: reqItem.labId?.userId?.name || "The Medical Center", 
-        uploadedAt: reqItem.resultUploadedAt || reqItem.updatedAt, 
-        fileUrl: reqItem.resultFile || "", 
+        fileName: fileName,
+        labName: reqItem.labId?.userId?.name || "The Medical Center",
+        uploadedAt: reqItem.resultUploadedAt || reqItem.updatedAt,
+        fileUrl: reqItem.resultFile || "",
         fileType: reqItem.resultFileType || "image",
-        doctorNotes: "No specific notes provided by the specialist." 
+        doctorNotes: "No specific notes provided by the specialist."
       };
     });
 
