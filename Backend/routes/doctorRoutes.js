@@ -2,6 +2,7 @@ const express = require('express');
 const router = express.Router();
 const doctorController = require('../Controllers/doctorController');
 const aiDoctorController = require('../Controllers/AiDoctorController');
+const DoctorBillingController=require("../Controllers/DoctorBillingController")
 const multer = require("multer");
 const cloudinary = require("cloudinary").v2;
 const { CloudinaryStorage } = require("multer-storage-cloudinary");
@@ -60,5 +61,11 @@ router.get('/ai/brief', auth, authorizeRoles('doctor'), aiDoctorController.aiDai
 
 // GET /api/doctor/ai/financials?lang=ar|en
 router.get('/ai/financials', auth, authorizeRoles('doctor'), aiDoctorController.aiFinancialAnalysis);
+
+
+//billing
+router.get("/summary", auth, authorizeRoles('doctor'),DoctorBillingController.getBillingSummary);
+router.post("/pay", auth, authorizeRoles('doctor'),DoctorBillingController.payPlatformFee);
+router.get("/history", auth, authorizeRoles('doctor'),DoctorBillingController.getBillingHistory);
 
 module.exports = router;
