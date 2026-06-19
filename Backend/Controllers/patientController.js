@@ -1131,7 +1131,7 @@ exports.confirmOrderReceipt = async (req, res) => {
     let transaction = null;
     try {
       const pharmacy = await Pharmacy.findById(order.pharmacyId).select("userId");
-      
+
       if (!pharmacy) {
         console.error("Pharmacy not found for transaction creation");
       } else {
@@ -1168,7 +1168,7 @@ exports.confirmOrderReceipt = async (req, res) => {
       recipient: order.userId,
       title: "Order Completed",
       message: `Your order #${order.orderNumber} has been confirmed as received successfully!`,
-      type: "order"
+      type: "order_status"  // ← هنا كانت "order"
     });
 
     return res.status(200).json({
