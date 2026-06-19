@@ -1086,7 +1086,7 @@ exports.getPatientOrderTracking = async (req, res) => {
 };
 
 
-exports.confirmOrderReceipt = async (req, res) => {
+exports.confirmOrderReceipt = async (req, res, next) => {
   try {
     const { orderId } = req.body;
 
