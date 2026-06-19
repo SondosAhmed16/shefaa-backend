@@ -1116,46 +1116,60 @@ exports.confirmOrderReceipt = async (req, res) => {
 
     await order.save();
 
-    // ── 2. Create Transaction ─────────────────────────────────────────────
+    // ── 2. Calculate Commission ───────────────────────────────────────────
     const COMMISSION_RATE = 0.01;
     const commissionAmount = parseFloat((order.totalPrice * COMMISSION_RATE).toFixed(2));
     const pharmacyEarning = parseFloat((order.totalPrice - commissionAmount).toFixed(2));
 
-    let transaction = null;
-    try {
-      const pharmacy = await Pharmacy.findById(order.pharmacyId).select("userId");
-      transaction = await Transaction.create({
-        payer: order.userId,
-        recipient: pharmacy.userId,
-        amount: order.totalPrice,
-        currency: "EGP",
-        type: "pharmacy_order",
-        status: order.paymentMethod === "Cash" ? "completed" : "pending",
-        paymentMethod: order.paymentMethod === "Cash" ? "cash" : "online",
-        platformFeeRate: COMMISSION_RATE,
-        platformFeeAmount: commissionAmount,
-        platformFeePaid: false,
-        relatedModel: "Order",
-        relatedId: order._id,
-        note: `Pharmacy order #${order.orderNumber} — pharmacy earns EGP ${pharmacyEarning}`,
-      });
-    } catch (txErr) {
-      console.error("Transaction creation failed:", txErr.message);
-    }
-
     // ── 3. Update Order with commission figures ───────────────────────────
-    order.commissionRate = COMMISSION_RATE * 100; // store as % (1)
+    order.commissionRate = COMMISSION_RATE * 100;
     order.commissionAmount = commissionAmount;
     order.pharmacyEarning = pharmacyEarning;
     await order.save();
 
-    // ── 4. Free up Delivery Man ───────────────────────────────────────────
+    // ── 4. Create Transaction ─────────────────────────────────────────────
+    let transaction = null;
+    try {
+      const pharmacy = await Pharmacy.findById(order.pharmacyId).select("userId");
+      
+      if (!pharmacy) {
+        console.error("Pharmacy not found for transaction creation");
+      } else {
+        transaction = await Transaction.create({
+          payer: order.userId,
+          recipient: pharmacy.userId,
+          amount: order.totalPrice,
+          currency: "EGP",
+          type: "pharmacy_order",
+          status: order.paymentMethod === "Cash" ? "completed" : "pending",
+          paymentMethod: order.paymentMethod === "Cash" ? "cash" : "online",
+          platformFeeRate: COMMISSION_RATE,
+          platformFeeAmount: commissionAmount,
+          platformFeePaid: false,
+          relatedModel: "Order",
+          relatedId: order._id,
+          note: `Pharmacy order #${order.orderNumber} — pharmacy earns EGP ${pharmacyEarning}`,
+        });
+      }
+    } catch (txErr) {
+      console.error("Transaction creation failed:", txErr.message);
+    }
+
+    // ── 5. Free up Delivery Man ───────────────────────────────────────────
     if (order.deliveryManId) {
       await mongoose.model("DeliveryMan").findByIdAndUpdate(order.deliveryManId, {
         $inc: { totalDeliveries: 1 },
         $set: { status: "Available" },
       });
     }
+
+    // ── 6. Send Notification ──────────────────────────────────────────────
+    await Notification.create({
+      recipient: order.userId,
+      title: "Order Completed",
+      message: `Your order #${order.orderNumber} has been confirmed as received successfully!`,
+      type: "order"
+    });
 
     return res.status(200).json({
       success: true,
@@ -1168,7 +1182,7 @@ exports.confirmOrderReceipt = async (req, res) => {
         totalPrice: order.totalPrice,
         commission: commissionAmount,
         pharmacyEarns: pharmacyEarning,
-        transactionId: transaction._id,
+        transactionId: transaction ? transaction._id : null,
         verifiedItems: order.items.map(item => ({
           medicineId: item.medicineId,
           quantity: item.quantity,
