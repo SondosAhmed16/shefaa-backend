@@ -4,6 +4,7 @@ const pharmacyController = require('../Controllers/pharmacyController');
 const ai=require('../Controllers/pharmacyDailyai')
 const ai2=require('../Controllers/stockAlertChat')
 const context=require('../Controllers/Aicontextcontroller')
+const pharmacyBilling = require("../Controllers/pharmacyBillingController");
 // Importing Middlewares
 const { auth } = require('../middleware/auth');
 const { authorizeRoles } = require('../middleware/role');
@@ -66,5 +67,10 @@ router.get(
   authorizeRoles("pharmacy"),
   context.getAIChatContext
 );
+
+
+router.get( "/billing/summary", auth, authorizeRoles('pharmacy'), pharmacyBilling.getBillingSummary);
+router.post("/billing/pay",     auth, authorizeRoles('pharmacy'), pharmacyBilling.payPlatformFee);
+router.get( "/billing/history", auth, authorizeRoles('pharmacy'), pharmacyBilling.getBillingHistory);
 
 module.exports = router;
