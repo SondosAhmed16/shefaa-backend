@@ -1121,24 +1121,27 @@ exports.confirmOrderReceipt = async (req, res) => {
     const commissionAmount = parseFloat((order.totalPrice * COMMISSION_RATE).toFixed(2));
     const pharmacyEarning = parseFloat((order.totalPrice - commissionAmount).toFixed(2));
 
-    // جيب الـ userId من الـ Pharmacy
-    const pharmacy = await Pharmacy.findById(order.pharmacyId).select("userId");
-
-    const transaction = await Transaction.create({
-      payer: order.userId,
-      recipient: pharmacy.userId,   // ✅ User._id مش Pharmacy._id
-      amount: order.totalPrice,
-      currency: "EGP",
-      type: "pharmacy_order",
-      status: order.paymentMethod === "Cash" ? "completed" : "pending",
-      paymentMethod: order.paymentMethod === "Cash" ? "cash" : "online",
-      platformFeeRate: COMMISSION_RATE,
-      platformFeeAmount: commissionAmount,
-      platformFeePaid: false,
-      relatedModel: "Order",
-      relatedId: order._id,
-      note: `Pharmacy order #${order.orderNumber} — pharmacy earns EGP ${pharmacyEarning}`,
-    });
+    let transaction = null;
+    try {
+      const pharmacy = await Pharmacy.findById(order.pharmacyId).select("userId");
+      transaction = await Transaction.create({
+        payer: order.userId,
+        recipient: pharmacy.userId,
+        amount: order.totalPrice,
+        currency: "EGP",
+        type: "pharmacy_order",
+        status: order.paymentMethod === "Cash" ? "completed" : "pending",
+        paymentMethod: order.paymentMethod === "Cash" ? "cash" : "online",
+        platformFeeRate: COMMISSION_RATE,
+        platformFeeAmount: commissionAmount,
+        platformFeePaid: false,
+        relatedModel: "Order",
+        relatedId: order._id,
+        note: `Pharmacy order #${order.orderNumber} — pharmacy earns EGP ${pharmacyEarning}`,
+      });
+    } catch (txErr) {
+      console.error("Transaction creation failed:", txErr.message);
+    }
 
     // ── 3. Update Order with commission figures ───────────────────────────
     order.commissionRate = COMMISSION_RATE * 100; // store as % (1)
