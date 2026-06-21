@@ -1130,10 +1130,16 @@ exports.confirmOrderReceipt = async (req, res) => {
     // ── 4. Create Transaction ─────────────────────────────────────────────
     let transaction = null;
     try {
+      console.log("DEBUG → order.pharmacyId:", order.pharmacyId);
+
       const pharmacy = await Pharmacy.findById(order.pharmacyId).select("userId");
 
+      console.log("DEBUG → pharmacy found:", pharmacy);
+
       if (!pharmacy) {
-        console.error("Pharmacy not found for transaction creation");
+        console.error("Pharmacy not found for transaction creation. pharmacyId was:", order.pharmacyId);
+      } else if (!pharmacy.userId) {
+        console.error("Pharmacy found but has no userId:", pharmacy);
       } else {
         transaction = await Transaction.create({
           payer: order.userId,
@@ -1150,9 +1156,12 @@ exports.confirmOrderReceipt = async (req, res) => {
           relatedId: order._id,
           note: `Pharmacy order #${order.orderNumber} — pharmacy earns EGP ${pharmacyEarning}`,
         });
+
+        console.log("DEBUG → transaction created:", transaction._id);
       }
     } catch (txErr) {
-      console.error("Transaction creation failed:", txErr.message);
+      // ← هنا كان بيطبع .message بس، دلوقتي بيطبع الـ error كامل بالـ stack
+      console.error("Transaction creation failed (full error):", txErr);
     }
 
     // ── 5. Free up Delivery Man ───────────────────────────────────────────
@@ -1168,7 +1177,7 @@ exports.confirmOrderReceipt = async (req, res) => {
       recipient: order.userId,
       title: "Order Completed",
       message: `Your order #${order.orderNumber} has been confirmed as received successfully!`,
-      type: "order_status"  // ← هنا كانت "order"
+      type: "order_status"
     });
 
     return res.status(200).json({
