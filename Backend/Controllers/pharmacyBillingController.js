@@ -93,10 +93,10 @@ exports.payPlatformFee = async (req, res) => {
     try {
         const { month, year } = req.body;
         const m = parseInt(month, 10);
-        const y = parseInt(year, 10);
+        const y = parseInt(year,  10);
 
         if (!m || !y || m < 1 || m > 12) {
-            return res.status(400).json({ message: "month و year مطلوبين وصحيحين." });
+            return res.status(400).json({ message: "month and year are required and must be valid." });
         }
 
         const pharmacy = await Pharmacy.findOne({ userId: req.user._id }).lean();
@@ -104,74 +104,117 @@ exports.payPlatformFee = async (req, res) => {
             return res.status(404).json({ message: "Pharmacy profile not found." });
         }
 
-        // منع الدفع لشهر لسه مايجاش (مستقبلي بالكامل)
         const now = new Date();
-        if (
-            y > now.getFullYear() ||
-            (y === now.getFullYear() && m > now.getMonth() + 1)
-        ) {
-            return res.status(400).json({ message: "لا يمكن دفع رسوم شهر لم يبدأ بعد." });
-        }
+        const currentMonthInt = now.getMonth() + 1;
+        const currentYearInt  = now.getFullYear();
 
-        // هل مدفوع قبل كده؟
-        const existing = await BillingRecord.findOne({
-            entity: req.user._id,
-            month: m,
-            year: y,
-        });
+        const isCurrentOrFuture =
+            y > currentYearInt ||
+            (y === currentYearInt && m >= currentMonthInt);
 
-        if (existing?.paid) {
-            return res.status(409).json({
-                message: "رسوم هذا الشهر مدفوعة بالفعل.",
-                record: existing,
+        if (isCurrentOrFuture) {
+            const isCurrent = y === currentYearInt && m === currentMonthInt;
+            return res.status(400).json({
+                message: isCurrent
+                    ? "Cannot pay fees for the current month until it ends. You can pay once the month is fully completed."
+                    : "Cannot pay fees for a month that has not started yet.",
+                code: isCurrent ? "MONTH_NOT_ENDED" : "FUTURE_MONTH",
             });
         }
 
-        // الحساب الحقيقي من الداتابيز (مش من الفرونت)
+        // ── Recompute from DB (never trust frontend amounts) ─────────────────
         const { totalRevenue, activityCount } = await computePharmacyRevenue(
-            pharmacy._id,
-            m,
-            y
+            pharmacy._id, m, y
         );
 
         if (totalRevenue <= 0) {
-            return res.status(400).json({ message: "لا توجد إيرادات مكتملة لهذا الشهر." });
+            return res.status(400).json({
+                message: "No completed orders found for this month.",
+                code: "NO_REVENUE",
+            });
         }
 
         const dueAmount = parseFloat((totalRevenue * PLATFORM_FEE_RATE).toFixed(2));
 
-        // ── هنا مكان دمج Payment Gateway حقيقي (Paymob/Stripe) لو حابة ──
-        // مؤقتًا: نعتبر الدفع نجح فورًا (mock)
+        // ── Check existing record ─────────────────────────────────────────────
+        const existing = await BillingRecord.findOne({
+            entity: req.user._id, month: m, year: y,
+        });
+
+        // ── Option B: handle stale paid record (paid mid-month, revenue grew) ─
+        if (existing?.paid) {
+            const delta = parseFloat((dueAmount - existing.dueAmount).toFixed(2));
+
+            // No meaningful delta → genuinely already paid in full
+            if (delta <= 0) {
+                return res.status(409).json({
+                    message: "This month's fees have already been paid.",
+                    record: existing,
+                });
+            }
+
+            // Delta exists → correct the record and collect the difference
+            // TODO: charge `delta` via payment gateway before updating
+            const corrected = await BillingRecord.findByIdAndUpdate(
+                existing._id,
+                {
+                    $set: {
+                        totalRevenue,
+                        activityCount,
+                        dueAmount,
+                        paid:            true,
+                        paidAt:          new Date(),
+                        suspended:       false,
+                        correctionNote:  `Corrected on ${new Date().toISOString()}. Original due: ${existing.dueAmount} EGP. Delta charged: ${delta} EGP.`,
+                        correctionDelta: delta,
+                    },
+                },
+                { new: true }
+            );
+
+            return res.status(200).json({
+                message: "Payment corrected and delta collected successfully.",
+                delta,
+                record: corrected,
+            });
+        }
+
+        // ── Fresh payment ─────────────────────────────────────────────────────
+        // TODO: integrate real payment gateway here (Paymob / Stripe)
 
         const record = await BillingRecord.findOneAndUpdate(
             { entity: req.user._id, month: m, year: y },
             {
                 $set: {
-                    entity: req.user._id,
-                    entityProfile: pharmacy._id,
+                    entity:             req.user._id,
+                    entityProfile:      pharmacy._id,
                     entityProfileModel: "Pharmacy",
-                    entityType: "pharmacy",
+                    entityType:         "pharmacy",
                     month: m,
-                    year: y,
+                    year:  y,
                     totalRevenue,
                     activityCount,
-                    rate: PLATFORM_FEE_RATE,
+                    rate:      PLATFORM_FEE_RATE,
                     dueAmount,
-                    paid: true,
-                    paidAt: new Date(),
+                    paid:      true,
+                    paidAt:    new Date(),
                     suspended: false,
                 },
             },
             { upsert: true, new: true }
         );
 
-        // ── NEW: لو الصيدلية كانت متحجبة بسبب الفلوس، نرجعها visible ─────────────
-        const pharmacyFull = await Pharmacy.findById(pharmacy._id).select("visibilityStatus hiddenReason");
+        // ── Restore visibility if hidden for unpaid fees ──────────────────────
+        const pharmacyFull = await Pharmacy.findById(pharmacy._id)
+            .select("visibilityStatus hiddenReason");
 
-        if (pharmacyFull?.visibilityStatus === "hidden" && pharmacyFull.hiddenReason === "unpaid_platform_fee") {
+        if (
+            pharmacyFull?.visibilityStatus === "hidden" &&
+            pharmacyFull.hiddenReason      === "unpaid_platform_fee"
+        ) {
             const otherUnpaid = await BillingRecord.findOne({
-                entity: req.user._id,
-                paid: false,
+                entity:    req.user._id,
+                paid:      false,
                 dueAmount: { $gt: 0 },
             });
 
@@ -179,21 +222,19 @@ exports.payPlatformFee = async (req, res) => {
                 await Pharmacy.findByIdAndUpdate(pharmacy._id, {
                     $set: {
                         visibilityStatus: "active",
-                        hiddenReason: null,
-                        hiddenAt: null,
+                        hiddenReason:     null,
+                        hiddenAt:         null,
                     },
                 });
             }
         }
 
-        return res.status(200).json({
-            message: "paid successfully",
-            record,
-        });
+        return res.status(200).json({ message: "Paid successfully.", record });
     } catch (err) {
-        // race condition على الـ unique index
         if (err.code === 11000) {
-            return res.status(409).json({ message: "The payment process for this month has been pre-paid." });
+            return res.status(409).json({
+                message: "This month's payment has already been processed.",
+            });
         }
         console.error("pharmacy payPlatformFee error:", err);
         return res.status(500).json({ message: "Internal server error." });
