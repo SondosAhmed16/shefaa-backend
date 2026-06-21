@@ -5,6 +5,7 @@ const ai=require('../Controllers/pharmacyDailyai')
 const ai2=require('../Controllers/stockAlertChat')
 const context=require('../Controllers/Aicontextcontroller')
 const pharmacyBilling = require("../Controllers/pharmacyBillingController");
+const financeAI = require("../Controllers/pharmacyFinanceAI");
 // Importing Middlewares
 const { auth } = require('../middleware/auth');
 const { authorizeRoles } = require('../middleware/role');
@@ -61,6 +62,12 @@ router.post('/finance/pay',                        auth, authorizeRoles('pharmac
 router.post('/ai/daily-summary',   auth, authorizeRoles('pharmacy'), ai.generateDailySummary);
 router.post('/ai/stock-alerts',    auth, authorizeRoles('pharmacy'), ai2.getSmartStockAlerts);
 router.post('/ai/chat',            auth, authorizeRoles('pharmacy'), ai2.adminChatAssistant);
+router.get(
+  "/finance/report",
+  auth,
+  authorizeRoles("pharmacy"),
+  financeAI.getFinanceReport
+);
 // routes file
 router.get(
   "/ai/chat-context",
