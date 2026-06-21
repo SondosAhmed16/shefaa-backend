@@ -291,3 +291,71 @@ ${JSON.stringify(appointments.upcoming?.slice(0, 10) || [], null, 2)}
     return res.status(500).json({ message: "Internal server error.", error: err.message });
   }
 };
+
+
+exports.aiChat = async (req, res) => {
+  try {
+    const { message, history = [] } = req.body;
+
+    if (!message || typeof message !== "string") {
+      return res.status(400).json({ message: "message (string) is required." });
+    }
+
+    const ctxResult = await getAIChatContext(req.user);
+    if (!ctxResult.success) {
+      return res.status(500).json({ message: ctxResult.error });
+    }
+    const ctx = ctxResult.data;
+
+    const systemPrompt = `
+You are an intelligent AI assistant embedded in Chefaa, a medical appointment platform in Egypt.
+You are speaking directly with Dr. ${ctx.doctor.name}, a ${ctx.doctor.specialization} specialist.
+Answer ONLY in the same language the doctor uses (Arabic or English).
+Be concise, professional, and friendly. Do not make up data — use only what is provided below.
+
+=== DAILY BRIEFING ===
+${ctx.briefing}
+
+=== FULL CONTEXT (JSON) ===
+${JSON.stringify({ doctor: ctx.doctor, clinics: ctx.clinics, appointments: ctx.appointments, patients: ctx.patients, financials: ctx.financials }, null, 2)}
+`.trim();
+
+    const ANTHROPIC_API_KEY = process.env.ANTHROPIC_API_KEY;
+    if (!ANTHROPIC_API_KEY) {
+      return res.status(500).json({ message: "ANTHROPIC_API_KEY is not configured." });
+    }
+
+    const messages = [
+      ...history.map((h) => ({ role: h.role, content: h.content })),
+      { role: "user", content: message },
+    ];
+
+    const anthropicRes = await fetch("https://api.anthropic.com/v1/messages", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "x-api-key": ANTHROPIC_API_KEY,
+        "anthropic-version": "2023-06-01",
+      },
+      body: JSON.stringify({
+        model: "claude-sonnet-4-6",
+        max_tokens: 1024,
+        system: systemPrompt,
+        messages,
+      }),
+    });
+
+    if (!anthropicRes.ok) {
+      const errText = await anthropicRes.text();
+      return res.status(502).json({ message: "AI service error.", detail: errText });
+    }
+
+    const aiData = await anthropicRes.json();
+    const reply = aiData.content?.map((c) => c.text || "").join("") || "No response.";
+
+    return res.status(200).json({ reply, usage: aiData.usage || null });
+  } catch (err) {
+    console.error("[aiChat] error:", err);
+    return res.status(500).json({ message: "Internal server error." });
+  }
+};

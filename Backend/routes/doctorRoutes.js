@@ -3,6 +3,8 @@ const router = express.Router();
 const doctorController = require('../Controllers/doctorController');
 const aiDoctorController = require('../Controllers/AiDoctorController');
 const DoctorBillingController=require("../Controllers/DoctorBillingController")
+// في doctorRoutes.js — أضف الـ import ده
+const aiContextController = require('../Controllers/DoctorContext');
 const multer = require("multer");
 const cloudinary = require("cloudinary").v2;
 const { CloudinaryStorage } = require("multer-storage-cloudinary");
