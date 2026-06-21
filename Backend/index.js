@@ -4,6 +4,7 @@ const connectDB = require("./config/db.js");
 const bcrypt = require('bcryptjs');
 const passport = require('passport');
 require('./utils/cronJobs.js');
+require('./utils/billingCron.js')
 require('./config/passport.js');
 // Import Middlewares
 const securityMiddleware = require("./middleware/security.js"); 

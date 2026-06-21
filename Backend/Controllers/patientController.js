@@ -421,7 +421,7 @@ exports.searchPharmaciesAndMedicines = async (req, res) => {
           near: { type: "Point", coordinates: [longitude, latitude] },
           distanceField: "distance",
           spherical: true,
-          query: { openNow: true }
+          query: { openNow: true, visibilityStatus: "active" }   // ← ضفنا دي
         }
       },
       {
@@ -521,7 +521,7 @@ exports.getPharmacyProfileForPatient = async (req, res) => {
     const { id } = req.params;
 
     const pharmacy = await Pharmacy.findById(id).populate('userId', 'name email');
-    if (!pharmacy) {
+    if (!pharmacy || pharmacy.visibilityStatus !== "active") {
       return res.status(404).json({ success: false, message: "Pharmacy not found" });
     }
 
@@ -563,7 +563,7 @@ exports.getPharmacyMedicinesForPatient = async (req, res) => {
     const { category, search, page = 1, limit = 10 } = req.query;
 
     const pharmacy = await Pharmacy.findById(id);
-    if (!pharmacy) {
+    if (!pharmacy || pharmacy.visibilityStatus !== "active") {
       return res.status(404).json({ success: false, message: "Pharmacy not found" });
     }
 
