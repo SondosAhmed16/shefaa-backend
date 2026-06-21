@@ -91,6 +91,19 @@ const doctorSchema = new mongoose.Schema(
         ref: "Review",
       },
     ],
+    visibilityStatus: {
+      type: String,
+      enum: ["active", "hidden", "suspended"],
+      default: "active",
+    },
+    hiddenAt: {
+      type: Date,
+      default: null,
+    },
+    hiddenReason: {
+      type: String,
+      default: null,
+    },
   },
 
   {

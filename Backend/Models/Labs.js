@@ -91,6 +91,19 @@ const labSchema = new mongoose.Schema(
         ref: "LabTest",
       },
     ],
+    visibilityStatus: {
+      type: String,
+      enum: ["active", "hidden", "suspended"],
+      default: "active",
+    },
+    hiddenAt: {
+      type: Date,
+      default: null,
+    },
+    hiddenReason: {
+      type: String,
+      default: null,
+    },
   },
   { timestamps: true }
 );

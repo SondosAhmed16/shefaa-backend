@@ -1,6 +1,5 @@
 const BillingRecord = require('../Models/BillingRecord');
 const Transaction   = require('../Models/Transaction');
-const User          = require('../Models/Users');
 const Doctor        = require('../Models/Doctors');
 const Pharmacy      = require('../Models/Pharmaces');
 const Lab           = require('../Models/Labs');
@@ -8,13 +7,26 @@ const Appointment   = require('../Models/Appointment');
 const logger        = require('../config/loggerConfig');
 
 const RATES = { doctor: 0.015, pharmacy: 0.01, lab: 0.01 };
-
-// ─── HELPERS ──────────────────────────────────────────────────────────────────
+const PROFILE_MODELS = { doctor: Doctor, pharmacy: Pharmacy, lab: Lab };
 
 const monthBounds = (month, year) => ({
   start: new Date(year, month - 1, 1),
   end:   new Date(year, month, 0, 23, 59, 59, 999),
 });
+
+// ─── helper: يحظر/يفك الحظر عن entity — بيأثر على visibilityStatus بس،
+//     ومايلمسش isVerified أو أي حاجة متعلقة باللوجين ───────────────────────
+async function setEntityVisibility(record, status, reason = null) {
+  const Model = PROFILE_MODELS[record.entityType];
+  if (!Model) return;
+
+  await Model.findByIdAndUpdate(record.entityProfile, {
+    visibilityStatus: status,
+    ...(status === 'suspended'
+      ? { hiddenAt: new Date(), hiddenReason: reason }
+      : { hiddenAt: null, hiddenReason: null }),
+  });
+}
 
 // ─── GET /admin/billing/summary ───────────────────────────────────────────────
 exports.getBillingSummary = async (req, res) => {
@@ -27,9 +39,7 @@ exports.getBillingSummary = async (req, res) => {
       .lean();
 
     const totalDue       = records.reduce((a, r) => a + r.dueAmount, 0);
-    const totalCollected = records
-      .filter(r => r.paid)
-      .reduce((a, r) => a + r.dueAmount, 0);
+    const totalCollected = records.filter(r => r.paid).reduce((a, r) => a + r.dueAmount, 0);
     const totalUnpaid    = totalDue - totalCollected;
 
     const byType = ['doctor', 'pharmacy', 'lab'].map(type => {
@@ -43,11 +53,7 @@ exports.getBillingSummary = async (req, res) => {
       };
     });
 
-    res.json({
-      month, year,
-      totalDue, totalCollected, totalUnpaid,
-      byType, records,
-    });
+    res.json({ month, year, totalDue, totalCollected, totalUnpaid, byType, records });
   } catch (err) {
     logger.error('Error fetching billing summary: ' + err.message);
     res.status(500).json({ message: 'Error fetching billing summary' });
@@ -55,21 +61,31 @@ exports.getBillingSummary = async (req, res) => {
 };
 
 // ─── GET /admin/billing/records ───────────────────────────────────────────────
+// يدعم نوعين استخدام:
+//  1) شهر محدد (الديفولت): ?month=&year=
+//  2) كل التاريخ:           ?scope=all&status=paid|unpaid&entityType=&year=
 exports.getBillingRecords = async (req, res) => {
   try {
-    const month  = parseInt(req.query.month) || new Date().getMonth() + 1;
-    const year   = parseInt(req.query.year)  || new Date().getFullYear();
-    const filter = { month, year };
+    const { scope, status, entityType, year } = req.query;
+    const filter = {};
 
-    if (req.query.type) filter.entityType = req.query.type;
-    if (req.query.paid !== undefined) filter.paid = req.query.paid === 'true';
+    if (scope === 'all') {
+      if (year) filter.year = parseInt(year);
+    } else {
+      filter.month = parseInt(req.query.month) || new Date().getMonth() + 1;
+      filter.year  = parseInt(req.query.year)  || new Date().getFullYear();
+    }
+
+    if (entityType) filter.entityType = entityType;
+    if (status === 'paid')   filter.paid = true;
+    if (status === 'unpaid') filter.paid = false;
 
     const records = await BillingRecord.find(filter)
       .populate('entity', 'name email')
-      .sort({ dueAmount: -1 })
+      .sort({ paidAt: -1, createdAt: -1 })
       .lean();
 
-    res.json({ month, year, total: records.length, records });
+    res.json({ total: records.length, records });
   } catch (err) {
     logger.error('Error fetching billing records: ' + err.message);
     res.status(500).json({ message: 'Error fetching billing records' });
@@ -83,13 +99,14 @@ exports.markPaid = async (req, res) => {
     if (!record)      return res.status(404).json({ message: 'Billing record not found' });
     if (record.paid)  return res.status(400).json({ message: 'Already marked as paid' });
 
-    record.paid   = true;
-    record.paidAt = new Date();
+    record.paid      = true;
+    record.paidAt    = new Date();
+    record.suspended = false;
     await record.save();
 
-    // Create a payout transaction so it shows up in Finance screen.
-    // NOTE: requires Transaction.payer to no longer be `required: true`
-    // in the model, since there is no "payer" for a platform → entity payout.
+    // فك الحظر فورًا — يرجع يظهر للمرضى تاني
+    await setEntityVisibility(record, 'active');
+
     await Transaction.create({
       recipient:    record.entity,
       amount:       record.dueAmount,
@@ -100,7 +117,7 @@ exports.markPaid = async (req, res) => {
       note: `Monthly billing payout — ${record.entityType} — ${record.month}/${record.year}`,
     });
 
-    logger.info(`Billing record ${record._id} marked paid — EGP ${record.dueAmount}`);
+    logger.info(`Billing record ${record._id} marked paid & unblocked`);
     res.json({ message: 'Marked as paid', record });
   } catch (err) {
     logger.error('Error marking billing paid: ' + err.message);
@@ -108,41 +125,66 @@ exports.markPaid = async (req, res) => {
   }
 };
 
-// ─── PATCH /admin/billing/records/:id/suspend ─────────────────────────────────
-/**
- * Suspend an entity for non-payment.
- * - Always deactivates the linked User account (isVerified = false).
- * - For pharmacies, also flips `visibilityStatus` to "suspended" since the
- *   public pharmacy listing is expected to filter on that field, not on
- *   User.isVerified. Confirm this matches your public listing query.
- */
-exports.suspendForNonPayment = async (req, res) => {
-  try {
-    const record = await BillingRecord.findById(req.params.id);
-    if (!record) return res.status(404).json({ message: 'Billing record not found' });
+// ─── INTERNAL: التوليد (تستخدم من الـ endpoint ومن الكرون) ───────────────────
+exports.generateMonthlyBillingInternal = async (month, year) => {
+  const { start, end } = monthBounds(month, year);
+  const created = [];
+  const updated = [];
 
-    record.suspended = true;
-    await record.save();
+  const TYPE_CONFIG = [
+    { Model: Doctor,   txType: 'appointment_fee', rate: RATES.doctor,   entityType: 'doctor',   profileModel: 'Doctor'   },
+    { Model: Pharmacy, txType: 'pharmacy_order',  rate: RATES.pharmacy, entityType: 'pharmacy', profileModel: 'Pharmacy' },
+    { Model: Lab,      txType: 'lab_test_fee',    rate: RATES.lab,      entityType: 'lab',      profileModel: 'Lab'      },
+  ];
 
-    await User.findByIdAndUpdate(record.entity, { isVerified: false });
+  for (const { Model, txType, rate, entityType, profileModel } of TYPE_CONFIG) {
+    const entities = await Model.find().populate('userId', 'name email').lean();
 
-    if (record.entityType === 'pharmacy') {
-      await Pharmacy.findOneAndUpdate(
-        { userId: record.entity },
+    for (const ent of entities) {
+      if (!ent.userId) continue;
+
+      const revenueAgg = await Transaction.aggregate([
+        { $match: {
+            recipient: ent.userId._id,
+            type:      txType,
+            status:    'completed',
+            createdAt: { $gte: start, $lte: end },
+        }},
+        { $group: { _id: null, total: { $sum: '$amount' }, count: { $sum: 1 } } },
+      ]);
+
+      let totalRevenue  = revenueAgg[0]?.total ?? 0;
+      let activityCount = revenueAgg[0]?.count ?? 0;
+
+      // fallback خاص بالدكاترة لما مفيش transactions متسجلة لسه
+      if (entityType === 'doctor' && !revenueAgg[0]) {
+        const appointmentCount = await Appointment.countDocuments({
+          doctor: ent._id, createdAt: { $gte: start, $lte: end },
+        });
+        totalRevenue  = appointmentCount * (ent.clinicConsultationPrice || 0);
+        activityCount = appointmentCount;
+      }
+
+      const dueAmount = parseFloat((totalRevenue * rate).toFixed(2));
+
+      const result = await BillingRecord.findOneAndUpdate(
+        { entity: ent.userId._id, month, year },
         {
-          visibilityStatus: 'suspended',
-          hiddenAt:         new Date(),
-          hiddenReason:     'Non-payment of platform commission',
-        }
+          $set: {
+            entityProfile: ent._id, entityProfileModel: profileModel, entityType,
+            totalRevenue, activityCount, rate, dueAmount,
+          },
+          $setOnInsert: { paid: false, suspended: false },
+        },
+        { upsert: true, new: true }
       );
-    }
 
-    logger.warn(`Entity ${record.entity} suspended for non-payment`);
-    res.json({ message: 'Account suspended for non-payment', record });
-  } catch (err) {
-    logger.error('Error suspending entity: ' + err.message);
-    res.status(500).json({ message: 'Error suspending entity' });
+      (result.createdAt?.getTime() === result.updatedAt?.getTime() ? created : updated).push(result._id);
+    }
   }
+
+  logger.info(`Billing generated for ${month}/${year} — ${created.length} created, ${updated.length} updated`);
+  return { created: created.length, updated: updated.length };
 };
 
 // ─── POST /admin/billing/generate ─────────────────────────────────────────────
@@ -150,164 +192,32 @@ exports.generateMonthlyBilling = async (req, res) => {
   try {
     const month = parseInt(req.body.month) || new Date().getMonth() + 1;
     const year  = parseInt(req.body.year)  || new Date().getFullYear();
-    const { start, end } = monthBounds(month, year);
-
-    const created = [];
-    const updated = [];
-
-    // ── DOCTORS ────────────────────────────────────────────────────────────────
-    const doctors = await Doctor.find().populate('userId', 'name email isVerified').lean();
-
-    for (const doc of doctors) {
-      if (!doc.userId) continue;
-
-      const revenueAgg = await Transaction.aggregate([
-        {
-          $match: {
-            recipient: doc.userId._id,
-            type:      'appointment_fee',
-            status:    'completed',
-            createdAt: { $gte: start, $lte: end },
-          },
-        },
-        { $group: { _id: null, total: { $sum: '$amount' }, count: { $sum: 1 } } },
-      ]);
-
-      const appointmentCount = await Appointment.countDocuments({
-        doctor:    doc._id,
-        createdAt: { $gte: start, $lte: end },
-      });
-
-      // Fallback when no Transactions exist yet for this doctor this month:
-      // estimate revenue from appointment count × current consultation price,
-      // so dueAmount isn't silently zero while activityCount shows real sessions.
-      const fallbackRevenue = appointmentCount * (doc.clinicConsultationPrice || 0);
-
-      const totalRevenue  = revenueAgg[0]?.total ?? fallbackRevenue;
-      const activityCount = revenueAgg[0]?.count ?? appointmentCount;
-      const dueAmount      = parseFloat((totalRevenue * RATES.doctor).toFixed(2));
-
-      const result = await BillingRecord.findOneAndUpdate(
-        { entity: doc.userId._id, month, year },
-        {
-          $set: {
-            entityProfile:      doc._id,
-            entityProfileModel: 'Doctor',
-            entityType:         'doctor',
-            totalRevenue,
-            activityCount,
-            rate:               RATES.doctor,
-            dueAmount,
-          },
-          $setOnInsert: { paid: false, suspended: false },
-        },
-        { upsert: true, new: true }
-      );
-
-      (result.createdAt?.getTime() === result.updatedAt?.getTime()
-        ? created : updated
-      ).push(result._id);
-    }
-
-    // ── PHARMACIES ─────────────────────────────────────────────────────────────
-    const pharmacies = await Pharmacy.find().populate('userId', 'name email').lean();
-
-    for (const ph of pharmacies) {
-      if (!ph.userId) continue;
-
-      const revenueAgg = await Transaction.aggregate([
-        {
-          $match: {
-            recipient: ph.userId._id,
-            type:      'pharmacy_order',
-            status:    'completed',
-            createdAt: { $gte: start, $lte: end },
-          },
-        },
-        { $group: { _id: null, total: { $sum: '$amount' }, count: { $sum: 1 } } },
-      ]);
-
-      const totalRevenue  = revenueAgg[0]?.total ?? 0;
-      const activityCount = revenueAgg[0]?.count ?? 0;
-      const dueAmount      = parseFloat((totalRevenue * RATES.pharmacy).toFixed(2));
-
-      const result = await BillingRecord.findOneAndUpdate(
-        { entity: ph.userId._id, month, year },
-        {
-          $set: {
-            entityProfile:      ph._id,
-            entityProfileModel: 'Pharmacy',
-            entityType:         'pharmacy',
-            totalRevenue,
-            activityCount,
-            rate:               RATES.pharmacy,
-            dueAmount,
-          },
-          $setOnInsert: { paid: false, suspended: false },
-        },
-        { upsert: true, new: true }
-      );
-
-      (result.createdAt?.getTime() === result.updatedAt?.getTime()
-        ? created : updated
-      ).push(result._id);
-    }
-
-    // ── LABS ───────────────────────────────────────────────────────────────────
-    const labs = await Lab.find().populate('userId', 'name email').lean();
-
-    for (const lab of labs) {
-      if (!lab.userId) continue;
-
-      const revenueAgg = await Transaction.aggregate([
-        {
-          $match: {
-            recipient: lab.userId._id,
-            type:      'lab_test_fee',
-            status:    'completed',
-            createdAt: { $gte: start, $lte: end },
-          },
-        },
-        { $group: { _id: null, total: { $sum: '$amount' }, count: { $sum: 1 } } },
-      ]);
-
-      const totalRevenue  = revenueAgg[0]?.total ?? 0;
-      const activityCount = revenueAgg[0]?.count ?? 0;
-      const dueAmount      = parseFloat((totalRevenue * RATES.lab).toFixed(2));
-
-      // FIX: capture the result and track it like doctors/pharmacies above —
-      // previously this loop didn't push to created/updated, so the response
-      // undercounted how many records were actually generated for labs.
-      const result = await BillingRecord.findOneAndUpdate(
-        { entity: lab.userId._id, month, year },
-        {
-          $set: {
-            entityProfile:      lab._id,
-            entityProfileModel: 'Lab',
-            entityType:         'lab',
-            totalRevenue,
-            activityCount,
-            rate:               RATES.lab,
-            dueAmount,
-          },
-          $setOnInsert: { paid: false, suspended: false },
-        },
-        { upsert: true, new: true }
-      );
-
-      (result.createdAt?.getTime() === result.updatedAt?.getTime()
-        ? created : updated
-      ).push(result._id);
-    }
-
-    logger.info(`Billing generated for ${month}/${year} — ${created.length} created, ${updated.length} updated`);
-    res.json({
-      message: `Billing generated for ${month}/${year}`,
-      created: created.length,
-      updated: updated.length,
-    });
+    const result = await exports.generateMonthlyBillingInternal(month, year);
+    res.json({ message: `Billing generated for ${month}/${year}`, ...result });
   } catch (err) {
     logger.error('Error generating billing: ' + err.message);
     res.status(500).json({ message: 'Error generating billing', detail: err.message });
   }
+};
+
+// ─── INTERNAL: الحظر التلقائي بعد يوم سماح ────────────────────────────────────
+exports.autoSuspendUnpaid = async () => {
+  const now = new Date();
+  const records = await BillingRecord.find({
+    paid: false,
+    suspended: false,
+    $or: [
+      { year: { $lt: now.getFullYear() } },
+      { year: now.getFullYear(), month: { $lt: now.getMonth() + 1 } },
+    ],
+  });
+
+  for (const record of records) {
+    record.suspended = true;
+    await record.save();
+    await setEntityVisibility(record, 'suspended', 'Non-payment of platform commission');
+    logger.warn(`Entity ${record.entity} (${record.entityType}) auto-suspended — unpaid ${record.month}/${record.year}`);
+  }
+
+  return records.length;
 };
