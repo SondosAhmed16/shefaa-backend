@@ -56,9 +56,9 @@ router.get('/appointments/specializations', adminController.getAppointmentSpecia
 
 
 // Billing routes
-router.get('/billing/summary',               billingController.getBillingSummary);
-router.get('/billing/records',               billingController.getBillingRecords);
-router.patch('/billing/records/:id/pay',     billingController.markPaid);
-router.patch('/billing/records/:id/suspend', billingController.suspendForNonPayment);
-router.post('/billing/generate',             billingController.generateMonthlyBilling);
+router.get('/billing/summary',           billingController.getBillingSummary);
+router.get('/billing/records',           billingController.getBillingRecords);
+router.patch('/billing/records/:id/pay', billingController.markPaid);
+router.post('/billing/generate',         billingController.generateMonthlyBilling);
+
 module.exports = router;
