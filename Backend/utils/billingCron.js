@@ -1,5 +1,5 @@
 const cron = require('node-cron');
-const { autoSuspendUnpaidPharmacies } = require('../controllers/pharmacyBillingController');
+const { autoSuspendUnpaidPharmacies } = require('../Controllers/pharmacyBillingController');
 
 // بتشتغل الساعة 00:00 بالظبط أول كل شهر (يوم 1)
 cron.schedule('0 0 1 * *', async () => {
