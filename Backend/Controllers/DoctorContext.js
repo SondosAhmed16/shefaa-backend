@@ -4,14 +4,16 @@
 // any question the doctor has about their clinics, appointments,
 // patients, schedule, and financials.
 //
-// Route (example):
-//   GET /api/ai/context          → full context (used to prime the AI)
-//   POST /api/ai/chat            → send a message + context to Claude
+// Routes:
+//   GET  /api/ai/context   → full context JSON (HTTP handler)
+//   POST /api/ai/chat      → conversational assistant (Anthropic)
+//
+// Internal export:
+//   getAIChatContext(user) → used by aiDoctorController.js directly
 
 const Doctor = require("../Models/Doctors");
 const Clinic = require("../Models/Clinic");
 const Appointment = require("../Models/Appointment");
-const Patient = require("../Models/Patients");
 const Transaction = require("../Models/Transaction");
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
@@ -31,7 +33,7 @@ const getTodayUTC = () => {
 
 const getWeekBounds = () => {
   const today = getTodayUTC();
-  const dayOfWeek = today.getUTCDay(); // 0 = Sunday
+  const dayOfWeek = today.getUTCDay();
   const weekStart = new Date(today);
   weekStart.setUTCDate(today.getUTCDate() - dayOfWeek);
   const weekEnd = new Date(weekStart);
@@ -46,32 +48,31 @@ const getMonthBounds = () => {
   return { monthStart, monthEnd };
 };
 
-// ─── Main context builder ──────────────────────────────────────────────────────
+const countByStatus = (apps) =>
+  apps.reduce((acc, a) => {
+    acc[a.status] = (acc[a.status] || 0) + 1;
+    return acc;
+  }, {});
+
+// ─── Core context builder (shared by HTTP handler + internal callers) ─────────
 
 /**
- * GET /api/ai/context
+ * buildContextForDoctor(user)
  *
- * Returns a structured JSON object the frontend passes as the system
- * prompt / context to the AI assistant.
+ * Returns { success: true, data: { doctor, clinics, appointments, patients, financials, briefing } }
+ * or      { success: false, error: string }
  *
- * Sections returned:
- *   doctor        – profile, specialization, rating
- *   clinics       – each clinic with schedule summary
- *   appointments  – today / this week / upcoming / recent
- *   patients      – summary of unique patients seen
- *   financials    – this month's revenue, fee owed, per-clinic breakdown
- *   briefing      – pre-built natural-language daily briefing string
+ * This is the single source of truth — used by both the HTTP /api/ai/context
+ * endpoint and by aiDoctorController.js (aiChat, aiDailyBrief, aiFinancialAnalysis).
  */
-exports.getAIContext = async (req, res) => {
+async function buildContextForDoctor(user) {
   try {
     // ── 1. Doctor profile ─────────────────────────────────────────────────
-    const doctor = await Doctor.findOne({ userId: req.user._id })
+    const doctor = await Doctor.findOne({ userId: user._id })
       .populate("userId", "name email phone")
       .lean();
 
-    if (!doctor) {
-      return res.status(404).json({ message: "Doctor profile not found." });
-    }
+    if (!doctor) return { success: false, error: "Doctor profile not found." };
 
     const doctorContext = {
       name: doctor.userId?.name || "Unknown",
@@ -112,7 +113,7 @@ exports.getAIContext = async (req, res) => {
         city: c.city,
         address: c.address,
         price: c.price,
-        status: c.status,         // pending / approved / rejected
+        status: c.status,
         workingDays,
         slotDuration: c.defaultSchedule?.slotDuration,
         dailyCapacity: c.defaultSchedule?.dailyCapacity,
@@ -135,50 +136,22 @@ exports.getAIContext = async (req, res) => {
       .sort({ date: -1 })
       .lean();
 
-    // Today
     const todayApps = allAppointments.filter(
       (a) => new Date(a.date).getTime() === today.getTime()
     );
-
-    // This week
     const weekApps = allAppointments.filter((a) => {
       const d = new Date(a.date);
       return d >= weekStart && d < weekEnd;
     });
-
-    // This month
     const monthApps = allAppointments.filter((a) => {
       const d = new Date(a.date);
       return d >= monthStart && d < monthEnd;
     });
-
-    // Upcoming (future, not cancelled)
     const upcomingApps = allAppointments.filter(
       (a) =>
         new Date(a.date) >= today &&
         !["cancelled", "completed"].includes(a.status)
     );
-
-    // Recent 10 (for activity feed)
-    const recentApps = allAppointments.slice(0, 10).map((a) => ({
-      id: a._id,
-      patientName: a.patient?.userId?.name || "Unknown",
-      clinicName: a.clinic?.name || "Unknown",
-      date: a.date,
-      slotStart: a.slotStart,
-      slotEnd: a.slotEnd,
-      status: a.status,
-      paymentStatus: a.paymentStatus,
-      paymentOption: a.paymentOption,
-      isFollowUp: a.isFollowUp,
-    }));
-
-    // Status breakdown helpers
-    const countByStatus = (apps) =>
-      apps.reduce((acc, a) => {
-        acc[a.status] = (acc[a.status] || 0) + 1;
-        return acc;
-      }, {});
 
     const appointmentsContext = {
       today: {
@@ -225,12 +198,22 @@ exports.getAIContext = async (req, res) => {
         paymentOption: a.paymentOption,
         paymentStatus: a.paymentStatus,
       })),
-      recentActivity: recentApps,
+      recentActivity: allAppointments.slice(0, 10).map((a) => ({
+        id: a._id,
+        patientName: a.patient?.userId?.name || "Unknown",
+        clinicName: a.clinic?.name || "Unknown",
+        date: a.date,
+        slotStart: a.slotStart,
+        slotEnd: a.slotEnd,
+        status: a.status,
+        paymentStatus: a.paymentStatus,
+        paymentOption: a.paymentOption,
+        isFollowUp: a.isFollowUp,
+      })),
       totalAllTime: allAppointments.length,
     };
 
     // ── 4. Patients summary ───────────────────────────────────────────────
-    // Unique patients seen by this doctor
     const uniquePatientIds = [
       ...new Set(
         allAppointments
@@ -239,11 +222,12 @@ exports.getAIContext = async (req, res) => {
       ),
     ];
 
-    // Frequent patients (≥ 3 visits)
     const patientVisitCount = allAppointments.reduce((acc, a) => {
       const pid = a.patient?._id?.toString();
-      if (pid) acc[pid] = (acc[pid] || { count: 0, name: a.patient?.userId?.name || "Unknown" });
-      if (pid) acc[pid].count += 1;
+      if (pid) {
+        if (!acc[pid]) acc[pid] = { count: 0, name: a.patient?.userId?.name || "Unknown" };
+        acc[pid].count += 1;
+      }
       return acc;
     }, {});
 
@@ -253,34 +237,25 @@ exports.getAIContext = async (req, res) => {
       .slice(0, 10)
       .map(([id, v]) => ({ patientId: id, name: v.name, visits: v.count }));
 
-    // No-show / cancelled patients
-    const cancelledByPatient = allAppointments.filter(
-      (a) => a.status === "cancelled"
-    );
-    const noShowPatients = allAppointments.filter(
-      (a) => a.status === "no-show"
-    );
-
     const patientsContext = {
       totalUnique: uniquePatientIds.length,
       frequentPatients,
-      cancelledAppointments: cancelledByPatient.length,
-      noShowCount: noShowPatients.length,
+      cancelledAppointments: allAppointments.filter((a) => a.status === "cancelled").length,
+      noShowCount: allAppointments.filter((a) => a.status === "no-show").length,
     };
 
     // ── 5. Financials ─────────────────────────────────────────────────────
     const PLATFORM_FEE_RATE = 0.015;
 
-    // Revenue from completed transactions this month
     let monthlyRevenue = 0;
     let monthlyPlatformFee = 0;
     let monthlyTransactionCount = 0;
 
     try {
-      const pipeline = [
+      const [agg] = await Transaction.aggregate([
         {
           $match: {
-            recipient: req.user._id,
+            recipient: user._id,
             status: "completed",
             type: "appointment_fee",
             createdAt: { $gte: monthStart, $lt: monthEnd },
@@ -294,47 +269,35 @@ exports.getAIContext = async (req, res) => {
             count: { $sum: 1 },
           },
         },
-      ];
-
-      const [agg] = await Transaction.aggregate(pipeline);
+      ]);
       if (agg) {
         monthlyRevenue = parseFloat(agg.totalRevenue.toFixed(2));
         monthlyPlatformFee = parseFloat(agg.totalFee.toFixed(2));
         monthlyTransactionCount = agg.count;
       }
     } catch (_) {
-      // Transaction model might not exist in all environments — non-blocking
+      // Non-blocking — Transaction model may not exist in all environments
     }
 
-    // Per-clinic revenue estimate from upcoming paid appointments
     const revenuePerClinic = clinics.map((c) => {
       const clinicApps = monthApps.filter(
         (a) => a.clinic?._id?.toString() === c._id.toString()
       );
-      const completedCount = clinicApps.filter(
-        (a) => a.status === "completed"
-      ).length;
-      const upcomingCount = clinicApps.filter(
-        (a) => a.status === "upcoming"
-      ).length;
-      const estimatedRevenue = clinicApps.length * (c.price || 0);
-
       return {
         clinicId: c._id,
         clinicName: c.name,
         totalAppointments: clinicApps.length,
-        completed: completedCount,
-        upcoming: upcomingCount,
+        completed: clinicApps.filter((a) => a.status === "completed").length,
+        upcoming: clinicApps.filter((a) => a.status === "upcoming").length,
         pricePerSession: c.price,
-        estimatedMonthlyRevenue: estimatedRevenue,
+        estimatedMonthlyRevenue: clinicApps.length * (c.price || 0),
       };
     });
 
-    // Expected revenue from all upcoming appointments
-    const expectedRevenue = upcomingApps.reduce((sum, a) => {
-      const price = a.clinic?.price || 0;
-      return sum + price;
-    }, 0);
+    const expectedRevenue = upcomingApps.reduce(
+      (sum, a) => sum + (a.clinic?.price || 0),
+      0
+    );
 
     const financialsContext = {
       thisMonth: {
@@ -349,11 +312,11 @@ exports.getAIContext = async (req, res) => {
       currency: "EGP",
     };
 
-    // ── 6. Daily briefing (pre-built text for the AI) ─────────────────────
+    // ── 6. Daily briefing text ────────────────────────────────────────────
     const pendingClinics = clinicsContext.filter((c) => c.status === "pending");
     const approvedClinics = clinicsContext.filter((c) => c.status === "approved");
 
-    const briefingLines = [
+    const briefing = [
       `Doctor: Dr. ${doctorContext.name} — ${doctorContext.specialization}`,
       `Today (${today.toISOString().slice(0, 10)}): ${appointmentsContext.today.total} appointment(s) — ${appointmentsContext.today.byStatus.completed || 0} completed, ${appointmentsContext.today.byStatus.upcoming || 0} upcoming, ${appointmentsContext.today.byStatus.cancelled || 0} cancelled.`,
       `This week: ${appointmentsContext.thisWeek.total} appointments (${appointmentsContext.thisWeek.completedCount} done, ${appointmentsContext.thisWeek.cancelledCount} cancelled).`,
@@ -369,15 +332,39 @@ exports.getAIContext = async (req, res) => {
       .filter(Boolean)
       .join("\n");
 
-    // ── 7. Response ───────────────────────────────────────────────────────
+    return {
+      success: true,
+      data: {
+        doctor: doctorContext,
+        clinics: clinicsContext,
+        appointments: appointmentsContext,
+        patients: patientsContext,
+        financials: financialsContext,
+        briefing,
+      },
+    };
+  } catch (err) {
+    return { success: false, error: err.message };
+  }
+}
+
+// ─── Internal export — used directly by aiDoctorController.js ────────────────
+exports.getAIChatContext = buildContextForDoctor;
+
+// ─── HTTP handler: GET /api/ai/context ───────────────────────────────────────
+
+exports.getAIContext = async (req, res) => {
+  try {
+    const result = await buildContextForDoctor(req.user);
+
+    if (!result.success) {
+      return res.status(result.error === "Doctor profile not found." ? 404 : 500)
+        .json({ message: result.error });
+    }
+
     return res.status(200).json({
       generatedAt: new Date().toISOString(),
-      doctor: doctorContext,
-      clinics: clinicsContext,
-      appointments: appointmentsContext,
-      patients: patientsContext,
-      financials: financialsContext,
-      briefing: briefingLines,
+      ...result.data,
     });
   } catch (err) {
     console.error("getAIContext error:", err);
@@ -385,20 +372,15 @@ exports.getAIContext = async (req, res) => {
   }
 };
 
-// ─── AI Chat endpoint ─────────────────────────────────────────────────────────
+// ─── HTTP handler: POST /api/ai/chat (Anthropic) ─────────────────────────────
 
 /**
  * POST /api/ai/chat
  *
  * Body:
- *   message   {string}  – the doctor's question
- *   history   {Array}   – optional prior conversation turns
- *               [{ role: "user"|"assistant", content: string }]
- *
- * Fetches fresh context, builds the system prompt, then proxies to
- * the Anthropic messages API and streams back the reply.
- *
- * ⚠️  Set ANTHROPIC_API_KEY in your .env file.
+ *   message  {string}  – the doctor's question (Arabic or English)
+ *   history  {Array}   – optional prior turns
+ *              [{ role: "user"|"assistant", content: string }]
  */
 exports.aiChat = async (req, res) => {
   try {
@@ -408,23 +390,23 @@ exports.aiChat = async (req, res) => {
       return res.status(400).json({ message: "message (string) is required." });
     }
 
-    // ── Build fresh context ────────────────────────────────────────────────
-    // Re-use the same logic above but call it internally
-    const contextRes = await buildContextForDoctor(req.user);
-    if (!contextRes.success) {
-      return res.status(500).json({ message: contextRes.error });
+    const ctxResult = await buildContextForDoctor(req.user);
+    if (!ctxResult.success) {
+      return res.status(500).json({ message: ctxResult.error });
     }
+    const ctx = ctxResult.data;
 
-    const ctx = contextRes.data;
-
-    // ── System prompt ──────────────────────────────────────────────────────
     const systemPrompt = `
 You are an intelligent AI assistant embedded in Chefaa, a medical appointment platform in Egypt.
-You are speaking directly with Dr. ${ctx.doctor.name}, a ${ctx.doctor.specialization} doctor.
-Answer ONLY in the same language the doctor uses (Arabic or English).
-Be concise, helpful, and medically professional. Do not make up data — use only what is provided below.
+You are speaking directly with Dr. ${ctx.doctor.name}, a ${ctx.doctor.specialization} specialist.
 
-=== CLINIC CONTEXT ===
+RULES:
+- Answer ONLY in the same language the doctor uses (Arabic or English).
+- Be concise, professional, and friendly.
+- Do NOT invent numbers or facts — use ONLY the context provided below.
+- If the doctor asks about something not covered by the context, say so politely.
+
+=== DAILY BRIEFING ===
 ${ctx.briefing}
 
 === FULL CONTEXT (JSON) ===
@@ -441,7 +423,6 @@ ${JSON.stringify(
 )}
 `.trim();
 
-    // ── Call Anthropic API ─────────────────────────────────────────────────
     const ANTHROPIC_API_KEY = process.env.ANTHROPIC_API_KEY;
     if (!ANTHROPIC_API_KEY) {
       return res.status(500).json({ message: "ANTHROPIC_API_KEY is not configured." });
@@ -469,160 +450,17 @@ ${JSON.stringify(
 
     if (!anthropicRes.ok) {
       const errText = await anthropicRes.text();
-      console.error("Anthropic API error:", errText);
+      console.error("[aiChat] Anthropic API error:", errText);
       return res.status(502).json({ message: "AI service error.", detail: errText });
     }
 
     const aiData = await anthropicRes.json();
     const reply =
-      aiData.content?.map((c) => c.text || "").join("") ||
-      "No response from AI.";
+      aiData.content?.map((c) => c.text || "").join("") || "No response from AI.";
 
-    return res.status(200).json({
-      reply,
-      usage: aiData.usage || null,
-    });
+    return res.status(200).json({ reply, usage: aiData.usage || null });
   } catch (err) {
-    console.error("aiChat error:", err);
+    console.error("[aiChat] error:", err);
     return res.status(500).json({ message: "Internal server error." });
   }
 };
-
-// ─── Internal helper (reused by aiChat) ──────────────────────────────────────
-
-async function buildContextForDoctor(user) {
-  try {
-    const doctor = await Doctor.findOne({ userId: user._id })
-      .populate("userId", "name email phone")
-      .lean();
-
-    if (!doctor) return { success: false, error: "Doctor not found." };
-
-    const today = getTodayUTC();
-    const { weekStart, weekEnd } = getWeekBounds();
-    const { monthStart, monthEnd } = getMonthBounds();
-
-    const [clinics, allAppointments] = await Promise.all([
-      Clinic.find({ doctorId: doctor._id }).lean(),
-      Appointment.find({ doctor: doctor._id })
-        .populate({
-          path: "patient",
-          select: "userId age gender",
-          populate: { path: "userId", select: "name phone" },
-        })
-        .populate("clinic", "name city price")
-        .sort({ date: -1 })
-        .lean(),
-    ]);
-
-    const todayApps = allAppointments.filter(
-      (a) => new Date(a.date).getTime() === today.getTime()
-    );
-    const weekApps = allAppointments.filter((a) => {
-      const d = new Date(a.date);
-      return d >= weekStart && d < weekEnd;
-    });
-    const monthApps = allAppointments.filter((a) => {
-      const d = new Date(a.date);
-      return d >= monthStart && d < monthEnd;
-    });
-    const upcomingApps = allAppointments.filter(
-      (a) =>
-        new Date(a.date) >= today &&
-        !["cancelled", "completed"].includes(a.status)
-    );
-
-    const countByStatus = (apps) =>
-      apps.reduce((acc, a) => {
-        acc[a.status] = (acc[a.status] || 0) + 1;
-        return acc;
-      }, {});
-
-    const clinicsContext = clinics.map((c) => ({
-      id: c._id,
-      name: c.name,
-      city: c.city,
-      address: c.address,
-      price: c.price,
-      status: c.status,
-      workingDays: (c.defaultSchedule?.days || [])
-        .filter((d) => d.isActive)
-        .map((d) => ({
-          day: d.day,
-          hours: `${minsToTime(d.open)} – ${minsToTime(d.close)}`,
-        })),
-    }));
-
-    const pendingClinics = clinicsContext.filter((c) => c.status === "pending");
-    const approvedClinics = clinicsContext.filter((c) => c.status === "approved");
-
-    const uniquePatients = new Set(
-      allAppointments.map((a) => a.patient?._id?.toString()).filter(Boolean)
-    ).size;
-
-    // Quick financials
-    let monthlyRevenue = 0;
-    try {
-      const [agg] = await Transaction.aggregate([
-        {
-          $match: {
-            recipient: user._id,
-            status: "completed",
-            type: "appointment_fee",
-            createdAt: { $gte: monthStart, $lt: monthEnd },
-          },
-        },
-        { $group: { _id: null, total: { $sum: "$amount" } } },
-      ]);
-      monthlyRevenue = agg?.total || 0;
-    } catch (_) {}
-
-    const expectedRevenue = upcomingApps.reduce(
-      (sum, a) => sum + (a.clinic?.price || 0),
-      0
-    );
-
-    const briefingLines = [
-      `Doctor: Dr. ${doctor.userId?.name} — ${doctor.specialization}`,
-      `Today (${today.toISOString().slice(0, 10)}): ${todayApps.length} appointment(s) — ${todayApps.filter(a => a.status === "completed").length} completed, ${todayApps.filter(a => a.status === "upcoming").length} upcoming.`,
-      `This week: ${weekApps.length} appointments (${weekApps.filter(a => a.status === "completed").length} done).`,
-      `This month: ${monthApps.length} appointments.`,
-      `Clinics: ${clinics.length} total — ${approvedClinics.length} approved, ${pendingClinics.length} pending.`,
-      pendingClinics.length > 0 ? `Pending clinics: ${pendingClinics.map(c => c.name).join(", ")}.` : "",
-      `Total unique patients: ${uniquePatients}. Upcoming appointments: ${upcomingApps.length}.`,
-      `Revenue this month: ${monthlyRevenue} EGP confirmed. Expected from upcoming: ${expectedRevenue} EGP.`,
-      `Rating: ${doctor.rating}/5.`,
-    ]
-      .filter(Boolean)
-      .join("\n");
-
-    return {
-      success: true,
-      data: {
-        doctor: {
-          name: doctor.userId?.name,
-          specialization: doctor.specialization,
-          rating: doctor.rating,
-          yearsOfExperience: doctor.yearsOfExperience,
-        },
-        clinics: clinicsContext,
-        appointments: {
-          today: { total: todayApps.length, byStatus: countByStatus(todayApps), list: todayApps.map(a => ({ patientName: a.patient?.userId?.name, slot: a.slotStart, status: a.status, clinic: a.clinic?.name })) },
-          thisWeek: { total: weekApps.length, byStatus: countByStatus(weekApps) },
-          thisMonth: { total: monthApps.length, byStatus: countByStatus(monthApps) },
-          upcoming: upcomingApps.slice(0, 15).map(a => ({ patientName: a.patient?.userId?.name, date: new Date(a.date).toISOString().slice(0, 10), slot: a.slotStart, clinic: a.clinic?.name })),
-          totalAllTime: allAppointments.length,
-        },
-        patients: { totalUnique: uniquePatients },
-        financials: {
-          confirmedRevenueThisMonth: monthlyRevenue,
-          expectedFromUpcoming: expectedRevenue,
-          currency: "EGP",
-        },
-        briefing: briefingLines,
-      },
-    };
-  } catch (err) {
-    return { success: false, error: err.message };
-  }
-}

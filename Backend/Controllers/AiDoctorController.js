@@ -1,22 +1,24 @@
 // controllers/aiDoctorController.js
 //
 // AI-powered assistant for doctors — built on top of the rich context
-// object already assembled in aiContextController.js.
+// object assembled in aiContextController.js.
 //
-// Uses Azure OpenAI (gpt-4o) — same client setup as analyzeReport.
+// Uses Azure OpenAI (gpt-4o) for brief + financial analysis.
+// Uses Anthropic (claude-sonnet-4-6) for conversational chat — see aiContextController.js.
 //
 // Routes (wire these in your router):
-//   POST /api/ai/chat          → conversational assistant
-//   GET  /api/ai/brief         → AI-generated daily briefing
-//   GET  /api/ai/financials    → profit/loss analysis + predictions
+//   GET  /api/ai/brief       → AI-generated daily briefing      (Azure)
+//   GET  /api/ai/financials  → profit/loss analysis + predictions (Azure)
+//
+// Note: POST /api/ai/chat is handled in aiContextController.js
 
 const { AzureOpenAI } = require("openai");
 const { openAIKey, openAIEndpoint } = require("../config/azureConfig");
 
-// Re-use the internal context builder from the existing controller
-const { getAIChatContext } = require("./Aicontextcontroller");
+// ── Single source of truth for context ───────────────────────────────────────
+const { getAIChatContext } = require("./DoctorContext");
 
-// ─── Azure OpenAI client (same as analyzeReport controller) ──────────────────
+// ─── Azure OpenAI client ──────────────────────────────────────────────────────
 
 const openaiClient = new AzureOpenAI({
   endpoint: openAIEndpoint,
@@ -25,7 +27,7 @@ const openaiClient = new AzureOpenAI({
   deployment: "gpt-4o",
 });
 
-// ─── Shared helper: call the model and return parsed text ─────────────────────
+// ─── Shared helper: call Azure and return parsed text or JSON ─────────────────
 
 async function callAI({ systemPrompt, userPrompt, jsonMode = false, retries = 3 }) {
   for (let attempt = 1; attempt <= retries; attempt++) {
@@ -43,7 +45,6 @@ async function callAI({ systemPrompt, userPrompt, jsonMode = false, retries = 3 
       const raw = result.choices[0].message.content || "";
 
       if (jsonMode) {
-        // Strip accidental markdown fences before parsing
         const clean = raw.replace(/```json|```/g, "").trim();
         return JSON.parse(clean);
       }
@@ -57,91 +58,12 @@ async function callAI({ systemPrompt, userPrompt, jsonMode = false, retries = 3 
   }
 }
 
-// ─── 1. Conversational AI assistant ──────────────────────────────────────────
-
-/**
- * POST /api/ai/chat
- *
- * Body:
- *   message  {string}  – the doctor's question (Arabic or English)
- *   history  {Array}   – optional prior turns
- *              [{ role: "user"|"assistant", content: string }]
- */
-exports.aiChat = async (req, res) => {
-  try {
-    const { message, history = [] } = req.body;
-
-    if (!message || typeof message !== "string") {
-      return res.status(400).json({ message: "message (string) is required." });
-    }
-
-    // Build fresh context for this doctor
-    const ctxResult = await getAIChatContext(req.user);
-    if (!ctxResult.success) {
-      return res.status(500).json({ message: ctxResult.error });
-    }
-    const ctx = ctxResult.data;
-
-    const systemPrompt = `
-You are an intelligent AI assistant embedded in Chefaa, a medical appointment platform in Egypt.
-You are speaking directly with Dr. ${ctx.doctor.name}, a ${ctx.doctor.specialization} specialist.
-
-RULES:
-- Answer ONLY in the same language the doctor uses (Arabic or English).
-- Be concise, professional, and friendly.
-- Do NOT invent numbers or facts — use ONLY the context provided below.
-- If the doctor asks about something not covered by the context, say so politely.
-
-=== DAILY BRIEFING ===
-${ctx.briefing}
-
-=== FULL CONTEXT (JSON) ===
-${JSON.stringify(
-  {
-    doctor: ctx.doctor,
-    clinics: ctx.clinics,
-    appointments: ctx.appointments,
-    patients: ctx.patients,
-    financials: ctx.financials,
-  },
-  null,
-  2
-)}
-`.trim();
-
-    // Build message list (support multi-turn history)
-    const messages = [
-      { role: "system", content: systemPrompt },
-      ...history.map((h) => ({ role: h.role, content: h.content })),
-      { role: "user", content: message },
-    ];
-
-    const result = await openaiClient.chat.completions.create({
-      model: "gpt-4o-mini",
-      temperature: 0.3,
-      messages,
-    });
-
-    const reply = result.choices[0].message.content?.trim() || "No response.";
-
-    return res.status(200).json({
-      reply,
-      usage: result.usage || null,
-    });
-  } catch (err) {
-    console.error("[aiChat] error:", err);
-    return res.status(500).json({ message: "Internal server error.", error: err.message });
-  }
-};
-
-// ─── 2. AI-generated daily briefing ──────────────────────────────────────────
+// ─── 1. AI-generated daily briefing ──────────────────────────────────────────
 
 /**
  * GET /api/ai/brief
  *
  * Returns a polished, human-readable daily briefing for the doctor.
- * Language is auto-detected from the doctor's profile locale, defaulting
- * to Arabic for Egypt-based accounts.
  *
  * Query params:
  *   lang  "ar" | "en"  (default: "ar")
@@ -150,6 +72,7 @@ exports.aiDailyBrief = async (req, res) => {
   try {
     const lang = (req.query.lang || "ar").toLowerCase();
 
+    // ── Fetch context from the single shared builder ──────────────────────
     const ctxResult = await getAIChatContext(req.user);
     if (!ctxResult.success) {
       return res.status(500).json({ message: ctxResult.error });
@@ -215,20 +138,20 @@ ${JSON.stringify(ctx.patients, null, 2)}
   }
 };
 
-// ─── 3. Financial analysis + profit/loss prediction ───────────────────────────
+// ─── 2. Financial analysis + profit/loss prediction ───────────────────────────
 
 /**
  * GET /api/ai/financials
  *
  * Returns a structured JSON financial report with:
- *   - summary          : current month confirmed vs expected
- *   - profitLoss       : net after platform fees
+ *   - summary              : current month confirmed vs expected
+ *   - profitLoss           : net after platform fees
  *   - perClinicBreakdown
- *   - trends           : growth/decline signals
- *   - predictions      : projected revenue for next 30 days
- *   - recommendations  : AI-generated action items to boost revenue
- *   - riskFlags        : warnings (high cancellation rate, pending clinics, etc.)
- *   - aiNarrative      : human-readable paragraph summary
+ *   - trends               : growth/decline signals
+ *   - predictions          : projected revenue for next 30 days
+ *   - recommendations      : AI-generated action items to boost revenue
+ *   - riskFlags            : warnings (high cancellation rate, pending clinics, etc.)
+ *   - aiNarrative          : human-readable paragraph summary
  *
  * Query params:
  *   lang  "ar" | "en"  (default: "ar")
@@ -237,6 +160,7 @@ exports.aiFinancialAnalysis = async (req, res) => {
   try {
     const lang = (req.query.lang || "ar").toLowerCase();
 
+    // ── Fetch context from the single shared builder ──────────────────────
     const ctxResult = await getAIChatContext(req.user);
     if (!ctxResult.success) {
       return res.status(500).json({ message: ctxResult.error });
@@ -265,9 +189,9 @@ exports.aiFinancialAnalysis = async (req, res) => {
         : 0;
 
     const avgRevenuePerAppointment =
-      appointments.thisMonth.byStatus?.completed > 0
+      (appointments.thisMonth.byStatus?.completed || 0) > 0
         ? Math.round(
-            financials.confirmedRevenueThisMonth /
+            financials.thisMonth.confirmedRevenue /
               (appointments.thisMonth.byStatus.completed || 1)
           )
         : 0;
@@ -325,7 +249,9 @@ Required JSON structure:
 Doctor: Dr. ${ctx.doctor.name} — ${ctx.doctor.specialization}
 
 === THIS MONTH ===
-Confirmed revenue: ${financials.confirmedRevenueThisMonth} EGP
+Confirmed revenue: ${financials.thisMonth.confirmedRevenue} EGP
+Platform fee owed: ${financials.thisMonth.platformFeeOwed} EGP
+Net revenue: ${financials.thisMonth.netRevenue} EGP
 Expected from upcoming: ${financials.expectedFromUpcoming} EGP
 Completion rate: ${completionRate}%
 Cancellation rate: ${cancellationRate}%
@@ -351,7 +277,6 @@ ${JSON.stringify(appointments.upcoming?.slice(0, 10) || [], null, 2)}
 
     const analysis = await callAI({ systemPrompt, userPrompt, jsonMode: true });
 
-    // Validate critical fields exist
     if (!analysis || !analysis.summary || !analysis.predictions) {
       throw new Error("AI returned incomplete financial analysis.");
     }
