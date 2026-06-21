@@ -78,11 +78,10 @@ const transactionSchema = new mongoose.Schema(
 // Safety net: a transaction must involve at least one real party.
 // Both `payer` and `recipient` being null at the same time means the
 // platform is paying itself, which is never a valid transaction.
-transactionSchema.pre("validate", function (next) {
+transactionSchema.pre("validate", function () {
   if (!this.payer && !this.recipient) {
-    return next(new Error("Transaction must have at least one of payer or recipient"));
+    throw new Error("Transaction must have at least one of payer or recipient");
   }
-  next();
 });
 
 // ── Monthly summary helper ────────────────────────────────────────────────────
