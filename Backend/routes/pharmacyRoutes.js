@@ -61,11 +61,12 @@ router.post('/finance/pay',                        auth, authorizeRoles('pharmac
 router.post('/ai/daily-summary',   auth, authorizeRoles('pharmacy'), ai.generateDailySummary);
 router.post('/ai/stock-alerts',    auth, authorizeRoles('pharmacy'), ai2.getSmartStockAlerts);
 router.post('/ai/chat',            auth, authorizeRoles('pharmacy'), ai2.adminChatAssistant);
+// routes file
 router.get(
   "/ai/chat-context",
   auth,
   authorizeRoles("pharmacy"),
-  context.getAIChatContext
+  context.getAIChatContextRoute  // ← غير ده بس
 );
 
 
