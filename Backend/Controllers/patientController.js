@@ -406,10 +406,11 @@ exports.searchPharmaciesAndMedicines = async (req, res) => {
     const { query, type } = req.query; // type: 'pharmacy' أو 'medicine'
 
     const patient = await Patient.findOne({ userId: req.user.id });
-    if (!patient || !patient.address || !patient.address.location || !patient.address.location.coordinates) {
+    const coords = patient?.address?.location?.coordinates;
+    if (!patient || !coords || coords.length < 2 || !coords.every(c => typeof c === "number" && isFinite(c))) {
       return res.status(400).json({
         success: false,
-        message: "Patient location is required to calculate distance. Please update your profile location."
+        message: "Patient location is required. Please update your profile location."
       });
     }
 
