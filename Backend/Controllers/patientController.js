@@ -554,7 +554,6 @@ exports.searchPharmaciesAndMedicines = async (req, res) => {
 };
 
 
-// 1. جلب البيانات الأساسية لبروفايل الصيدلية للبيشنت
 exports.getPharmacyProfileForPatient = async (req, res) => {
   try {
     const { id } = req.params;
@@ -595,7 +594,6 @@ exports.getPharmacyProfileForPatient = async (req, res) => {
   }
 };
 
-// 2. جلب أدوية الصيدلية للبيشنت (مع التصنيفات والبحث والـ Pagination)
 exports.getPharmacyMedicinesForPatient = async (req, res) => {
   try {
     const { id } = req.params;
@@ -606,19 +604,16 @@ exports.getPharmacyMedicinesForPatient = async (req, res) => {
       return res.status(404).json({ success: false, message: "Pharmacy not found" });
     }
 
-    // بناء الفلتر الأساسي
     let filter = {
       pharmacyId: id,
       quantity: { $gt: 0 },
       inStock: true
     };
 
-    // الفلترة بالتصنيف (إذا لم تكن 'all')
     if (category && category !== 'all') {
       filter.category = { $regex: new RegExp(`^${category}$`, 'i') };
     }
 
-    // البحث باسم الدواء أو الاسم العلمي
     if (search) {
       filter.$or = [
         { medicineName: { $regex: search, $options: 'i' } },
@@ -626,7 +621,6 @@ exports.getPharmacyMedicinesForPatient = async (req, res) => {
       ];
     }
 
-    // حساب الـ Pagination
     const skip = (parseInt(page) - 1) * parseInt(limit);
     const totalMedicines = await MedicineStock.countDocuments(filter);
 
@@ -635,7 +629,6 @@ exports.getPharmacyMedicinesForPatient = async (req, res) => {
       .skip(skip)
       .limit(parseInt(limit));
 
-    // جلب الـ الأكثر مبيعاً أو الأكثر توفراً كـ اقتراحات (Top 5)
     const mostOrderedMedicines = await MedicineStock.find({
       pharmacyId: id,
       quantity: { $gt: 0 },
@@ -801,22 +794,20 @@ exports.getMedicineDetailsForPatient = async (req, res) => {
 
 exports.createOrder = async (req, res) => {
   try {
-    const userId = req.user._id; // أو req.user.id حسب الـ auth middleware عندك
+    const userId = req.user._id; 
     const {
       pharmacyId,
       items,
-      orderType, // "Delivery" أو "Pickup"
-      paymentMethod, // "Cash" أو "Visa" أو "Vodafone Cash" إلخ
-      deliveryAddressDetails // كائن يحتوي على (fullName, phone, city, street)
+      orderType, 
+      paymentMethod, 
+      deliveryAddressDetails 
     } = req.body;
 
-    // 1. التأكد من وجود الصيدلية
     const pharmacy = await Pharmacy.findById(pharmacyId);
     if (!pharmacy) {
       return res.status(404).json({ success: false, message: "Pharmacy not found" });
     }
 
-    // 2. حساب إجمالي الأدوية (Subtotal) والتأكد من الـ Stock
     let subtotal = 0;
     const orderItems = [];
 
@@ -835,11 +826,10 @@ exports.createOrder = async (req, res) => {
       orderItems.push({
         medicineId: medicine._id,
         quantity: item.quantity,
-        price: itemPrice // كـ snapshot لو السعر اتغير بعدين
+        price: itemPrice 
       });
     }
 
-    // 3. تحديد مصاريف التوصيل وعنوان الشحن بناءً على نوع الأوردر
     let deliveryFee = 0;
     let finalShippingAddress = null;
 
@@ -854,7 +844,7 @@ exports.createOrder = async (req, res) => {
       }
 
       finalShippingAddress = {
-        addressText: `${deliveryAddressDetails.cityDistrict}, ${deliveryAddressDetails.streetAddress}`, // تجميع العنوان نصياً ليتوافق مع السكيما عندك
+        addressText: `${deliveryAddressDetails.cityDistrict}, ${deliveryAddressDetails.streetAddress}`, 
         fullName: deliveryAddressDetails.fullName,
         phoneNumber: deliveryAddressDetails.phoneNumber,
         cityDistrict: deliveryAddressDetails.cityDistrict,
@@ -876,27 +866,21 @@ exports.createOrder = async (req, res) => {
           : { location: undefined })
       };
     } else if (orderType === "Pickup") {
-      // البيشنت هينزل يستلم بنفسه: التوصيل مجاني ومفيش عنوان شحن للمريض
       deliveryFee = 0;
       finalShippingAddress = null;
     } else {
       return res.status(400).json({ success: false, message: "Invalid order type. Must be Delivery or Pickup." });
     }
 
-    // 4. حساب التوتال النهائي
-    const discount = 0; // لو فيه برومو كود مستقبلاً
+    const discount = 0; 
     const totalPrice = subtotal + deliveryFee - discount;
 
-    // 5. توليد رقم الأوردر (مثال: SHF-123456)
     const orderNumber = `SHF-${Math.floor(100000 + Math.random() * 900000)}`;
 
-    // 6. تحديد حالة الدفع المبدئية
-    // لو كاش أو عند الوصول بيبقى Pending لحد ما يستلم، لو فيزا بيبقى Pending لحد ما بوابة الدفع تأكد
-    // In orderController.js (createOrder) — replace step 6 paymentStatus line:
+
     const CASH_METHODS = ["Cash"];
     const paymentStatus = CASH_METHODS.includes(paymentMethod) ? "Pending" : "Paid";
 
-    // 7. حفظ الأوردر في قاعدة البيانات
     const newOrder = new Order({
       pharmacyId,
       userId,
@@ -911,19 +895,17 @@ exports.createOrder = async (req, res) => {
       totalPrice,
       paymentMethod,
       paymentStatus,
-      deliveryAddress: finalShippingAddress // هيتخزن بـ null لو Pickup
+      deliveryAddress: finalShippingAddress 
     });
 
     await newOrder.save();
 
-    // 8. خصم الكميات من الـ Stock فوراً لحجز الأدوية
     for (const item of items) {
       await MedicineStock.findByIdAndUpdate(item.medicineId, {
         $inc: { quantity: -item.quantity }
       });
     }
 
-    // 9. الرد للفرونت إند بالبيانات المناسبة لكل سكرين
     return res.status(201).json({
       success: true,
       message: "Order created successfully",
@@ -931,7 +913,7 @@ exports.createOrder = async (req, res) => {
         orderId: newOrder._id,
         orderNumber: newOrder.orderNumber,
         orderType: newOrder.orderType,
-        pharmacyName: pharmacy.userId?.name || "Shefaa Pharmacy", // تأكدي من الـ populate لـ userId في الـ route لو محتاجة الاسم
+        pharmacyName: pharmacy.userId?.name || "Shefaa Pharmacy", 
         deliveryTime: orderType === "Delivery" ? (pharmacy.deliveryTime || "1 h") : "N/A (Pickup)",
         itemsCount: orderItems.reduce((acc, item) => acc + item.quantity, 0),
         subtotal: newOrder.subtotal,
@@ -1082,23 +1064,19 @@ exports.getPatientOrderTracking = async (req, res) => {
     return res.status(200).json({
       success: true,
       data: {
-        // الجزء العلوي من الشاشة
         orderNumber: order.orderNumber,
-        orderStatus: order.status, // New, Preparing, Ready, Shipped, Completed
+        orderStatus: order.status, 
 
-        // كارت معلومات الطيار (Rider Info Card)
         riderInfo: order.deliveryManId ? {
           name: order.deliveryManId.name,
           vehicle: order.deliveryManId.vehicle,
           rating: order.deliveryManId.rating || 5.0,
           totalDeliveries: order.deliveryManId.totalDeliveries || 0,
           phones: order.deliveryManId.phones
-        } : null, // هيكون null لو لسه الصيدلية ما عينتش طيار للأوردر
+        } : null, 
 
-        // تايم لاين الحالات الأربعة (Order Status Timeline)
         statusTimeline: timeline,
 
-        // محتويات الطلب والأسعار (Order Contents)
         orderContents: {
           items: order.items.map(item => ({
             medicineId: item.medicineId?._id || item.medicineId,
@@ -1138,7 +1116,6 @@ exports.confirmOrderReceipt = async (req, res) => {
       return res.status(400).json({ success: false, message: "Order is already marked as Completed." });
     }
 
-    // ── 1. Complete the order ─────────────────────────────────────────────
     order.status = "Completed";
     order.patientConfirmedCompletion = true;
     order.patientConfirmedAt = new Date();
@@ -1155,18 +1132,15 @@ exports.confirmOrderReceipt = async (req, res) => {
 
     await order.save();
 
-    // ── 2. Calculate Commission ───────────────────────────────────────────
     const COMMISSION_RATE = 0.01;
     const commissionAmount = parseFloat((order.totalPrice * COMMISSION_RATE).toFixed(2));
     const pharmacyEarning = parseFloat((order.totalPrice - commissionAmount).toFixed(2));
 
-    // ── 3. Update Order with commission figures ───────────────────────────
     order.commissionRate = COMMISSION_RATE * 100;
     order.commissionAmount = commissionAmount;
     order.pharmacyEarning = pharmacyEarning;
     await order.save();
 
-    // ── 4. Create Transaction ─────────────────────────────────────────────
     let transaction = null;
     try {
       console.log("DEBUG → order.pharmacyId:", order.pharmacyId);
@@ -1199,11 +1173,9 @@ exports.confirmOrderReceipt = async (req, res) => {
         console.log("DEBUG → transaction created:", transaction._id);
       }
     } catch (txErr) {
-      // ← هنا كان بيطبع .message بس، دلوقتي بيطبع الـ error كامل بالـ stack
       console.error("Transaction creation failed (full error):", txErr);
     }
 
-    // ── 5. Free up Delivery Man ───────────────────────────────────────────
     if (order.deliveryManId) {
       await mongoose.model("DeliveryMan").findByIdAndUpdate(order.deliveryManId, {
         $inc: { totalDeliveries: 1 },
@@ -1211,7 +1183,6 @@ exports.confirmOrderReceipt = async (req, res) => {
       });
     }
 
-    // ── 6. Send Notification ──────────────────────────────────────────────
     await Notification.create({
       recipient: order.userId,
       title: "Order Completed",
@@ -1255,7 +1226,6 @@ exports.patientSearch = async (req, res) => {
 
     let labQuery = {};
 
-    // 1. فلاتر الـ Type والخدمة المنزلية والمواعيد
     if (type) {
       if (type === 'scan') labQuery.facilityType = { $in: ['radiology center', 'both'] };
       else if (type === 'lab') labQuery.facilityType = { $in: ['lab', 'both'] };
@@ -1271,12 +1241,9 @@ exports.patientSearch = async (req, res) => {
       labQuery["workingHours.close"] = { $gt: currentHour };
     }
 
-    // 2. دعم ميزة "الروشتة المرفوعة" (تحسين البحث ليكون مرناً غير حساس لحالة الأحرف الجزئية)
     if (requiredServices) {
-      // تحويل الخدمات المطلوبة لمصفوفة وعمل تريم للمسافات
       const servicesArray = requiredServices.split(',').map(s => s.trim());
 
-      // استخدام $regex لجعل البحث مرناً ولا يفشل بسبب كلمة "Test" أو "Scan" الزائدة
       const regexPatterns = servicesArray.map(service => new RegExp(service, 'i'));
 
       const matchedServices = await Service.find({
@@ -1288,7 +1255,6 @@ exports.patientSearch = async (req, res) => {
       labQuery._id = { $in: labIds };
     }
 
-    // 3. السيرش بار العادي (في حال عدم وجود روشتة مرفوعة)
     if (search && !requiredServices) {
       const matchedUsers = await User.find({
         name: { $regex: search, $options: 'i' },
@@ -1306,7 +1272,6 @@ exports.patientSearch = async (req, res) => {
       ];
     }
 
-    // 4. جلب البيانات وحساب المسافة بالـ GPS
     let labs = [];
     if (lat && lng) {
       labs = await Lab.aggregate([
@@ -1325,7 +1290,6 @@ exports.patientSearch = async (req, res) => {
       labs = await Lab.find(labQuery).populate('userId', 'name email phoneNumber').lean();
     }
 
-    // 5. تجميع داتا الخدمات والأسعار بشكل ديناميكي
     let formattedCenters = await Promise.all(labs.map(async (lab) => {
       const services = await Service.find({ labId: lab._id, isActive: true });
       const minPrice = services.length > 0 ? Math.min(...services.map(s => s.price)) : 0;
@@ -1341,36 +1305,31 @@ exports.patientSearch = async (req, res) => {
         homeServiceAvailable: lab.homeSampleCollection || false,
         insuranceAccepted: lab.insuranceAccepted || false,
         minPrice: minPrice,
-        badge: null, // سيتم حسابه في الخطوة القادمة ديناميكياً
+        badge: null, 
         nextSlot: "Today 10:30 AM",
         availableTags: services.map(s => ({ name: s.name, category: s.category, isPartner: false }))
       };
     }));
 
-    // 6. 🧠 حساب الـ Badges ديناميكياً بناءً على النتائج المتوفرة لتطابق الـ UI
     if (formattedCenters.length > 0) {
-      // أ) تحديد الأقرب (Nearest)
       const validDistances = formattedCenters.filter(c => c.distanceNum !== null);
       if (validDistances.length > 0) {
         const nearest = validDistances.reduce((min, c) => c.distanceNum < min.distanceNum ? c : min, validDistances[0]);
         nearest.badge = "Nearest";
       }
 
-      // ب) تحديد الأرخص (Cheapest) - بشرط ألا يكون قد أخذ شارة الأقرب بالفعل
       const validPrices = formattedCenters.filter(c => c.minPrice > 0 && c.badge === null);
       if (validPrices.length > 0) {
         const cheapest = validPrices.reduce((min, c) => c.minPrice < min.minPrice ? c : min, validPrices[0]);
         cheapest.badge = "Cheapest";
       }
 
-      // ج) تحديد الأعلى تقييماً (Top Rated)
       const topRated = formattedCenters.reduce((max, c) => (c.rating > max.rating && c.badge === null) ? c : max, formattedCenters[0]);
       if (topRated && topRated.badge === null && topRated.rating >= 4.7) {
         topRated.badge = "Top Rated";
       }
     }
 
-    // 7. إرسال الاستجابة الناجحة
     res.status(200).json({
       success: true,
       count: formattedCenters.length,

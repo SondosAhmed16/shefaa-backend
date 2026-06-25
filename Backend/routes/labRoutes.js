@@ -10,26 +10,21 @@ const multer = require('multer');
 const { CloudinaryStorage } = require('multer-storage-cloudinary');
 const cloudinary = require('cloudinary').v2;
 
-// إعداد التخزين
-// التعديل المظبوط جوه ملفك مباشرة بدون أي require خارجي
 
-// كود الـ cloudinary: cloudinary بيكون موجود عندك فوق في الملف أصلاً
 
 const storage = new CloudinaryStorage({
   cloudinary: cloudinary,
   params: async (req, file) => {
-    // 🟢 1. لو الملف اللي جاي عبارة عن صورة (أشعة توضيحية للـ Service)
     if (file.mimetype.startsWith('image/')) {
-      const fileExtension = file.mimetype.split('/')[1]; // png, jpeg, jpg
+      const fileExtension = file.mimetype.split('/')[1]; 
       return {
-        folder: 'lab_services_images', // فولدر صور الخدمات
+        folder: 'lab_services_images', 
         resource_type: 'image',
         format: fileExtension,
         public_id: 'service-' + Date.now()
       };
     }
 
-    // 🔴 2. لو الملف PDF (بتاع نتايج التحاليل الأصلية لـ lab_results)
     return {
       folder: 'lab_results',
       resource_type: 'raw',
@@ -51,16 +46,14 @@ router.get('/my-services', auth, labController.getServices);
 
 router.post(
   '/add-service', 
-  auth,                   // 🟢 1. التأكد من الـ Token أولاً ويملا الـ req.user
-  upload.single('imageUrl'), // 🟢 2. يفك الـ form-data ويرفع الصورة
+  auth,                   
+  upload.single('imageUrl'), 
   [
-    // 3. مصفوفة الـ Validation بتاعتك
     check('name', 'Service name is required').notEmpty(),
     check('price', 'Price must be a number').isNumeric(),
     check('category', 'Category must be test or scan').isIn(['test', 'scan']),
     check('estimatedTime', 'Estimated time is required').notEmpty(),
   ], 
-  // 4. فحص أخطاء الـ Validation
   (req, res, next) => {
     const { validationResult } = require('express-validator');
     const errors = validationResult(req);
@@ -69,7 +62,7 @@ router.post(
     }
     next();
   },
-  labController.addService // 5. الـ Controller الأصلي اللي هيقرا req.user._id بأمان
+  labController.addService 
 );
 
 router.patch('/toggle-service/:serviceId', auth, labController.toggleServiceStatus);

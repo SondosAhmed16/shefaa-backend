@@ -10,16 +10,16 @@ const reviewController = require('../Controllers/reviewController');
 const { auth } = require('../middleware/auth');
 const { authorizeRoles } = require('../middleware/role');
 const { runValidation } = require('../middleware/validate');
-const { upload } = require('../middleware/upload'); 
+const { upload } = require('../middleware/upload');
 
 router.get('/profile', auth, authorizeRoles('patient'), patientController.getProfile);
 
 
-router.put('/profile/basic-info', auth, patientController.updateBasicInfo); 
+router.put('/profile/basic-info', auth, patientController.updateBasicInfo);
 
 router.put('/profile/medical-info', auth, patientController.updateMedicalInfo);
 
-router.put('/profile', auth, authorizeRoles('patient','doctor'), runValidation, patientController.updateProfile);
+router.put('/profile', auth, authorizeRoles('patient', 'doctor'), runValidation, patientController.updateProfile);
 
 router.get('/medications', auth, patientController.getMedications);
 
@@ -62,6 +62,7 @@ router.post('/orders/confirm-receipt', auth, authorizeRoles('patient'), patientC
 
 router.post('/pharmacies/review', auth, authorizeRoles('patient'), reviewController.addPharmacyReview);
 
+// labs
 
 router.get('/search-centers', auth, patientController.patientSearch);
 
