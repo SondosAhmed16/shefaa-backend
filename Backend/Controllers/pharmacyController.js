@@ -142,7 +142,17 @@ exports.updateProfile = async (req, res) => {
 
     if (Object.keys(pharmacyUpdates).length === 0 && req.body.name === undefined)
       return res.status(400).json({ success: false, message: "No valid fields to update" });
+    const primaryAddr = (pharmacyUpdates.addresses ?? []).find(addr => {
+      const coords = addr.location?.coordinates;
+      return Array.isArray(coords) && coords.length === 2 && coords.every(c => typeof c === "number" && isFinite(c));
+    });
 
+    if (primaryAddr) {
+      pharmacyUpdates.location = {
+        type: "Point",
+        coordinates: primaryAddr.location.coordinates
+      };
+    }
     // ── Step 1: شيل أي location مكسورة من الـ DB أولاً ───────────────────
     await Pharmacy.updateOne(
       { userId, "addresses.location.coordinates": { $size: 0 } },

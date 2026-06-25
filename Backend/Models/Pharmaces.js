@@ -114,10 +114,15 @@ const pharmacySchema = new mongoose.Schema(
         },
       },
     ],
+    // Add this to your pharmacySchema fields:
+    location: {
+      type: { type: String, enum: ["Point"], default: "Point" },
+      coordinates: { type: [Number], default: [0, 0] }
+    },
   },
   { timestamps: true }
 );
 
-pharmacySchema.index({ "addresses.location": "2dsphere" });
+pharmacySchema.index({ "location": "2dsphere" });
 
 module.exports = mongoose.model("Pharmacy", pharmacySchema);
