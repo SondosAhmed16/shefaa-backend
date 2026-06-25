@@ -308,7 +308,42 @@ exports.updateMedication = async (req, res) => {
 };
 
 // delete patient medication
+
 exports.deleteMedication = async (req, res) => {
+  try {
+    const { medId } = req.params;
+
+    const patient = await Patient.findOneAndUpdate(
+      { userId: req.user._id },
+      { $pull: { medications: { _id: new mongoose.Types.ObjectId(medId) } } },
+      { new: false } 
+    );
+
+    if (!patient) return res.status(404).json({ message: "Patient not found" });
+
+    const deletedMedication = patient.medications.id(medId);
+
+    if (!deletedMedication) {
+      return res.status(404).json({ message: "Medication not found" });
+    }
+
+    await Notification.create({
+      recipient: req.user._id,
+      title: "Medication Removed",
+      message: `A medication has been removed from your list.`,
+      type: 'medication'
+    });
+
+    res.json({
+      message: "Medication deleted successfully",
+      medication: deletedMedication
+    });
+  } catch (err) {
+    res.status(500).json({ message: err.message });
+  }
+};
+
+/*exports.deleteMedication = async (req, res) => {
   try {
     const { medId } = req.params;
 
@@ -336,7 +371,7 @@ exports.deleteMedication = async (req, res) => {
   } catch (err) {
     res.status(500).json({ message: err.message });
   }
-};
+};*/
 
 exports.getMyMedications = async (req, res) => {
   try {
