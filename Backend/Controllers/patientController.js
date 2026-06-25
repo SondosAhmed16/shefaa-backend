@@ -95,9 +95,20 @@ exports.updateBasicInfo = async (req, res) => {
       await User.findByIdAndUpdate(req.user._id, { name });
     }
 
+    // ── نظف الـ coordinates لو جت غلط ──────────────────────────────
+    let cleanAddress = address;
+    if (address?.location?.coordinates) {
+      const coords = address.location.coordinates;
+      const valid = Array.isArray(coords) && coords.length === 2 &&
+        coords.every(c => typeof c === "number" && isFinite(c));
+      if (!valid) {
+        cleanAddress = { ...address, location: { type: "Point", coordinates: [] } };
+      }
+    }
+
     const patient = await Patient.findOneAndUpdate(
       { userId: req.user._id },
-      { address, phoneNumber, age, gender, height, weight },
+      { address: cleanAddress, phoneNumber, age, gender, height, weight },
       { new: true, runValidators: true }
     );
 
@@ -105,15 +116,7 @@ exports.updateBasicInfo = async (req, res) => {
 
     res.json({
       message: 'Basic info updated successfully',
-      updatedData: {
-        name,
-        address,
-        phoneNumber,
-        age,
-        gender,
-        height,
-        weight
-      }
+      updatedData: { name, address: cleanAddress, phoneNumber, age, gender, height, weight }
     });
   } catch (err) {
     res.status(500).json({ message: err.message });
