@@ -58,7 +58,6 @@ exports.getLabNotificationsForUI = async (req, res) => {
     const lab = await Lab.findOne({ userId: req.user._id });
     
     if (lab) {
-      // 1) جلب كافة الطلبات المعلقة (pending) من الداتابيز
       const pendingRequests = await LabRequest.find({ labId: lab._id, status: "pending" })
         .populate({
           path: 'patientId',
@@ -70,14 +69,12 @@ exports.getLabNotificationsForUI = async (req, res) => {
 
       const now = new Date();
 
-      // 2) لوف على الطلبات للتأكد من تسجيلها كـ Notifications حقيقية في قاعدة البيانات
       for (const reqItem of pendingRequests) {
         const patientName = reqItem.patientId?.userId?.name || "Offline Patient";
         const servicesNames = reqItem.services && reqItem.services.length > 0 
           ? reqItem.services.map(s => s.name).join(', ') 
           : "Medical Analysis";
         
-        // حسبة أطول مدة تحليل متوقعة
         let maxHours = 0;
         if (reqItem.services && reqItem.services.length > 0) {
           reqItem.services.forEach(service => {
@@ -88,7 +85,6 @@ exports.getLabNotificationsForUI = async (req, res) => {
         const expectedDelivery = new Date(reqItem.createdAt);
         expectedDelivery.setHours(expectedDelivery.getHours() + maxHours);
 
-        // تحديد النوع والعنوان والرسالة بناءً على الوقت الحقيقي
         let finalType = "new_booking";
         let finalTitle = "New Booking Received! 🧪";
         let finalMessage = `New request registered for patient (${patientName}) for [${servicesNames}].`;
@@ -99,14 +95,12 @@ exports.getLabNotificationsForUI = async (req, res) => {
           finalMessage = `The expected delivery time for patient (${patientName}) tests (${servicesNames}) has ended. Please upload the results immediately.`;
         }
 
-        // 🧠 البحث في جدول الـ Notifications هل الطلب ده اتعمله إشعار قبل كده بنفس النوع؟
         const existingNotification = await Notification.findOne({
           recipient: req.user._id,
           relatedId: reqItem._id,
           type: finalType
         });
 
-        // لو مش موجود.. نكريته فوراً في الداتابيز كـ غير مقروء (isRead: false) لينور في الـ New
         if (!existingNotification) {
           const newAlert = new Notification({
             recipient: req.user._id,
@@ -115,34 +109,31 @@ exports.getLabNotificationsForUI = async (req, res) => {
             type: finalType,
             relatedId: reqItem._id,
             isRead: false,
-            createdAt: reqItem.createdAt // الحفاظ على تاريخ الريكويست الأصلي للترتيب
+            createdAt: reqItem.createdAt 
           });
           await newAlert.save();
         } 
-        // لو موجود والنوع اختلف (مثلاً كان حجز جديد ودلوقتي وقته عدا واتأخر)، نحدث البيانات والنوع
         else if (existingNotification.type === 'new_booking' && finalType === 'timeout_alert') {
           existingNotification.type = 'timeout_alert';
           existingNotification.title = finalTitle;
           existingNotification.message = finalMessage;
-          existingNotification.isRead = false; // نرجعه غير مقروء عشان ينبهه تاني للاستعجال
+          existingNotification.isRead = false; 
           await existingNotification.save();
         }
       }
     }
 
-    // B) جلب كافة الإشعارات المسجلة للحساب ده من الداتابيز (شاملة العادية والـ Live Track اللي اتسجلت حالا)
     const allNotifications = await Notification.find({ recipient: req.user._id })
       .sort({ createdAt: -1 })
       .lean();
 
-    // C) حساب العداد للإشعارات غير المقروءة فقط 🔢
     const unreadCount = allNotifications.filter(n => !n.isRead).length;
 
-    // D) التقسيم الصارم والذكي بناءً على حقل الـ isRead فقط لا غير تطابقاً للـ UI 📋
+
     const notificationsGrouped = {
       unreadCount: unreadCount,
-      new: allNotifications.filter(n => !n.isRead), // غير المقروء يظهر هنا علطول 🔴
-      earlier: allNotifications.filter(n => n.isRead) // المقروء ينزل هنا علطول 🟢
+      new: allNotifications.filter(n => !n.isRead), 
+      earlier: allNotifications.filter(n => n.isRead) 
     };
 
     res.status(200).json(notificationsGrouped);

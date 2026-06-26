@@ -1,4 +1,4 @@
-const Lab = require('../Models/Labs'); 
+const Lab = require('../Models/Labs');
 const Service = require('../Models/Services');
 const Patient = require('../Models/Patients');
 const LabRequest = require('../Models/LabRequest');
@@ -7,7 +7,6 @@ const Notification = require('../Models/Notification');
 const mongoose = require('mongoose');
 
 
-// 1. جلب بيانات البروفايل وكارت الـ AI
 exports.getProfile = async (req, res) => {
   try {
     const lab = await Lab.findOne({ userId: req.user._id });
@@ -17,7 +16,6 @@ exports.getProfile = async (req, res) => {
 
     const servicesCount = await Service.countDocuments({ labId: lab._id });
 
-    // حساب طلبات النهاردة ديناميكياً 100%
     const startOfToday = new Date();
     startOfToday.setHours(0, 0, 0, 0);
     const endOfToday = new Date();
@@ -59,11 +57,11 @@ exports.getProfile = async (req, res) => {
         facilityType: lab.facilityType,
         workingHours: lab.workingHours,
         rating: lab.rating,
-        servicesCount: servicesCount, // العداد الحقيقي الديناميكي
+        servicesCount: servicesCount,
         paymentMethods: lab.paymentMethods,
         licenseNumber: lab.licenseNumber,
         licenseValidUntil: lab.licenseValidUntil,
-        addresses: lab.addresses, 
+        addresses: lab.addresses,
         aiVisibility: {
           status: aiStatus,
           text: rankingText,
@@ -81,10 +79,8 @@ exports.getProfile = async (req, res) => {
   }
 };
 
-// updateProfile النهائي والمظبوط 100% بدون أي تكرار للكود
 exports.updateProfile = async (req, res) => {
   try {
-    // 1. البحث عن المعمل والحساب الأساسي
     const lab = await Lab.findOne({ userId: req.user._id });
     if (!lab) {
       return res.status(404).json({ message: "Center profile not found." });
@@ -95,46 +91,41 @@ exports.updateProfile = async (req, res) => {
       return res.status(404).json({ message: "User account not found." });
     }
 
-    // 2. استقبال جميع البيانات (الأساسية، اللوجستية، والقانونية)
     const {
-      name,                      // الاسم الأساسي (Cairo MRI & Lab Center) -> جدول User
-      phoneNumber,               // رقم التليفون الموحد -> جدول User
+      name,
+      phoneNumber,
       facilityType,
-      workingHours,              // المواعيد (من شاشة الـ Profile)
-      commercialRegisterNumber,  // رقم السجل/الرخصة
-      licenseValidUntil,         // تاريخ انتهاء الرخصة (الي مش هيفوتنا تاني!)
-      medicalDirectorName,       // اسم المدير الطبي
-      directorProfessionalId,    // رقم الكارنيه
-      homeSampleCollection,      // Toggle العينات المنزلية
-      aiRecommendations,         // Toggle الذكاء الاصطناعي
-      insuranceAccepted,         // دعم التأمين
-      paymentMethods,            // طرق الدفع
+      workingHours,
+      commercialRegisterNumber,
+      licenseValidUntil,
+      medicalDirectorName,
+      directorProfessionalId,
+      homeSampleCollection,
+      aiRecommendations,
+      insuranceAccepted,
+      paymentMethods,
       addresses
     } = req.body;
 
-    // ── أولاً: تحديث البيانات الأساسية في جدول الـ Users (بدون تكرار) ──
     if (name !== undefined) user.name = name;
-    
+
     if (phoneNumber !== undefined) {
-      // التحقق إن الرقم الجديد مش مستخدم في حساب تاني لمنع مشاكل الـ Unique Index
       const existingPhone = await User.findOne({ phoneNumber, _id: { $ne: user._id } });
       if (existingPhone) {
         return res.status(400).json({ message: "Phone number is already in use by another account." });
       }
       user.phoneNumber = phoneNumber;
     }
-    await user.save(); // حفظ جدول الـ Users
+    await user.save();
 
-    // ── ثانياً: تحديث ملف الرخصة لو اترفع جديد في الـ Request ──
     if (req.files && req.files['medicalLicence']) {
       lab.medicalLicencePdf = req.files['medicalLicence'][0].path;
     }
 
-    // ── ثالثاً: تحديث البيانات القانونية واللوجستية في جدول الـ Labs ──
     if (facilityType !== undefined) lab.facilityType = facilityType;
     if (workingHours !== undefined) lab.workingHours = workingHours;
     if (commercialRegisterNumber !== undefined) lab.commercialRegisterNumber = commercialRegisterNumber;
-    if (licenseValidUntil !== undefined) lab.licenseValidUntil = licenseValidUntil; // 🟢 التحديث هنا
+    if (licenseValidUntil !== undefined) lab.licenseValidUntil = licenseValidUntil;
     if (medicalDirectorName !== undefined) lab.medicalDirectorName = medicalDirectorName;
     if (directorProfessionalId !== undefined) lab.directorProfessionalId = directorProfessionalId;
     if (homeSampleCollection !== undefined) lab.homeSampleCollection = homeSampleCollection;
@@ -142,7 +133,6 @@ exports.updateProfile = async (req, res) => {
     if (insuranceAccepted !== undefined) lab.insuranceAccepted = insuranceAccepted;
     if (paymentMethods !== undefined) lab.paymentMethods = paymentMethods;
 
-    // معالجة الـ addresses لو مبعوتة كـ String في الـ form-data للفرونت
     if (addresses !== undefined) {
       try {
         lab.addresses = typeof addresses === 'string' ? JSON.parse(addresses) : addresses;
@@ -151,9 +141,8 @@ exports.updateProfile = async (req, res) => {
       }
     }
 
-    await lab.save(); // حفظ جدول الـ Labs
+    await lab.save();
 
-    // 3. إرجاع الداتا كاملة ومدموجة بـ الـ Populate النظيف للـ Frontend
     const updatedProfile = await Lab.findOne({ userId: user._id })
       .populate('userId', 'name email phoneNumber role');
 
@@ -173,7 +162,6 @@ exports.updateProfile = async (req, res) => {
     res.status(500).json({ message: err.message });
   }
 };
-// 3. جلب الخدمات مع الـ AI Insight الديناميكي
 exports.getServices = async (req, res) => {
   try {
     const lab = await Lab.findOne({ userId: req.user._id });
@@ -229,7 +217,6 @@ exports.getServices = async (req, res) => {
   }
 };
 
-// 4. إضافة خدمة جديدة
 exports.addService = async (req, res) => {
   try {
     const { name, category, price, estimatedTime, instructions, sessionDuration } = req.body;
@@ -263,8 +250,7 @@ exports.addService = async (req, res) => {
   }
 };
 
-// 5. تغيير حالة الخدمة (نشط / غير نشط)
-// 5. تغيير حالة الخدمة تلقائياً (توجل حقيقي)
+
 exports.toggleServiceStatus = async (req, res) => {
   try {
     const { serviceId } = req.params;
@@ -272,54 +258,50 @@ exports.toggleServiceStatus = async (req, res) => {
     const service = await Service.findById(serviceId);
     if (!service) return res.status(404).json({ message: "Service not found" });
 
-    // 🟢 عكس الحالة الحالية أوتوماتيك بدون الحاجة لـ req.body
-    service.isActive = !service.isActive; 
+    service.isActive = !service.isActive;
     await service.save();
 
-    res.json({ 
-      success: true, 
-      message: `Service status updated to ${service.isActive}`, 
-      service 
+    res.json({
+      success: true,
+      message: `Service status updated to ${service.isActive}`,
+      service
     });
   } catch (err) {
     res.status(500).json({ message: err.message });
   }
 };
 
-// 6. إنشاء طلب جديد برقم التليفون للمريض الأوفلاين (النسخة النهائية الصحيحة)
 exports.createRequest = async (req, res) => {
   try {
-    const { patientPhone, serviceIds, viaAI } = req.body; 
+    const { patientPhone, serviceIds, viaAI } = req.body;
 
     if (!patientPhone) {
-      return res.status(400).json({ 
-        success: false, 
-        message: "Patient phone number is required to link this request with Shefaa App" 
+      return res.status(400).json({
+        success: false,
+        message: "Patient phone number is required to link this request with Shefaa App"
       });
     }
 
     if (!serviceIds || serviceIds.length === 0) {
-      return res.status(400).json({ 
-        success: false, 
-        message: "Please select at least one service/test" 
+      return res.status(400).json({
+        success: false,
+        message: "Please select at least one service/test"
       });
     }
 
-    // الخطوة السحرية: ابحث في الـ Users أولاً لأن الـ phoneNumber هناك!
     const user = await User.findOne({ phoneNumber: String(patientPhone).trim() });
     if (!user) {
-      return res.status(404).json({ 
-        success: false, 
-        message: "This phone number is not registered in Shefaa App. Please check the number or register the patient first." 
+      return res.status(404).json({
+        success: false,
+        message: "This phone number is not registered in Shefaa App. Please check the number or register the patient first."
       });
     }
 
-    // ثم ابحث في الـ Patients بربط الـ userId
     const patient = await Patient.findOne({ userId: user._id });
     if (!patient) {
-      return res.status(404).json({ 
-        success: false, 
-        message: "The user account exists, but no active patient profile was found associated with it." 
+      return res.status(404).json({
+        success: false,
+        message: "The user account exists, but no active patient profile was found associated with it."
       });
     }
 
@@ -330,17 +312,17 @@ exports.createRequest = async (req, res) => {
 
     const newRequest = new LabRequest({
       labId: lab._id,
-      patientId: patient._id, 
+      patientId: patient._id,
       services: serviceIds,
       viaAI: viaAI || false
     });
 
     await newRequest.save();
 
-    res.status(201).json({ 
+    res.status(201).json({
       success: true,
-      message: `Request added successfully for patient (${user.name}) and linked to Shefaa App`, 
-      newRequest 
+      message: `Request added successfully for patient (${user.name}) and linked to Shefaa App`,
+      newRequest
     });
   } catch (err) {
     res.status(500).json({ success: false, message: err.message });
@@ -349,13 +331,11 @@ exports.createRequest = async (req, res) => {
 
 exports.getLabResultsDashboard = async (req, res) => {
   try {
-    // 1. التحقق من حساب المعمل
     const lab = await Lab.findOne({ userId: req.user._id });
     if (!lab) {
       return res.status(404).json({ success: false, message: "Center profile not found" });
     }
 
-    // 2. جلب كافة طلبات هذا المعمل بدون اشتراط كلمة 'pending' حرفياً لتفادي أي خطأ في الداتا القديمة
     const allLabRequests = await LabRequest.find({ labId: lab._id })
       .populate('services', 'name estimatedTime')
       .lean();
@@ -364,10 +344,8 @@ exports.getLabResultsDashboard = async (req, res) => {
     let uploadedResults = [];
 
     for (const reqItem of allLabRequests) {
-      // جلب اسم المريض بشكل مرن لتفادي مشاكل الـ Populate الآلي واسم الموديل (Patient / Patients)
       let patientName = "Offline Patient";
       try {
-        // فحص الموديل ديناميكياً لتأمين جلب الاسم
         const PatientModel = mongoose.models.Patient || mongoose.models.Patients;
         if (PatientModel && reqItem.patientId) {
           const patientData = await PatientModel.findById(reqItem.patientId).populate("userId", "name");
@@ -379,7 +357,6 @@ exports.getLabResultsDashboard = async (req, res) => {
         console.log("Patient populate error:", err.message);
       }
 
-      // حساب الوقت المستغرق
       let maxHours = 24;
       if (reqItem.services && reqItem.services.length > 0) {
         reqItem.services.forEach(service => {
@@ -400,7 +377,6 @@ exports.getLabResultsDashboard = async (req, res) => {
         expectedDelivery: expectedDelivery
       };
 
-      // تقسيم الطلبات بناءً على الحالة (مع تدارك حالة الـ default لو غير مكتوبة)
       if (reqItem.status === "completed") {
         uploadedResults.push({
           ...formattedItem,
@@ -410,7 +386,6 @@ exports.getLabResultsDashboard = async (req, res) => {
           patientNotified: true
         });
       } else {
-        // أي حالة أخرى (سواء pending أو فارغة) ستعتبر معلقة لتظهر فوراً في الـ UI
         pendingUploads.push(formattedItem);
       }
     }
@@ -428,24 +403,21 @@ exports.getLabResultsDashboard = async (req, res) => {
   }
 };
 
-// 2. دالة رفع النتيجة الفورية عبر Multer وكلاوديناري وإشعار المريض تلقائياً (مؤمنة بالكامل)
 exports.uploadLabResult = async (req, res) => {
   try {
-    const { requestId } = req.body; 
+    const { requestId } = req.body;
 
-    // 1. التحقق من أن الـ multer قام برفع الملف بنجاح
     if (!req.file) {
       return res.status(400).json({ success: false, message: "Please upload a result file (Image or PDF)" });
     }
 
-    const resultFileUrl = req.file.path; 
-    const fileType = req.file.mimetype && req.file.mimetype.includes('pdf') ? 'pdf' : 'image'; 
+    const resultFileUrl = req.file.path;
+    const fileType = req.file.mimetype && req.file.mimetype.includes('pdf') ? 'pdf' : 'image';
 
     if (!requestId) {
       return res.status(400).json({ success: false, message: "Missing required field: requestId" });
     }
 
-    // 2. تحديث الطلب في قاعدة البيانات وتحويل حالته إلى مكتمل بأمان
     const updatedRequest = await LabRequest.findByIdAndUpdate(
       requestId,
       {
@@ -461,32 +433,27 @@ exports.uploadLabResult = async (req, res) => {
       return res.status(404).json({ success: false, message: "Request not found" });
     }
 
-    // 3. 🔔 جلب المريض يدوياً باستخدام الموديل المستدعى فوق لمنع انهيار الـ Populate بسبب حرف الـ S
     if (updatedRequest.patientId) {
-      // استدعاء المريض مباشرة باستخدام متد الـ Patient المستدعى في أول الملف عندك
       const patientData = await Patient.findById(updatedRequest.patientId);
-      
+
       const patientUserId = patientData?.userId;
 
       if (patientUserId) {
-        // جلب اسم المعمل الحالي
         const center = await Lab.findOne({ userId: req.user._id }).populate('userId', 'name');
         const centerName = center?.userId?.name || "The Medical Center";
 
-        // إنشاء الإشعار للمريض
         const newNotification = new Notification({
-          recipient: patientUserId, 
+          recipient: patientUserId,
           title: "Medical Result Available! 📄",
           message: `Your test results from ${centerName} have been uploaded successfully. You can now view or download them from your profile.`,
-          type: "lab_result", 
-          relatedId: updatedRequest._id 
+          type: "lab_result",
+          relatedId: updatedRequest._id
         });
 
         await newNotification.save();
       }
     }
 
-    // إرجاع النتيجة الناجحة بنجاح
     res.status(200).json({
       success: true,
       message: "Result uploaded successfully and patient has been notified.",
@@ -534,13 +501,11 @@ exports.updateNotificationSettings = async (req, res) => {
 
 exports.getLabDashboardForUI = async (req, res) => {
   try {
-    // 1. جلب بروفايل المعمل الحالي واسمه من جدول الـ User 🏢
     const lab = await Lab.findOne({ userId: req.user._id }).populate('userId', 'name');
     if (!lab) {
       return res.status(404).json({ success: false, message: "Lab profile not found" });
     }
 
-    // 2. ضبط توقيت "اليوم بيومه" (من الساعة 12:00 بالليل حتى 11:59 قبل منتصف الليل) ⏱️
     const startOfToday = new Date();
     startOfToday.setHours(0, 0, 0, 0);
 
@@ -549,34 +514,29 @@ exports.getLabDashboardForUI = async (req, res) => {
 
     const now = new Date();
 
-    // 3. جلب كافة طلبات المعمل المعلقة والمنتهية للتصفية والحسابات
     const allLabRequests = await LabRequest.find({ labId: lab._id })
       .populate({
         path: 'patientId',
-        model: 'Patient', // استخدام المفرد الصحيح لتجنب الانهيار 🎯
+        model: 'Patient',
         populate: { path: 'userId', model: 'User', select: 'name' }
       })
       .populate('services', 'name estimatedTime')
       .sort({ createdAt: -1 })
       .lean();
 
-    // --- [ الحسابات والإحصائيات العلوية للـ Dashboard ] ---
 
-    // أ) عدد الريكويستات اللي اتعملت النهاردة بس 🔢
-    const todaysRequestsCount = allLabRequests.filter(reqItem => 
+    const todaysRequestsCount = allLabRequests.filter(reqItem =>
       reqItem.createdAt >= startOfToday && reqItem.createdAt <= endOfToday
     ).length;
 
-    // ب) عدد التحاليل اللي خلاص خلصت النهاردة بس (status: completed وتاريخ الرفع النهاردة) ✅
-    const completedTodayCount = allLabRequests.filter(reqItem => 
-      reqItem.status === 'completed' && 
-      reqItem.resultUploadedAt >= startOfToday && 
+    const completedTodayCount = allLabRequests.filter(reqItem =>
+      reqItem.status === 'completed' &&
+      reqItem.resultUploadedAt >= startOfToday &&
       reqItem.resultUploadedAt <= endOfToday
     ).length;
 
-    // ج) حساب التحاليل المتأخرة (Timeout) وجلب أسماء المرضى المتأخرين 🚨
     let timeoutPatientsList = [];
-    
+
     const pendingRequests = allLabRequests.filter(reqItem => reqItem.status === 'pending');
 
     pendingRequests.forEach(reqItem => {
@@ -591,7 +551,6 @@ exports.getLabDashboardForUI = async (req, res) => {
       const expectedDelivery = new Date(reqItem.createdAt);
       expectedDelivery.setHours(expectedDelivery.getHours() + maxHours);
 
-      // لو الوقت الحالي تخطى موعد التسليم المتوقع والنتيجة لسه pending
       if (now > expectedDelivery) {
         timeoutPatientsList.push({
           requestId: reqItem._id,
@@ -603,20 +562,17 @@ exports.getLabDashboardForUI = async (req, res) => {
 
     const timeoutRequestsCount = timeoutPatientsList.length;
 
-    // --- [ المصفوفات والقوائم السفلية للـ Dashboard ] ---
 
-    // 4. قائمة طلبات اليوم: Today's Requests (اسم البيشنت، اسم التحليل، الـ Ref، ووقت الحجز) 📋
     const todaysRequestsList = allLabRequests
       .filter(reqItem => reqItem.createdAt >= startOfToday && reqItem.createdAt <= endOfToday)
       .map(reqItem => {
-        // تنسيق وقت الحجز ليظهر بشكل جمالي (مثال: 02:30 PM)
         const bookingTime = new Date(reqItem.createdAt).toLocaleTimeString('en-US', {
           hour: '2-digit',
           minute: '2-digit'
         });
 
         return {
-          ref: reqItem._id.toString().substring(reqItem._id.toString().length - 6).toUpperCase(), // توليد كود الـ Ref من آخر 6 حقول بالـ ObjectId
+          ref: reqItem._id.toString().substring(reqItem._id.toString().length - 6).toUpperCase(),
           patientName: reqItem.patientId?.userId?.name || "Offline Patient",
           analysisName: reqItem.services ? reqItem.services.map(s => s.name).join(', ') : "General Test",
           bookedAt: bookingTime,
@@ -624,12 +580,11 @@ exports.getLabDashboardForUI = async (req, res) => {
         };
       });
 
-    // 5. قائمة النتائج المرفوعة اليوم: Results uploaded today 📤
-    // (اسم البيشنت، اسم التحاليل، وقت الرفع، وهل الـ Patient Notified)
+
     const resultsUploadedTodayList = allLabRequests
-      .filter(reqItem => 
-        reqItem.status === 'completed' && 
-        reqItem.resultUploadedAt >= startOfToday && 
+      .filter(reqItem =>
+        reqItem.status === 'completed' &&
+        reqItem.resultUploadedAt >= startOfToday &&
         reqItem.resultUploadedAt <= endOfToday
       )
       .map(reqItem => {
@@ -642,11 +597,10 @@ exports.getLabDashboardForUI = async (req, res) => {
           patientName: reqItem.patientId?.userId?.name || "Offline Patient",
           analysisName: reqItem.services ? reqItem.services.map(s => s.name).join(', ') : "General Test",
           uploadedAt: uploadTime,
-          patientNotified: true // طالما الريكويست اتحول completed فالسيستم بعت إشعار للمريض تلقائياً 🔔
+          patientNotified: true
         };
       });
 
-    // 6. إرسال الداتا مجمعة ومفلترة بالملّي للفرونت إند 🎯
     res.status(200).json({
       success: true,
       labName: lab.userId?.name || "Your Lab Center",
@@ -654,7 +608,7 @@ exports.getLabDashboardForUI = async (req, res) => {
         todaysRequests: todaysRequestsCount,
         completedToday: completedTodayCount,
         timeoutRequests: timeoutRequestsCount,
-        timeoutPatients: timeoutPatientsList // مصفوفة بأسماء المرضى المتأخرين لعرضها في الـ Pop-up أو الـ Alert
+        timeoutPatients: timeoutPatientsList
       },
       todaysRequests: todaysRequestsList,
       resultsUploadedToday: resultsUploadedTodayList

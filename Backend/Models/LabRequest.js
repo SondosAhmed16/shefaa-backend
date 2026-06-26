@@ -30,7 +30,7 @@ const labRequestSchema = new mongoose.Schema(
   default: "pending"
 },
   resultFile: {
-  type: String, // رابط الصورة أو الـ PDF المرفوع على Cloudinary مثلاً
+  type: String, 
   default: null
 },
   resultFileType: {

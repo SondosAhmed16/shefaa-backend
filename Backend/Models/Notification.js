@@ -12,17 +12,17 @@ const notificationSchema = new mongoose.Schema({
   type: {
     type: String,
     enum: [
-      'medication',          // مستخدم فعلياً في كود المريض الحالي
-      'new_prescription',    // للصيدلية عند استلام روشتة
-      'new_order',           // للصيدلية عند طلب جديد
-      'order_status',        // للمريض عند تجهيز طلبه
-      'low_stock',           // للصيدلية (تنبيه المخزن)
-      'appointment',         // للدكتور والمريض (المواعيد)
-      'payment_confirmed',   // تأكيد الدفع في سكرين التتبع
+      'medication',          
+      'new_prescription',    
+      'new_order',          
+      'order_status',       
+      'low_stock',         
+      'appointment',         
+      'payment_confirmed',  
       'lab_result',  
-      'new_booking',    // 🟢 ضيفي ده هنا
-      'timeout_alert',        // ننتقل له هنا لإشعار المريض بظهور النتيجة
-      'system'               // إشعارات عامة
+      'new_booking',    
+      'timeout_alert',        
+      'system'              
     ],
     default: 'system'
   },

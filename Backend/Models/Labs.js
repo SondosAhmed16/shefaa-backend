@@ -14,8 +14,8 @@ const labSchema = new mongoose.Schema(
       required: true
     },
     workingHours: {
-      open: { type: Number, required: false, min: 0, max: 23 },  // مثلاً: 9 (يعني 9 صباحاً)
-      close: { type: Number, required: false, min: 0, max: 23 } // مثلاً: 23 (يعني 11 مساءً)
+      open: { type: Number, required: false, min: 0, max: 23 },  
+      close: { type: Number, required: false, min: 0, max: 23 } 
     },
 
     homeSampleCollection: {
