@@ -9,7 +9,8 @@ require('./config/passport.js');
 // Import Middlewares
 const securityMiddleware = require("./middleware/security.js"); 
 const errorHandler = require("./middleware/errorHandler.js");
-
+// بعد سطر import الـ errorHandler مباشرةً
+const cachedAiTranslate = require("./middleware/translationCache");
 // --- [تعديل هنا] Import Routes ---
 const User = require('./Models/Users.js');
 const authRoutes = require("./routes/authRoutes.js");
@@ -35,11 +36,16 @@ app.use(cors({
   ],
   credentials: true,
   methods: ["GET", "POST", "PATCH", "PUT", "DELETE", "OPTIONS"],
-  allowedHeaders: ["Content-Type", "Authorization"],
+  allowedHeaders: ["Content-Type", "Authorization", "x-lang"],
 }));
 
 // 2. Standard Middlewares
 app.use(express.json());
+// بعد سطر  app.use(express.json()); مباشرةً
+app.use(cachedAiTranslate({
+  defaultLang: "en",
+  skipRoutes: ["/api/auth", "/api/admin"],
+}));
 app.use(express.urlencoded({ extended: true }));
 
 // 1. Security Middlewares
