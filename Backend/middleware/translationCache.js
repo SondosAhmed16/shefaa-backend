@@ -49,14 +49,19 @@ function cachedAiTranslate(options = {}) {
   const defaultLang = options.defaultLang || "en";
 
   return function (req, res, next) {
-    // Detect language early
+    // ── detect language early ──
     const lang = req.headers["x-lang"] ||
       req.query.lang ||
       (req.headers["accept-language"] || "en").split(",")[0].split("-")[0];
 
+    // ✅ Skip everything if English — no intercept, no memory leak
     if (lang === defaultLang) return next();
 
-    // Intercept res.json BEFORE the base middleware does
+    // ✅ Skip excluded routes
+    const path = req.path;
+    const skipRoutes = options.skipRoutes || [];
+    if (skipRoutes.some((r) => path.startsWith(r))) return next();
+
     const originalJson = res.json.bind(res);
 
     res.json = async function (body) {
@@ -64,27 +69,24 @@ function cachedAiTranslate(options = {}) {
       const cached = cache.get(key);
 
       if (cached) {
-        console.log(`[translateCache] HIT (lang=${lang}, size=${cache.size})`);
+        console.log(`[translateCache] HIT (lang=${lang})`);
+        // ✅ Restore before calling to avoid memory buildup
+        res.json = originalJson;
         return originalJson(cached);
       }
 
-      // Restore original json so base middleware can intercept it
-      res.json = originalJson;
-
-      // Wrap again to capture the translated result
-      const translatedJson = res.json.bind(res);
-      res.json = async function (translatedBody) {
-        cache.set(key, translatedBody);
+      try {
+        // ✅ Restore res.json before passing to base middleware
+        res.json = originalJson;
+        
+        const translated = await translateWithAI(body, lang);
+        cache.set(key, translated);
         console.log(`[translateCache] STORED (lang=${lang}, size=${cache.size})`);
-        return translatedJson(translatedBody);
-      };
-
-      // Call base middleware translation
-      const fakeNext = () => {};
-      await baseMiddleware(req, res, fakeNext);
-
-      // Trigger the original flow with the intercepted body
-      return res.json(body);
+        return originalJson(translated);
+      } catch (err) {
+        console.error("[translateCache] failed:", err.message);
+        return originalJson(body);
+      }
     };
 
     next();
