@@ -873,3 +873,223 @@ exports.getAppointmentSpecializations = async (req, res) => {
     res.status(500).json({ message: 'Error fetching appointment specializations', detail: err.message });
   }
 };
+// ─── APPROVE & REJECT (with permanent delete on reject) ──────────────────────
+// Paste these exports into your existing adminController.js
+
+// ─── DOCTOR ──────────────────────────────────────────────────────────────────
+
+/**
+ * POST /admin/doctors/:id/approve
+ * Activates the linked user account for the doctor.
+ */
+exports.approveDoctor = async (req, res) => {
+  try {
+    const doctor = await Doctor.findById(req.params.id).populate('userId');
+    if (!doctor) return res.status(404).json({ message: 'Doctor not found' });
+
+    const user = doctor.userId;
+    if (!user) return res.status(404).json({ message: 'Linked user not found' });
+
+    user.isVerified = true;
+    await user.save();
+
+    try {
+      await sendEmail({
+        email:   user.email,
+        subject: 'تم قبول حسابك كطبيب في شفاء',
+        message: `مرحباً د. ${user.name}،\n\nتم مراجعة بياناتك وتفعيل حسابك كطبيب بنجاح. يمكنك الآن الدخول للمنصة واستقبال المرضى.`,
+      });
+    } catch (mailErr) {
+      logger.error('Doctor approval email failed: ' + mailErr.message);
+    }
+
+    logger.info(`Admin approved doctor: ${user.email}`);
+    res.json({ message: 'Doctor approved successfully.' });
+  } catch (err) {
+    logger.error('Error approving doctor: ' + err.message);
+    res.status(500).json({ message: 'Error approving doctor' });
+  }
+};
+
+/**
+ * DELETE /admin/doctors/:id/reject
+ * Body (optional): { reason: "string" }
+ * Sends rejection email then permanently deletes the Doctor profile + User account.
+ */
+exports.rejectDoctor = async (req, res) => {
+  try {
+    const reason = req.body?.reason?.trim() || 'لم يتم استيفاء متطلبات التسجيل';
+
+    const doctor = await Doctor.findById(req.params.id).populate('userId');
+    if (!doctor) return res.status(404).json({ message: 'Doctor not found' });
+
+    const user = doctor.userId;
+
+    // Send rejection email before deleting so we still have the data
+    if (user) {
+      try {
+        await sendEmail({
+          email:   user.email,
+          subject: 'تحديث بشأن طلب تسجيلك كطبيب في شفاء',
+          message: `مرحباً د. ${user.name}،\n\nنأسف لإبلاغك بأنه لم يتم قبول طلب تسجيلك للسبب التالي:\n\n"${reason}"\n\nيمكنك التواصل مع الدعم لمزيد من التوضيح.`,
+        });
+      } catch (mailErr) {
+        logger.error('Doctor rejection email failed: ' + mailErr.message);
+      }
+    }
+
+    // Delete profile then user
+    await Doctor.findByIdAndDelete(doctor._id);
+    if (user) await User.findByIdAndDelete(user._id);
+
+    logger.warn(`Admin rejected & deleted doctor: ${user?.email} — reason: ${reason}`);
+    res.json({ message: 'Doctor rejected, data permanently deleted, and user notified.' });
+  } catch (err) {
+    logger.error('Error rejecting doctor: ' + err.message);
+    res.status(500).json({ message: 'Error rejecting doctor' });
+  }
+};
+
+// ─── PHARMACY ────────────────────────────────────────────────────────────────
+
+/**
+ * POST /admin/pharmacies/:id/approve
+ * Activates the linked user account for the pharmacy.
+ */
+exports.approvePharmacy = async (req, res) => {
+  try {
+    const pharmacy = await Pharmacy.findById(req.params.id).populate('userId');
+    if (!pharmacy) return res.status(404).json({ message: 'Pharmacy not found' });
+
+    const user = pharmacy.userId;
+    if (!user) return res.status(404).json({ message: 'Linked user not found' });
+
+    user.isVerified = true;
+    await user.save();
+
+    try {
+      await sendEmail({
+        email:   user.email,
+        subject: 'تم قبول حسابك كصيدلية في شفاء',
+        message: `مرحباً ${user.name}،\n\nتم مراجعة بياناتك وتفعيل حساب الصيدلية بنجاح. يمكنك الآن استخدام المنصة.`,
+      });
+    } catch (mailErr) {
+      logger.error('Pharmacy approval email failed: ' + mailErr.message);
+    }
+
+    logger.info(`Admin approved pharmacy: ${user.email}`);
+    res.json({ message: 'Pharmacy approved successfully.' });
+  } catch (err) {
+    logger.error('Error approving pharmacy: ' + err.message);
+    res.status(500).json({ message: 'Error approving pharmacy' });
+  }
+};
+
+/**
+ * DELETE /admin/pharmacies/:id/reject
+ * Body (optional): { reason: "string" }
+ * Sends rejection email then permanently deletes the Pharmacy profile + User account.
+ */
+exports.rejectPharmacy = async (req, res) => {
+  try {
+    const reason = req.body?.reason?.trim() || 'لم يتم استيفاء متطلبات التسجيل';
+
+    const pharmacy = await Pharmacy.findById(req.params.id).populate('userId');
+    if (!pharmacy) return res.status(404).json({ message: 'Pharmacy not found' });
+
+    const user = pharmacy.userId;
+
+    if (user) {
+      try {
+        await sendEmail({
+          email:   user.email,
+          subject: 'تحديث بشأن طلب تسجيل الصيدلية في شفاء',
+          message: `مرحباً ${user.name}،\n\nنأسف لإبلاغك بأنه لم يتم قبول طلب تسجيل الصيدلية للسبب التالي:\n\n"${reason}"\n\nيمكنك التواصل مع الدعم لمزيد من التوضيح.`,
+        });
+      } catch (mailErr) {
+        logger.error('Pharmacy rejection email failed: ' + mailErr.message);
+      }
+    }
+
+    await Pharmacy.findByIdAndDelete(pharmacy._id);
+    if (user) await User.findByIdAndDelete(user._id);
+
+    logger.warn(`Admin rejected & deleted pharmacy: ${user?.email} — reason: ${reason}`);
+    res.json({ message: 'Pharmacy rejected, data permanently deleted, and user notified.' });
+  } catch (err) {
+    logger.error('Error rejecting pharmacy: ' + err.message);
+    res.status(500).json({ message: 'Error rejecting pharmacy' });
+  }
+};
+
+// ─── LAB ─────────────────────────────────────────────────────────────────────
+
+/**
+ * POST /admin/labs/:id/approve
+ * Activates the linked user account for the lab.
+ */
+exports.approveLab = async (req, res) => {
+  try {
+    const lab = await Lab.findById(req.params.id).populate('userId');
+    if (!lab) return res.status(404).json({ message: 'Lab not found' });
+
+    const user = lab.userId;
+    if (!user) return res.status(404).json({ message: 'Linked user not found' });
+
+    user.isVerified = true;
+    await user.save();
+
+    try {
+      await sendEmail({
+        email:   user.email,
+        subject: 'تم قبول حسابك كمعمل تحاليل في شفاء',
+        message: `مرحباً ${user.name}،\n\nتم مراجعة بياناتك وتفعيل حساب المعمل بنجاح. يمكنك الآن استخدام المنصة.`,
+      });
+    } catch (mailErr) {
+      logger.error('Lab approval email failed: ' + mailErr.message);
+    }
+
+    logger.info(`Admin approved lab: ${user.email}`);
+    res.json({ message: 'Lab approved successfully.' });
+  } catch (err) {
+    logger.error('Error approving lab: ' + err.message);
+    res.status(500).json({ message: 'Error approving lab' });
+  }
+};
+
+/**
+ * DELETE /admin/labs/:id/reject
+ * Body (optional): { reason: "string" }
+ * Sends rejection email then permanently deletes the Lab profile + User account.
+ */
+exports.rejectLab = async (req, res) => {
+  try {
+    const reason = req.body?.reason?.trim() || 'لم يتم استيفاء متطلبات التسجيل';
+
+    const lab = await Lab.findById(req.params.id).populate('userId');
+    if (!lab) return res.status(404).json({ message: 'Lab not found' });
+
+    const user = lab.userId;
+
+    if (user) {
+      try {
+        await sendEmail({
+          email:   user.email,
+          subject: 'تحديث بشأن طلب تسجيل المعمل في شفاء',
+          message: `مرحباً ${user.name}،\n\nنأسف لإبلاغك بأنه لم يتم قبول طلب تسجيل المعمل للسبب التالي:\n\n"${reason}"\n\nيمكنك التواصل مع الدعم لمزيد من التوضيح.`,
+        });
+      } catch (mailErr) {
+        logger.error('Lab rejection email failed: ' + mailErr.message);
+      }
+    }
+
+    await Lab.findByIdAndDelete(lab._id);
+    if (user) await User.findByIdAndDelete(user._id);
+
+    logger.warn(`Admin rejected & deleted lab: ${user?.email} — reason: ${reason}`);
+    res.json({ message: 'Lab rejected, data permanently deleted, and user notified.' });
+  } catch (err) {
+    logger.error('Error rejecting lab: ' + err.message);
+    res.status(500).json({ message: 'Error rejecting lab' });
+  }
+};

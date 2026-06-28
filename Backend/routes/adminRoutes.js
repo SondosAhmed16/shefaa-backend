@@ -38,24 +38,32 @@ router.get('/platform-health', adminController.getPlatformHealth);
 router.get('/recent-activity', adminController.getRecentActivity);
 router.get('/registrations-per-month', adminController.getRegistrationsPerMonth);
 router.get('/top-specializations', adminController.getTopSpecializations);
+
+// ── Approve / Reject ──────────────────────────────────────────────────────────
+router.post('/doctors/:id/approve',    adminController.approveDoctor);
+router.delete('/doctors/:id/reject',   adminController.rejectDoctor);
+
+router.post('/pharmacies/:id/approve',  adminController.approvePharmacy);
+router.delete('/pharmacies/:id/reject', adminController.rejectPharmacy);
+
+router.post('/labs/:id/approve',       adminController.approveLab);
+router.delete('/labs/:id/reject',      adminController.rejectLab);
  
-// ── NEW: Finance ─────────────────────────────────────────────────────────────
+// ── Finance ───────────────────────────────────────────────────────────────────
 router.get('/finance/summary',              adminController.getFinanceSummary);
 router.get('/finance/transactions',         adminController.getTransactions);
 router.post('/finance/transactions',        adminController.createTransaction);
 router.get('/finance/revenue-per-month',    adminController.getRevenuePerMonth);
  
-// ── NEW: Settings ─────────────────────────────────────────────────────────────
+// ── Settings ──────────────────────────────────────────────────────────────────
 router.get('/settings',                     adminController.getSettings);
 router.patch('/settings',                   adminController.updateSettings);
  
-// ── NEW: Global search ────────────────────────────────────────────────────────
+// ── Global search ─────────────────────────────────────────────────────────────
 router.get('/search',                       adminController.globalSearch);
 router.get('/appointments/specializations', adminController.getAppointmentSpecializations);
 
-
-
-// Billing routes
+// ── Billing ───────────────────────────────────────────────────────────────────
 router.get('/billing/summary',           billingController.getBillingSummary);
 router.get('/billing/records',           billingController.getBillingRecords);
 router.patch('/billing/records/:id/pay', billingController.markPaid);
