@@ -40,7 +40,6 @@ const labSchema = new mongoose.Schema(
     ],
     rating: {
       type: Number,
-      default: 4.5,
       min: 0,
       max: 5
     },
