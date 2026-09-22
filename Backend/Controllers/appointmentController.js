@@ -421,6 +421,8 @@ const hasAppointmentDayStarted = (appointmentDate) => {
 
 // ─── GET /appointments/my ─────────────────────────────────────────────────────
 
+// ─── GET /appointments/my ─────────────────────────────────────────────────────
+
 exports.getMyAppointments = async (req, res) => {
   try {
     let appointments;
@@ -445,7 +447,12 @@ exports.getMyAppointments = async (req, res) => {
           select: "userId address age gender height weight bloodType allergies chronicConditions isBlocked",
           populate: { path: "userId", model: "User", select: "name email phoneNumber" },
         })
-        .populate("doctor", "name specialization")
+        // 🚨 التعديل هنا: جلب بيانات الـ userId الخاصة بالطبيب للوصول لـ name
+        .populate({
+          path: "doctor",
+          select: "specialization userId",
+          populate: { path: "userId", model: "User", select: "name email phoneNumber" }
+        })
         .populate("clinic", "name address price")
         .populate("prescription")
         .sort({ date: -1 });
