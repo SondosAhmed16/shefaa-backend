@@ -447,13 +447,13 @@ exports.getMyAppointments = async (req, res) => {
           select: "userId address age gender height weight bloodType allergies chronicConditions isBlocked",
           populate: { path: "userId", model: "User", select: "name email phoneNumber" },
         })
-        // 🚨 التعديل هنا: جلب بيانات الـ userId الخاصة بالطبيب للوصول لـ name
         .populate({
           path: "doctor",
           select: "specialization userId",
           populate: { path: "userId", model: "User", select: "name email phoneNumber" }
         })
-        .populate("clinic", "name address price")
+        // ✅ تم إضافة defaultSchedule هنا لترجع أوقات عمل العيادة لـ Flutter
+        .populate("clinic", "name address price defaultSchedule")
         .populate("prescription")
         .sort({ date: -1 });
 
@@ -468,7 +468,8 @@ exports.getMyAppointments = async (req, res) => {
           select: "userId address age gender height weight bloodType allergies chronicConditions isBlocked",
           populate: { path: "userId", model: "User", select: "name email phoneNumber" },
         })
-        .populate("clinic", "name address price")
+        // ✅ تم إضافة defaultSchedule هنا أيضاً
+        .populate("clinic", "name address price defaultSchedule")
         .populate("prescription")
         .sort({ date: -1 });
 
@@ -487,7 +488,6 @@ exports.getMyAppointments = async (req, res) => {
     return res.status(500).json({ success: false, message: "Server error while fetching appointments." });
   }
 };
-
 
 // ─── PATCH /appointments/:id/cancel ──────────────────────────────────────────
 
