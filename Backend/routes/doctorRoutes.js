@@ -64,7 +64,7 @@ router.get('/ai/brief', auth, authorizeRoles('doctor'), aiDoctorController.aiDai
 // GET /api/doctor/ai/financials?lang=ar|en
 router.get('/ai/financials', auth, authorizeRoles('doctor'), aiDoctorController.aiFinancialAnalysis);
 
-
+router.get('/:doctorId/clinics', doctorController.getDoctorClinics);
 //billing
 router.get("/summary", auth, authorizeRoles('doctor'),DoctorBillingController.getBillingSummary);
 router.post("/pay", auth, authorizeRoles('doctor'),DoctorBillingController.payPlatformFee);
