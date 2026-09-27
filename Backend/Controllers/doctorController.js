@@ -268,29 +268,47 @@ exports.getDoctorDashboard = async (req, res) => {
 };
 
 // Get clinics by doctor id
+// Get clinics by doctor id with full doctor details
 exports.getDoctorClinics = async (req, res) => {
   try {
     const { doctorId } = req.params;
 
-    // Try finding doctor by Doctor model _id first, then fall back to userId
-    let doctor = await Doctor.findById(doctorId).catch(() => null);
+    // البحث عن الدكتور وإحضار بياناته الأساسية واسمه من موديل User
+    let doctor = await Doctor.findById(doctorId)
+      .populate("userId", "name")
+      .catch(() => null);
 
     if (!doctor) {
-      doctor = await Doctor.findOne({ userId: doctorId });
+      doctor = await Doctor.findOne({ userId: doctorId }).populate("userId", "name");
     }
 
     if (!doctor) {
       return res.status(404).json({ message: "Doctor not found" });
     }
 
-    const clinics = await Clinic.find({ doctorId: doctor._id });
+    // جلب كل عيادات الدكتور
+    const clinics = await Clinic.find({ doctorId: doctor._id }).lean();
 
+    // تجهيز الـ Response المطلوب للـ Flutter
     res.status(200).json({
-      doctorId: doctor._id,
+      success: true,
+      doctor: {
+        _id: doctor._id,
+        name: doctor.userId?.name || "Unknown",
+        specialization: doctor.specialization,
+        rating: doctor.rating || 0,
+      },
       totalClinics: clinics.length,
-      clinics
+      clinics: clinics.map((clinic) => ({
+        _id: clinic._id,
+        name: clinic.name,
+        city: clinic.city,
+        address: clinic.address,
+        price: clinic.price, // سعر الكشف الخاص بالعيادة
+        location: clinic.location,
+        defaultSchedule: clinic.defaultSchedule,
+      })),
     });
-
   } catch (err) {
     res.status(500).json({ message: err.message });
   }
