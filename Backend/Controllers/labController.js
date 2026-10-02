@@ -407,22 +407,23 @@ exports.uploadLabResult = async (req, res) => {
   try {
     const { requestId } = req.body;
 
-    if (!req.file) {
-      return res.status(400).json({ success: false, message: "Please upload a result file (Image or PDF)" });
+    if (!req.files || req.files.length === 0) {
+      return res.status(400).json({ success: false, message: "Please upload at least one result file (Image or PDF)" });
     }
-
-    const resultFileUrl = req.file.path;
-    const fileType = req.file.mimetype && req.file.mimetype.includes('pdf') ? 'pdf' : 'image';
 
     if (!requestId) {
       return res.status(400).json({ success: false, message: "Missing required field: requestId" });
     }
 
+    const resultFileUrls = req.files.map(file => file.path);
+    
+    const fileType = req.files[0].mimetype && req.files[0].mimetype.includes('pdf') ? 'pdf' : 'image';
+
     const updatedRequest = await LabRequest.findByIdAndUpdate(
       requestId,
       {
         status: "completed",
-        resultFile: resultFileUrl,
+        resultFile: resultFileUrls, 
         resultFileType: fileType,
         resultUploadedAt: new Date()
       },
@@ -435,7 +436,6 @@ exports.uploadLabResult = async (req, res) => {
 
     if (updatedRequest.patientId) {
       const patientData = await Patient.findById(updatedRequest.patientId);
-
       const patientUserId = patientData?.userId;
 
       if (patientUserId) {

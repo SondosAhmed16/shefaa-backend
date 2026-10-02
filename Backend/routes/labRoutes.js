@@ -71,7 +71,7 @@ router.post('/add-request', auth, labController.createRequest);
 
 router.get('/results-dashboard', auth, labController.getLabResultsDashboard);
 
-router.post('/upload-result', auth, upload.single('resultFileUrl'), labController.uploadLabResult);
+router.post('/upload-result', auth, upload.array('resultFileUrl', 5), labController.uploadLabResult);
 
 router.get('/lab-notifications', auth, notificationController.getLabNotificationsForUI);
 

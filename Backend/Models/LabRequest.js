@@ -7,7 +7,6 @@ const labRequestSchema = new mongoose.Schema(
       ref: "Lab",
       required: true,
     },
-
     patientId: {
       type: mongoose.Schema.Types.ObjectId,
       ref: "Patients",
@@ -22,29 +21,27 @@ const labRequestSchema = new mongoose.Schema(
     viaAI: {
       type: Boolean,
       default: false
+    },
+    status: {
+      type: String,
+      enum: ["pending", "completed"],
+      default: "pending"
+    },
+    resultFile: {
+      type: [String], 
+      default: []
+    },
+    resultFileType: {
+      type: String,
+      enum: ["image", "pdf", null],
+      default: null
+    },
+    resultUploadedAt: {
+      type: Date,
+      default: null
     }
-  ,
-  status: {
-  type: String,
-  enum: ["pending", "completed"],
-  default: "pending"
-},
-  resultFile: {
-  type: String, 
-  default: null
-},
-  resultFileType: {
-  type: String,
-  enum: ["image", "pdf", null],
-  default: null
-},
-  resultUploadedAt: {
-  type: Date,
-  default: null
-}
   },
-{ timestamps: true } 
-
+  { timestamps: true } 
 );
 
 module.exports = mongoose.model("LabRequest", labRequestSchema);
