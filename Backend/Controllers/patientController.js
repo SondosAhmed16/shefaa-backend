@@ -1367,20 +1367,42 @@ exports.getPatientLabResults = async (req, res) => {
       .sort({ resultUploadedAt: -1 })
       .lean();
 
-    const formattedResults = completedResults.map(reqItem => {
+    const formattedResults = [];
+
+    completedResults.forEach(reqItem => {
       const fileName = reqItem.services && reqItem.services.length > 0
         ? reqItem.services.map(s => s.name).join(', ')
         : "Medical Analysis Report";
 
-      return {
-        requestId: reqItem._id,
-        fileName: fileName,
-        labName: reqItem.labId?.userId?.name || "The Medical Center",
-        uploadedAt: reqItem.resultUploadedAt || reqItem.updatedAt,
-        fileUrl: reqItem.resultFile || "",
-        fileType: reqItem.resultFileType || "image",
-        doctorNotes: "No specific notes provided by the specialist."
-      };
+      const labName = reqItem.labId?.userId?.name || "The Medical Center";
+      const uploadedAt = reqItem.resultUploadedAt || reqItem.updatedAt;
+
+      if (Array.isArray(reqItem.resultFile) && reqItem.resultFile.length > 0) {
+        reqItem.resultFile.forEach(fileUrl => {
+          const isPdf = typeof fileUrl === 'string' && fileUrl.toLowerCase().endsWith('.pdf');
+          
+          formattedResults.push({
+            requestId: reqItem._id,
+            fileName: fileName,
+            labName: labName,
+            uploadedAt: uploadedAt,
+            fileUrl: fileUrl, // رابط منفصل لكل عنصر
+            fileType: isPdf ? "pdf" : "image",
+            doctorNotes: "No specific notes provided by the specialist."
+          });
+        });
+      } 
+      else if (reqItem.resultFile) {
+        formattedResults.push({
+          requestId: reqItem._id,
+          fileName: fileName,
+          labName: labName,
+          uploadedAt: uploadedAt,
+          fileUrl: reqItem.resultFile,
+          fileType: reqItem.resultFileType || "pdf",
+          doctorNotes: "No specific notes provided by the specialist."
+        });
+      }
     });
 
     res.status(200).json({
