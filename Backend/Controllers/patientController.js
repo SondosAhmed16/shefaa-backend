@@ -316,7 +316,7 @@ exports.deleteMedication = async (req, res) => {
     const patient = await Patient.findOneAndUpdate(
       { userId: req.user._id },
       { $pull: { medications: { _id: new mongoose.Types.ObjectId(medId) } } },
-      { new: false } 
+      { new: false }
     );
 
     if (!patient) return res.status(404).json({ message: "Patient not found" });
@@ -578,6 +578,7 @@ exports.getPharmacyProfileForPatient = async (req, res) => {
       totalReviews: pharmacy.totalReviews || 0,
       deliveryTime: pharmacy.deliveryTime,
       deliveryFee: pharmacy.deliveryFee || 0,
+      cityDeliveryPrices: pharmacy.cityDeliveryPrices || [],
       minimumOrder: pharmacy.minimumOrder || 0,
       phone: pharmacy.phone,
       about: pharmacy.about,
@@ -794,13 +795,13 @@ exports.getMedicineDetailsForPatient = async (req, res) => {
 
 exports.createOrder = async (req, res) => {
   try {
-    const userId = req.user._id; 
+    const userId = req.user._id;
     const {
       pharmacyId,
       items,
-      orderType, 
-      paymentMethod, 
-      deliveryAddressDetails 
+      orderType,
+      paymentMethod,
+      deliveryAddressDetails
     } = req.body;
 
     const pharmacy = await Pharmacy.findById(pharmacyId);
@@ -826,7 +827,7 @@ exports.createOrder = async (req, res) => {
       orderItems.push({
         medicineId: medicine._id,
         quantity: item.quantity,
-        price: itemPrice 
+        price: itemPrice
       });
     }
 
@@ -834,23 +835,28 @@ exports.createOrder = async (req, res) => {
     let finalShippingAddress = null;
 
     if (orderType === "Delivery") {
-      deliveryFee = pharmacy.deliveryFee || 0;
-
-      if (!deliveryAddressDetails || !deliveryAddressDetails.streetAddress) {
+      if (!deliveryAddressDetails || !deliveryAddressDetails.streetAddress || !deliveryAddressDetails.cityDistrict) {
         return res.status(400).json({
           success: false,
-          message: "Delivery address details are required for Delivery orders."
+          message: "Delivery address details including city/district are required for Delivery orders."
         });
       }
 
+      // ── ابحثي عن سعر التوصيل الخاص بمدينة البيشنت من قائمة الصيدلية ──
+      const patientCity = deliveryAddressDetails.cityDistrict.trim();
+      const cityPricing = pharmacy.cityDeliveryPrices.find(
+        (p) => p.city.toLowerCase() === patientCity.toLowerCase()
+      );
+
+      // لو الصيدلية حاطة سعر للمدينة دي خده، لو مش حاططها خد الـ deliveryFee الافتراضي أو صفر
+      deliveryFee = cityPricing ? cityPricing.price : (pharmacy.deliveryFee || 0);
+
       finalShippingAddress = {
-        addressText: `${deliveryAddressDetails.cityDistrict}, ${deliveryAddressDetails.streetAddress}`, 
+        addressText: `${deliveryAddressDetails.cityDistrict}, ${deliveryAddressDetails.streetAddress}`,
         fullName: deliveryAddressDetails.fullName,
         phoneNumber: deliveryAddressDetails.phoneNumber,
         cityDistrict: deliveryAddressDetails.cityDistrict,
         streetAddress: deliveryAddressDetails.streetAddress,
-
-
         ...(deliveryAddressDetails.location &&
           deliveryAddressDetails.location.coordinates &&
           deliveryAddressDetails.location.coordinates.length === 2
@@ -872,7 +878,7 @@ exports.createOrder = async (req, res) => {
       return res.status(400).json({ success: false, message: "Invalid order type. Must be Delivery or Pickup." });
     }
 
-    const discount = 0; 
+    const discount = 0;
     const totalPrice = subtotal + deliveryFee - discount;
 
     const orderNumber = `SHF-${Math.floor(100000 + Math.random() * 900000)}`;
@@ -895,7 +901,7 @@ exports.createOrder = async (req, res) => {
       totalPrice,
       paymentMethod,
       paymentStatus,
-      deliveryAddress: finalShippingAddress 
+      deliveryAddress: finalShippingAddress
     });
 
     await newOrder.save();
@@ -913,7 +919,7 @@ exports.createOrder = async (req, res) => {
         orderId: newOrder._id,
         orderNumber: newOrder.orderNumber,
         orderType: newOrder.orderType,
-        pharmacyName: pharmacy.userId?.name || "Shefaa Pharmacy", 
+        pharmacyName: pharmacy.userId?.name || "Shefaa Pharmacy",
         deliveryTime: orderType === "Delivery" ? (pharmacy.deliveryTime || "1 h") : "N/A (Pickup)",
         itemsCount: orderItems.reduce((acc, item) => acc + item.quantity, 0),
         subtotal: newOrder.subtotal,
@@ -1065,7 +1071,7 @@ exports.getPatientOrderTracking = async (req, res) => {
       success: true,
       data: {
         orderNumber: order.orderNumber,
-        orderStatus: order.status, 
+        orderStatus: order.status,
 
         riderInfo: order.deliveryManId ? {
           name: order.deliveryManId.name,
@@ -1073,7 +1079,7 @@ exports.getPatientOrderTracking = async (req, res) => {
           rating: order.deliveryManId.rating || 5.0,
           totalDeliveries: order.deliveryManId.totalDeliveries || 0,
           phones: order.deliveryManId.phones
-        } : null, 
+        } : null,
 
         statusTimeline: timeline,
 
@@ -1305,7 +1311,7 @@ exports.patientSearch = async (req, res) => {
         homeServiceAvailable: lab.homeSampleCollection || false,
         insuranceAccepted: lab.insuranceAccepted || false,
         minPrice: minPrice,
-        badge: null, 
+        badge: null,
         nextSlot: "Today 10:30 AM",
         availableTags: services.map(s => ({ name: s.name, category: s.category, isPartner: false }))
       };
@@ -1380,7 +1386,7 @@ exports.getPatientLabResults = async (req, res) => {
       if (Array.isArray(reqItem.resultFile) && reqItem.resultFile.length > 0) {
         reqItem.resultFile.forEach(fileUrl => {
           const isPdf = typeof fileUrl === 'string' && fileUrl.toLowerCase().endsWith('.pdf');
-          
+
           formattedResults.push({
             requestId: reqItem._id,
             fileName: fileName,
@@ -1391,7 +1397,7 @@ exports.getPatientLabResults = async (req, res) => {
             doctorNotes: "No specific notes provided by the specialist."
           });
         });
-      } 
+      }
       else if (reqItem.resultFile) {
         formattedResults.push({
           requestId: reqItem._id,
