@@ -74,6 +74,8 @@ exports.getProfile = async (req, res) => {
         deliveryPricing: pharmacy.cityDeliveryPrices,
         paymentMethods: pharmacy.paymentMethods,
         deliveryTime: pharmacy.deliveryTime,
+        deliveryFee: pharmacy.deliveryFee || 0,
+        minimumOrder: pharmacy.minimumOrder || 0,
         settings: {
           deliveryAvailable: pharmacy.deliveryAvailable,
           openNow: pharmacy.openNow,
