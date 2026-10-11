@@ -1228,6 +1228,30 @@ exports.confirmOrderReceipt = async (req, res) => {
 
 
 
+exports.getPatientOrders = async (req, res) => {
+  try {
+    const userId = req.user._id;
+
+    const orders = await Order.find({ userId })
+      .populate({
+        path: 'pharmacyId',
+        populate: { path: 'userId', select: 'name' }
+      })
+      .sort({ createdAt: -1 });
+
+    return res.status(200).json({
+      success: true,
+      count: orders.length,
+      data: orders
+    });
+  } catch (err) {
+    console.error("Error in getPatientOrders:", err);
+    return res.status(500).json({ success: false, message: "Internal server error", error: err.message });
+  }
+};
+
+
+
 
 exports.patientSearch = async (req, res) => {
   try {

@@ -59,6 +59,7 @@ router.post('/cart/payment-online', auth, authorizeRoles('patient'), patientCont
 router.get('/orders/track/:orderId', auth, authorizeRoles('patient'), patientController.getPatientOrderTracking);
 
 router.post('/orders/confirm-receipt', auth, authorizeRoles('patient'), patientController.confirmOrderReceipt);
+router.get('/orders',auth, authorizeRoles('patient'), patientController.getPatientOrders);
 
 router.post('/pharmacies/review', auth, authorizeRoles('patient'), reviewController.addPharmacyReview);
 
