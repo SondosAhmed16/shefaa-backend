@@ -1241,15 +1241,17 @@ exports.getPatientOrders = async (req, res) => {
       .select('_id orderNumber orderStatus totalPrice createdAt orderType paymentStatus') // الحقول الأساسية للأوردر
       .sort({ createdAt: -1 });
 
-    const simplifiedOrders = orders.map(order => ({
+   const simplifiedOrders = orders.map(order => ({
       orderId: order._id,
       orderNumber: order.orderNumber,
       pharmacyName: order.pharmacyId?.userId?.name || "Unknown Pharmacy",
-      orderStatus: order.orderStatus, // حالة الأوردر (New, Preparing, Completed, etc.)
-      isConfirmed: order.orderStatus !== "New", // أو حسب اللوجيك عندك لو فيه علامة تأكيد واضحة
+      orderStatus: order.orderStatus,
       orderType: order.orderType,
       totalPrice: order.totalPrice,
       paymentStatus: order.paymentStatus,
+      // ── هل المريض أكد الاستلام بالزرار ولا لأ؟ ──
+      isPatientConfirmed: order.patientConfirmedCompletion || false,
+      confirmedAt: order.patientConfirmedAt || null,
       createdAt: order.createdAt
     }));
 
