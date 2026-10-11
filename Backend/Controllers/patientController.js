@@ -1232,24 +1232,37 @@ exports.getPatientOrders = async (req, res) => {
   try {
     const userId = req.user._id;
 
+    // جلب الأوردرات مع اختيار الحقول البسيطة فقط لتخفيف الـ Response
     const orders = await Order.find({ userId })
       .populate({
         path: 'pharmacyId',
-        populate: { path: 'userId', select: 'name' }
+        populate: { path: 'userId', select: 'name' } // بنجيب اسم الصيدلية بس
       })
+      .select('_id orderNumber orderStatus totalPrice createdAt orderType paymentStatus') // الحقول الأساسية للأوردر
       .sort({ createdAt: -1 });
+
+    // تصفية وتنسيق البيانات لترجع بشكل بسيط ونظيف جداً
+    const simplifiedOrders = orders.map(order => ({
+      orderId: order._id,
+      orderNumber: order.orderNumber,
+      pharmacyName: order.pharmacyId?.userId?.name || "Unknown Pharmacy",
+      orderStatus: order.orderStatus,
+      orderType: order.orderType,
+      totalPrice: order.totalPrice,
+      paymentStatus: order.paymentStatus,
+      createdAt: order.createdAt
+    }));
 
     return res.status(200).json({
       success: true,
-      count: orders.length,
-      data: orders
+      count: simplifiedOrders.length,
+      data: simplifiedOrders
     });
   } catch (err) {
     console.error("Error in getPatientOrders:", err);
     return res.status(500).json({ success: false, message: "Internal server error", error: err.message });
   }
 };
-
 
 
 
