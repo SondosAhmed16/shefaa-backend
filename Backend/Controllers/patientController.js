@@ -884,8 +884,11 @@ exports.createOrder = async (req, res) => {
     const orderNumber = `SHF-${Math.floor(100000 + Math.random() * 900000)}`;
 
 
-    const CASH_METHODS = ["Cash"];
-    const paymentStatus = CASH_METHODS.includes(paymentMethod) ? "Pending" : "Paid";
+    // const CASH_METHODS = ["Cash"];
+    // const paymentStatus = CASH_METHODS.includes(paymentMethod) ? "Pending" : "Paid";
+
+    
+    const paymentStatus = "Pending";
 
     const newOrder = new Order({
       pharmacyId,
