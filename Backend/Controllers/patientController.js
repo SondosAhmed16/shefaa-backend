@@ -1232,16 +1232,16 @@ exports.getPatientOrders = async (req, res) => {
   try {
     const userId = req.user._id;
 
-    // جلب الأوردرات مع اختيار الحقول البسيطة فقط لتخفيف الـ Response
+    // جلب الأوردرات مع إضافة حقول التأكيد في الـ select
     const orders = await Order.find({ userId })
       .populate({
         path: 'pharmacyId',
-        populate: { path: 'userId', select: 'name' } // بنجيب اسم الصيدلية بس
+        populate: { path: 'userId', select: 'name' }
       })
-      .select('_id orderNumber orderStatus totalPrice createdAt orderType paymentStatus') // الحقول الأساسية للأوردر
+      .select('_id orderNumber orderStatus totalPrice createdAt orderType paymentStatus patientConfirmedCompletion patientConfirmedAt') // 👈 أضفنا الحقول هنا
       .sort({ createdAt: -1 });
 
-   const simplifiedOrders = orders.map(order => ({
+    const simplifiedOrders = orders.map(order => ({
       orderId: order._id,
       orderNumber: order.orderNumber,
       pharmacyName: order.pharmacyId?.userId?.name || "Unknown Pharmacy",
@@ -1249,8 +1249,7 @@ exports.getPatientOrders = async (req, res) => {
       orderType: order.orderType,
       totalPrice: order.totalPrice,
       paymentStatus: order.paymentStatus,
-      // ── هل المريض أكد الاستلام بالزرار ولا لأ؟ ──
-      isPatientConfirmed: order.patientConfirmedCompletion || false,
+      isPatientConfirmed: order.patientConfirmedCompletion || false, // ستصبح true الآن بشكل صحيح
       confirmedAt: order.patientConfirmedAt || null,
       createdAt: order.createdAt
     }));
@@ -1265,7 +1264,6 @@ exports.getPatientOrders = async (req, res) => {
     return res.status(500).json({ success: false, message: "Internal server error", error: err.message });
   }
 };
-
 
 
 exports.patientSearch = async (req, res) => {
