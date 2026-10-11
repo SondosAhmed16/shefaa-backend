@@ -1241,12 +1241,12 @@ exports.getPatientOrders = async (req, res) => {
       .select('_id orderNumber orderStatus totalPrice createdAt orderType paymentStatus') // الحقول الأساسية للأوردر
       .sort({ createdAt: -1 });
 
-    // تصفية وتنسيق البيانات لترجع بشكل بسيط ونظيف جداً
     const simplifiedOrders = orders.map(order => ({
       orderId: order._id,
       orderNumber: order.orderNumber,
       pharmacyName: order.pharmacyId?.userId?.name || "Unknown Pharmacy",
-      orderStatus: order.orderStatus,
+      orderStatus: order.orderStatus, // حالة الأوردر (New, Preparing, Completed, etc.)
+      isConfirmed: order.orderStatus !== "New", // أو حسب اللوجيك عندك لو فيه علامة تأكيد واضحة
       orderType: order.orderType,
       totalPrice: order.totalPrice,
       paymentStatus: order.paymentStatus,
