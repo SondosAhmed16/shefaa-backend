@@ -7,6 +7,60 @@ const Notification = require('../Models/Notification');
 const mongoose = require('mongoose');
 
 
+// 1. دالة موحدة لتنسيق بيانات اللاب علشان تضمن ثبات الـ Response دايماً
+const formatProfileResponse = (lab, user, servicesCount = 0, todaysRequestsCount = 0) => {
+  let aiStatus = lab.aiRecommendations ? "Active" : "Inactive";
+  let rankingText = "Turn on AI recommendations to see your local ranking";
+
+  if (lab.aiRecommendations) {
+    let rank = 3;
+    if (lab.rating >= 4.8) rank = 1;
+    else if (lab.rating >= 4.5) rank = 2;
+
+    if (lab.facilityType === "both") {
+      rankingText = `Ranking #${rank} for Radiology · #${rank + 1} for Lab in your zone`;
+    } else if (lab.facilityType === "radiology center") {
+      rankingText = `Ranking #${rank} for Radiology in your zone`;
+    } else {
+      rankingText = `Ranking #${rank} for Lab Tests in your zone`;
+    }
+  }
+
+  let referralsText = "0 requests recorded today";
+  if (todaysRequestsCount > 0) {
+    referralsText = `${todaysRequestsCount} patients processed today via system`;
+  }
+
+  return {
+    id: lab._id,
+    name: user ? user.name : undefined,
+    phoneNumber: user ? user.phoneNumber : undefined,
+    email: user ? user.email : undefined,
+    facilityType: lab.facilityType,
+    workingHours: lab.workingHours,
+    rating: lab.rating,
+    servicesCount: servicesCount,
+    paymentMethods: lab.paymentMethods,
+    commercialRegisterNumber: lab.commercialRegisterNumber,
+    licenseValidUntil: lab.licenseValidUntil,
+    medicalLicencePdf: lab.medicalLicencePdf,
+    medicalDirectorName: lab.medicalDirectorName,
+    directorProfessionalId: lab.directorProfessionalId,
+    addresses: lab.addresses,
+    aiVisibility: {
+      status: aiStatus,
+      text: rankingText,
+      referrals: referralsText
+    },
+    settings: {
+      homeSampleCollection: lab.homeSampleCollection,
+      aiRecommendations: lab.aiRecommendations,
+      insuranceAccepted: lab.insuranceAccepted
+    }
+  };
+};
+
+// 2. تحديث دالة getProfile
 exports.getProfile = async (req, res) => {
   try {
     const lab = await Lab.findOne({ userId: req.user._id });
@@ -14,6 +68,7 @@ exports.getProfile = async (req, res) => {
       return res.status(404).json({ message: "Center profile not found" });
     }
 
+    const user = await User.findById(req.user._id);
     const servicesCount = await Service.countDocuments({ labId: lab._id });
 
     const startOfToday = new Date();
@@ -23,62 +78,19 @@ exports.getProfile = async (req, res) => {
 
     const todaysRequestsCount = await LabRequest.countDocuments({
       labId: lab._id,
-      createdAt: { $gte: startOfToday, $lte: endOfToday }
+      createdAt: { $gte: startOfToday,$lte: endOfToday }
     });
-
-    let aiStatus = lab.aiRecommendations ? "Active" : "Inactive";
-    let rankingText = "Turn on AI recommendations to see your local ranking";
-
-    if (lab.aiRecommendations) {
-      let rank = 3;
-      if (lab.rating >= 4.8) rank = 1;
-      else if (lab.rating >= 4.5) rank = 2;
-
-      if (lab.facilityType === "both") {
-        rankingText = `Ranking #${rank} for Radiology · #${rank + 1} for Lab in your zone`;
-      } else if (lab.facilityType === "radiology center") {
-        rankingText = `Ranking #${rank} for Radiology in your zone`;
-      } else {
-        rankingText = `Ranking #${rank} for Lab Tests in your zone`;
-      }
-    }
-
-    let referralsText = "0 requests recorded today";
-    if (todaysRequestsCount > 0) {
-      referralsText = `${todaysRequestsCount} patients processed today via system`;
-    }
 
     res.json({
       success: true,
-      profileData: {
-        id: lab._id,
-        centerName: lab.centerName,
-        phone: lab.phone,
-        facilityType: lab.facilityType,
-        workingHours: lab.workingHours,
-        rating: lab.rating,
-        servicesCount: servicesCount,
-        paymentMethods: lab.paymentMethods,
-        licenseNumber: lab.licenseNumber,
-        licenseValidUntil: lab.licenseValidUntil,
-        addresses: lab.addresses,
-        aiVisibility: {
-          status: aiStatus,
-          text: rankingText,
-          referrals: referralsText
-        },
-        settings: {
-          homeSampleCollection: lab.homeSampleCollection,
-          aiRecommendations: lab.aiRecommendations,
-          insuranceAccepted: lab.insuranceAccepted
-        },
-      }
+      profileData: formatProfileResponse(lab, user, servicesCount, todaysRequestsCount)
     });
   } catch (err) {
     res.status(500).json({ message: err.message });
   }
 };
 
+// 3. تحديث دالة updateProfile
 exports.updateProfile = async (req, res) => {
   try {
     const lab = await Lab.findOne({ userId: req.user._id });
@@ -143,13 +155,12 @@ exports.updateProfile = async (req, res) => {
 
     await lab.save();
 
-    const updatedProfile = await Lab.findOne({ userId: user._id })
-      .populate('userId', 'name email phoneNumber role');
+    const servicesCount = await Service.countDocuments({ labId: lab._id });
 
     res.status(200).json({
       success: true,
       message: "Profile updated successfully.",
-      profileData: updatedProfile
+      profileData: formatProfileResponse(lab, user, servicesCount, 0)
     });
 
   } catch (err) {
@@ -162,6 +173,7 @@ exports.updateProfile = async (req, res) => {
     res.status(500).json({ message: err.message });
   }
 };
+
 exports.getServices = async (req, res) => {
   try {
     const lab = await Lab.findOne({ userId: req.user._id });
