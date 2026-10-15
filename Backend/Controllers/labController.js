@@ -78,7 +78,7 @@ exports.getProfile = async (req, res) => {
 
     const todaysRequestsCount = await LabRequest.countDocuments({
       labId: lab._id,
-      createdAt: { $gte: startOfToday,$lte: endOfToday }
+      createdAt: { $gte: startOfToday, $lte: endOfToday }
     });
 
     res.json({
@@ -369,12 +369,19 @@ exports.getLabResultsDashboard = async (req, res) => {
         console.log("Patient populate error:", err.message);
       }
 
-      let maxHours = 24;
+      // ابدل الجزئيّة دي في دالة getLabResultsDashboard
+      let maxHours = 0; // ابدأ بـ صفر عشان نقيس الحقيقي
       if (reqItem.services && reqItem.services.length > 0) {
         reqItem.services.forEach(service => {
-          const hours = parseInt(service.estimatedTime) || 24;
+          // لو الـ service جاية Object كاملة أو مجرد ID مش متبرمج صح
+          const hours = parseInt(service.estimatedTime) || 0;
           if (hours > maxHours) maxHours = hours;
         });
+      }
+
+      // لو مفيش خدمات أو الـ estimatedTime مش متسجل، خليه 24 كافتراضي بس لو فيه خدمات اتبعتت ياخد وقتها
+      if (maxHours === 0) {
+        maxHours = 24;
       }
 
       const expectedDelivery = new Date(reqItem.createdAt || new Date());
@@ -428,14 +435,14 @@ exports.uploadLabResult = async (req, res) => {
     }
 
     const resultFileUrls = req.files.map(file => file.path);
-    
+
     const fileType = req.files[0].mimetype && req.files[0].mimetype.includes('pdf') ? 'pdf' : 'image';
 
     const updatedRequest = await LabRequest.findByIdAndUpdate(
       requestId,
       {
         status: "completed",
-        resultFile: resultFileUrls, 
+        resultFile: resultFileUrls,
         resultFileType: fileType,
         resultUploadedAt: new Date()
       },
