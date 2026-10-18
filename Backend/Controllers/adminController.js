@@ -9,6 +9,7 @@ const logger = require('../config/loggerConfig');
 const { sendEmail } = require('../utils/sendEmail');
 // Add this at the top with other requires
 const Transaction = require('../Models/Transaction');
+const Order = require('../Models/Order')
 const PlatformSettings = require('../Models/PlatformSettings');
 const os = require('os');
 
@@ -1093,3 +1094,152 @@ exports.rejectLab = async (req, res) => {
     res.status(500).json({ message: 'Error rejecting lab' });
   }
 };
+
+/**
+ * adminController.orders.js
+ *
+ * الصق الكود ده في adminController.js (بعد آخر export).
+ * وزوّد الـ requires دي فوق مع باقي الـ requires:
+ *
+ *   const Order = require('../Models/Order');   // عدّل المسار/الاسم حسب مشروعك
+ *
+ * Endpoints:
+ *   GET /admin/orders/summary
+ *   GET /admin/orders?status=&paymentStatus=&search=&page=1&limit=20
+ */
+
+const escapeRegex = (s) => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+
+// ─── GET /admin/orders/summary ───────────────────────────────────────────────
+exports.getOrdersSummary = async (req, res) => {
+  try {
+    const todayStart     = startOfDay();
+    const todayEnd       = endOfDay();
+    const yesterdayStart = startOfDay(new Date(Date.now() - 86400000));
+    const yesterdayEnd   = endOfDay(new Date(Date.now() - 86400000));
+
+    const [total, todayCount, yesterdayCount, sales, byStatus] = await Promise.all([
+      Order.countDocuments(),
+      Order.countDocuments({ createdAt: { $gte: todayStart, $lte: todayEnd } }),
+      Order.countDocuments({ createdAt: { $gte: yesterdayStart, $lte: yesterdayEnd } }),
+
+      // المبيعات والعمولة من الأوردرات المكتملة فقط
+      Order.aggregate([
+        { $match: { status: 'Completed' } },
+        {
+          $group: {
+            _id: null,
+            totalSales:      { $sum: '$totalPrice' },
+            totalCommission: { $sum: '$commissionAmount' },
+          },
+        },
+      ]),
+
+      Order.aggregate([{ $group: { _id: '$status', count: { $sum: 1 } } }]),
+    ]);
+
+    const changePercent   = percentChange(yesterdayCount, todayCount);
+    const changeDirection = changePercent >= 0 ? 'up' : 'down';
+
+    res.json({
+      total,
+      today: todayCount,
+      yesterday: yesterdayCount,
+      changePercent: Math.abs(changePercent),
+      changeDirection,
+      changeSummary: `${changeDirection === 'up' ? '↑' : '↓'} ${Math.abs(changePercent)}% vs yesterday`,
+      totalSales:      sales[0]?.totalSales      ?? 0,
+      totalCommission: sales[0]?.totalCommission ?? 0,
+      byStatus: byStatus.map((b) => ({ status: b._id, count: b.count })),
+    });
+  } catch (err) {
+    logger.error('Error fetching orders summary: ' + err.message);
+    res.status(500).json({ message: 'Error fetching orders summary' });
+  }
+};
+
+// ─── GET /admin/orders ───────────────────────────────────────────────────────
+exports.getOrders = async (req, res) => {
+  try {
+    const { status, paymentStatus, search } = req.query;
+    const page  = Math.max(parseInt(req.query.page)  || 1, 1);
+    const limit = Math.min(parseInt(req.query.limit) || 20, 100);
+
+    const filter = {};
+    if (status)        filter.status        = status;
+    if (paymentStatus) filter.paymentStatus = paymentStatus;
+
+    // البحث: رقم الأوردر / اسم العميل / اسم الصيدلية
+    if (search && search.trim()) {
+      const rx = new RegExp(escapeRegex(search.trim()), 'i');
+
+      const matchedUsers = await User.find({ name: rx }).select('_id').lean();
+      const userIds = matchedUsers.map((u) => u._id);
+
+      const matchedPharmacies = await Pharmacy.find({ userId: { $in: userIds } })
+        .select('_id')
+        .lean();
+
+      filter.$or = [
+        { orderNumber: rx },
+        { userId: { $in: userIds } },
+        { pharmacyId: { $in: matchedPharmacies.map((p) => p._id) } },
+      ];
+    }
+
+    const [total, orders] = await Promise.all([
+      Order.countDocuments(filter),
+      Order.find(filter)
+        .sort({ createdAt: -1 })
+        .skip((page - 1) * limit)
+        .limit(limit)
+        .populate('userId', 'name email')
+        .populate({
+          path: 'pharmacyId',
+          select: 'userId phone',
+          populate: { path: 'userId', select: 'name' }, // اسم الصيدلية موجود في الـ User
+        })
+        .lean(),
+    ]);
+
+    const rows = orders.map((o) => ({
+      _id:             o._id,
+      orderNumber:     o.orderNumber,
+      customerName:    o.userId?.name || o.deliveryAddress?.fullName || '—',
+      customerEmail:   o.userId?.email || '',
+      customerPhone:   o.deliveryAddress?.phoneNumber || '',
+      pharmacyName:    o.pharmacyId?.userId?.name || '—',
+      itemsCount:      o.items?.length || 0,
+      orderType:       o.orderType,
+      status:          o.status,
+      paymentMethod:   o.paymentMethod,
+      paymentStatus:   o.paymentStatus,
+      subtotal:        o.subtotal,
+      deliveryFee:     o.deliveryFee,
+      discount:        o.discount,
+      totalPrice:      o.totalPrice,
+      commissionAmount:o.commissionAmount,
+      pharmacyEarning: o.pharmacyEarning,
+      createdAt:       o.createdAt,
+    }));
+
+    res.json({
+      total,
+      page,
+      pages: Math.ceil(total / limit) || 1,
+      orders: rows,
+    });
+  } catch (err) {
+    logger.error('Error fetching orders: ' + err.message);
+    res.status(500).json({ message: 'Error fetching orders', detail: err.message });
+  }
+};
+
+/**
+ * ─── في ملف الـ routes (adminRoutes.js) ────────────────────────────────────
+ *
+ * router.get('/orders/summary', adminController.getOrdersSummary);
+ * router.get('/orders',         adminController.getOrders);
+ *
+ * (زوّدهم بنفس الـ middleware بتاع باقي مسارات الأدمن: protect / isAdmin ...)
+ */
