@@ -408,26 +408,30 @@ exports.markOrderReady = async (req, res) => {
       return res.status(400).json({ success: false, message: `Cannot mark ready — current status: "${order.status}"` });
 
     if (order.orderType === "Delivery") {
-      const { deliveryManId } = req.body;
-      if (!deliveryManId)
-        return res.status(400).json({ success: false, message: "deliveryManId required for delivery orders" });
+      const { deliveryManId } = req.body || {};
+      
+      // السماح بأن يكون deliveryManId بقيمة null أو غير مرسل مؤقتاً إذا لم يتم اختيار مندوب بعد
+      if (deliveryManId) {
+        const dm = await DeliveryMan.findOne({ _id: deliveryManId, pharmacyId: pharmacy._id, isActive: true });
+        if (!dm)
+          return res.status(404).json({ success: false, message: "Delivery man not found" });
+        if (dm.status === "Offline")
+          return res.status(400).json({ success: false, message: `${dm.name} is offline` });
 
-      const dm = await DeliveryMan.findOne({ _id: deliveryManId, pharmacyId: pharmacy._id, isActive: true });
-      if (!dm)
-        return res.status(404).json({ success: false, message: "Delivery man not found" });
-      if (dm.status === "Offline")
-        return res.status(400).json({ success: false, message: `${dm.name} is offline` });
-
-      if (order.deliveryManId) {
-        await DeliveryMan.findByIdAndUpdate(order.deliveryManId, {
-          $pull: { assignedOrders: order._id },
-          $set: { status: "Available" },
-        });
+        if (order.deliveryManId) {
+          await DeliveryMan.findByIdAndUpdate(order.deliveryManId, {
+            $pull: { assignedOrders: order._id },
+            $set: { status: "Available" },
+          });
+        }
+        dm.assignedOrders.push(order._id);
+        dm.status = "Busy";
+        await dm.save();
+        order.deliveryManId = dm._id;
+      } else {
+        // إذا كان null أو غير موجود، نجعله صراحة null لتجنب أي مشاكل في الـ DB
+        order.deliveryManId = null;
       }
-      dm.assignedOrders.push(order._id);
-      dm.status = "Busy";
-      await dm.save();
-      order.deliveryManId = dm._id;
     }
 
     order.status = "Ready";
@@ -445,7 +449,6 @@ exports.markOrderReady = async (req, res) => {
     return res.status(500).json({ success: false, message: "Internal server error", error: err.message });
   }
 };
-
 exports.completeOrder = async (req, res) => {
   try {
     const pharmacy = await getPharmacy(req.user.id);
