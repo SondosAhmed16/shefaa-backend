@@ -4,7 +4,7 @@ const adminController = require('../Controllers/adminController');
 const { auth } = require('../middleware/auth');
 const { authorizeRoles } = require('../middleware/role'); 
 const billingController = require('../Controllers/billingController');
-
+const adminLiveController = require('../Controllers/adminLiveController');
 router.use(auth);
 router.use(authorizeRoles('admin'));
 
@@ -38,7 +38,10 @@ router.get('/platform-health', adminController.getPlatformHealth);
 router.get('/recent-activity', adminController.getRecentActivity);
 router.get('/registrations-per-month', adminController.getRegistrationsPerMonth);
 router.get('/top-specializations', adminController.getTopSpecializations);
-
+  router.get('/orders/summary', adminController.getOrdersSummary);
+  router.get('/orders',         adminController.getOrders);
+//--live counts endpoint for dashboard polling
+router.get('/live-counts', adminLiveController.getLiveCounts);
 // ── Approve / Reject ──────────────────────────────────────────────────────────
 router.post('/doctors/:id/approve',    adminController.approveDoctor);
 router.delete('/doctors/:id/reject',   adminController.rejectDoctor);
