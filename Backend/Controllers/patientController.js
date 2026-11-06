@@ -460,6 +460,7 @@ exports.searchPharmaciesAndMedicines = async (req, res) => {
           near: { type: "Point", coordinates: [longitude, latitude] },
           distanceField: "distance",
           spherical: true,
+          maxDistance: 50000,
           query: { openNow: true, visibilityStatus: "active" }   // ← ضفنا دي
         }
       },
@@ -1232,7 +1233,6 @@ exports.getPatientOrders = async (req, res) => {
   try {
     const userId = req.user._id;
 
-    // جلب الأوردرات مع إضافة حقول التأكيد في الـ select
     const orders = await Order.find({ userId })
       .populate({
         path: 'pharmacyId',
