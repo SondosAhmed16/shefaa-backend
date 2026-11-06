@@ -1268,7 +1268,18 @@ exports.getPatientOrders = async (req, res) => {
 
 exports.patientSearch = async (req, res) => {
   try {
-    const { search, type, homeService, openNow, lat, lng, requiredServices } = req.query;
+    const { search, type, homeService, openNow, requiredServices } = req.query;
+    const patient = await Patient.findOne({ userId: req.user._id });
+    const coords = patient?.address?.location?.coordinates;
+
+    if (!patient || !coords || coords.length < 2 || !coords.every(c => typeof c === "number" && isFinite(c))) {
+      return res.status(400).json({
+        success: false,
+        message: "Patient location is required. Please update your profile location."
+      });
+    }
+
+    const [lng, lat] = coords;
 
     let labQuery = {};
 
@@ -1289,7 +1300,6 @@ exports.patientSearch = async (req, res) => {
 
     if (requiredServices) {
       const servicesArray = requiredServices.split(',').map(s => s.trim());
-
       const regexPatterns = servicesArray.map(service => new RegExp(service, 'i'));
 
       const matchedServices = await Service.find({
@@ -1318,24 +1328,18 @@ exports.patientSearch = async (req, res) => {
       ];
     }
 
-    let labs = [];
-    if (lat && lng) {
-      labs = await Lab.aggregate([
-        {
-          $geoNear: {
-            near: { type: "Point", coordinates: [parseFloat(lng), parseFloat(lat)] },
-            distanceField: "distanceResult",
-            spherical: true,
-            maxDistance: 5000,
-            query: labQuery
-          }
-        },
-        { $lookup: { from: "users", localField: "userId", foreignField: "_id", as: "userId" } },
-        { $unwind: { path: "$userId", preserveNullAndEmptyArrays: true } }
-      ]);
-    } else {
-      labs = await Lab.find(labQuery).populate('userId', 'name email phoneNumber').lean();
-    }
+    const labs = await Lab.aggregate([
+      {
+        $geoNear: {
+          near: { type: "Point", coordinates: [lng, lat] },
+          distanceField: "distanceResult",
+          spherical: true,
+          query: labQuery
+        }
+      },
+      { $lookup: { from: "users", localField: "userId", foreignField: "_id", as: "userId" } },
+      { $unwind: { path: "$userId", preserveNullAndEmptyArrays: true } }
+    ]);
 
     let formattedCenters = await Promise.all(labs.map(async (lab) => {
       const services = await Service.find({ labId: lab._id, isActive: true });
@@ -1388,7 +1392,6 @@ exports.patientSearch = async (req, res) => {
     res.status(500).json({ success: false, message: err.message });
   }
 };
-
 
 exports.getPatientLabResults = async (req, res) => {
   try {
