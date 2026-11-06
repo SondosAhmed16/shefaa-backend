@@ -460,7 +460,7 @@ exports.searchPharmaciesAndMedicines = async (req, res) => {
           near: { type: "Point", coordinates: [longitude, latitude] },
           distanceField: "distance",
           spherical: true,
-          maxDistance: 50000,
+          maxDistance: 5000,
           query: { openNow: true, visibilityStatus: "active" }   // ← ضفنا دي
         }
       },
@@ -1326,6 +1326,7 @@ exports.patientSearch = async (req, res) => {
             near: { type: "Point", coordinates: [parseFloat(lng), parseFloat(lat)] },
             distanceField: "distanceResult",
             spherical: true,
+            maxDistance: 5000,
             query: labQuery
           }
         },
