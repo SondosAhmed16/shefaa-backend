@@ -1334,6 +1334,7 @@ exports.patientSearch = async (req, res) => {
           near: { type: "Point", coordinates: [lng, lat] },
           distanceField: "distanceResult",
           spherical: true,
+          maxDistance: 50000,
           query: labQuery
         }
       },
