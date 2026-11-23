@@ -24,20 +24,29 @@ const adminRoutes = require('./routes/adminRoutes.js');
 const LabReportRoutes = require('./routes/LabReportRoutes');
 const chatboot = require('./routes/chatbootRoutes.js');
 const app = express();
-const cors = require('cors');
 
 // This allows your local development environment
 // Just keep this, remove the app.options line completely
-app.use(cors({
-  origin: [
-    "http://localhost:3000",
-    "http://localhost:5173",
-    "https://admindashboard-pi-lac.vercel.app"
-  ],
+const cors = require("cors");
+
+const allowedOrigins = [
+  "http://localhost:3000",
+  "http://localhost:5173",
+  "https://admindashboard-pi-lac.vercel.app",
+];
+
+const corsOptions = {
+  origin: (origin, callback) => {
+    if (!origin || allowedOrigins.includes(origin)) return callback(null, true);
+    callback(new Error("Not allowed by CORS"));
+  },
   credentials: true,
   methods: ["GET", "POST", "PATCH", "PUT", "DELETE", "OPTIONS"],
   allowedHeaders: ["Content-Type", "Authorization"],
-}));
+};
+
+app.use(cors(corsOptions));
+app.options("*", cors(corsOptions));
 
 // 2. Standard Middlewares
 app.use(express.json());
