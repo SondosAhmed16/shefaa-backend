@@ -1,21 +1,21 @@
 require("dotenv").config();
 const express = require("express");
-const connectDB = require("./config/db.js");  
+const connectDB = require("./config/db.js");
 const bcrypt = require('bcryptjs');
 const passport = require('passport');
 require('./utils/cronJobs.js');
 require('./utils/billingCron.js')
 require('./config/passport.js');
 // Import Middlewares
-const securityMiddleware = require("./middleware/security.js"); 
+const securityMiddleware = require("./middleware/security.js");
 const errorHandler = require("./middleware/errorHandler.js");
 
 // --- [تعديل هنا] Import Routes ---
 const User = require('./Models/Users.js');
 const authRoutes = require("./routes/authRoutes.js");
-const patientRoutes = require("./routes/patientRoute.js"); 
-const doctorRoutes = require("./routes/doctorRoutes.js"); 
-const pharmacyRoutes = require("./routes/pharmacyRoutes.js"); 
+const patientRoutes = require("./routes/patientRoute.js");
+const doctorRoutes = require("./routes/doctorRoutes.js");
+const pharmacyRoutes = require("./routes/pharmacyRoutes.js");
 const labRoutes = require("./routes/labRoutes.js");
 const clinicRoutes = require("./routes/clinicRoutes.js");
 const appointmentRoutes = require('./routes/appointmentRoutes.js');
@@ -32,6 +32,7 @@ app.use(cors({
   origin: [
     "http://localhost:3000",
     "http://localhost:5173",
+    "https://admindashboard-pi-lac.vercel.app"
   ],
   credentials: true,
   methods: ["GET", "POST", "PATCH", "PUT", "DELETE", "OPTIONS"],
@@ -43,7 +44,7 @@ app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 
 // 1. Security Middlewares
-securityMiddleware(app); 
+securityMiddleware(app);
 
 
 
@@ -62,10 +63,10 @@ app.get("/", (req, res) => {
 });
 
 // ---  4. Routes Mapping ---
-app.use("/api/auth", authRoutes); 
-app.use("/api/patient", patientRoutes); 
-app.use("/api/doctor", doctorRoutes); 
-app.use("/api/pharmacy", pharmacyRoutes); 
+app.use("/api/auth", authRoutes);
+app.use("/api/patient", patientRoutes);
+app.use("/api/doctor", doctorRoutes);
+app.use("/api/pharmacy", pharmacyRoutes);
 app.use("/api/lab", labRoutes);
 app.use("/api/clinic", clinicRoutes);
 app.use('/api/appointments', appointmentRoutes);
@@ -80,26 +81,26 @@ const seedAdmin = async () => {
 
     if (!adminExists) {
       const hashedPassword = await bcrypt.hash('admin123456', 10);
-      
+
       await User.create({
         name: 'Super Admin',
         username: 'admin_shefaa',
         email: 'admin@shefaa.com',
         password: hashedPassword,
-        phoneNumber: '01012345678', 
+        phoneNumber: '01012345678',
         role: 'admin',
         isVerified: true
       });
-      
+
       console.log('✅ Admin account seeded!');
     } else {
       console.log('ℹ️  Admin account already exists.');
     }
   } catch (err) {
-    console.log('❌ Admin seeding error:', err.message); 
+    console.log('❌ Admin seeding error:', err.message);
   }
 };
- 
+
 app.use(errorHandler);
 
 // Start Server
